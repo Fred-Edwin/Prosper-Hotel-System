@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { VariantSwitcher, type VariantDef } from "@/components/design/variant-switcher";
+import { AccentSwitcher } from "@/components/design/accent-switcher";
 import { DashboardR3 } from "@/components/design/dashboard/dashboard-r3";
 import { DashboardR2A } from "@/components/design/dashboard/dashboard-r2a";
 import { DashboardR2B } from "@/components/design/dashboard/dashboard-r2b";
@@ -36,6 +37,7 @@ export default async function DashboardPage({
         <DashboardR3 />
       )}
       <VariantSwitcher variants={variants} />
+      <AccentSwitcher />
     </Suspense>
   );
 }

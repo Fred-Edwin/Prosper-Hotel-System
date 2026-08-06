@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { VariantSwitcher, type VariantDef } from "@/components/design/variant-switcher";
+import { AccentSwitcher } from "@/components/design/accent-switcher";
 import { TillR2 } from "@/components/design/till/till-r2";
 import { TillA } from "@/components/design/till/till-a";
 import { TillB } from "@/components/design/till/till-b";
@@ -41,6 +42,7 @@ export default async function TillPage({
         )}
       </div>
       <VariantSwitcher variants={variants} />
+      <AccentSwitcher />
     </Suspense>
   );
 }
