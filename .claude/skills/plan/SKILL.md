@@ -137,4 +137,15 @@ Each ADR is its own numbered file and is **immutable once written**. A reversal 
 
 Nothing in Group A or Group B is undecided and the documents exist.
 
-Then tell the user to run **`/tickets`** to cut the first tranche.
+### Where to hand off
+
+**Depends on whether the project exists yet.**
+
+| Situation | Next | Why |
+|---|---|---|
+| **First run — no codebase** | **`/design`** | Then `/foundation`, then `/tickets`. A ticket cuts a vertical slice through every layer, and those layers don't exist yet |
+| **Scoped run on a live project** | **`/tickets`** | The layers exist. New work is just slices through them |
+
+**Never send a greenfield project straight to `/tickets`.** Tickets cut through schema, logic, API, UI and tests, and none of them exist after Planning. Worse, a UI ticket written before the design system exists invites the agent to invent one — which is the vacuum failure the Design phase exists to prevent.
+
+The full lifecycle order is **`/plan` → `/design` → `/foundation` → `/tickets`**, then the Build loop forever.

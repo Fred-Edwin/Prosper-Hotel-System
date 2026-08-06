@@ -30,10 +30,11 @@ Skills write these as `<skills>/reference/NAME.md` and resolve `<skills>` themse
 LIFECYCLE (once per project)
 
   /discovery ──► /plan ──► /design ──► /foundation
-                   │
-                   └──► /tickets ──┐
-                                   │
-LOOPS (forever)                    ▼
+                                            │
+LOOPS (forever)                             ▼
+                                       /tickets ──┐
+                                                  │
+                                                  ▼
                             ┌─────────────┐
                             │   /build    │──► /review
                             │             │──► /verify

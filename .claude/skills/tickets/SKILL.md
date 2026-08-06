@@ -14,6 +14,14 @@ Read `<skills>/reference/TICKET-FORMAT.md` for the template and the rules. Read 
 
 **If a reference file cannot be found, stop and tell the user.** Do not proceed from memory — these files hold the discipline the skill depends on, and running without them silently produces work that looks right and isn't.
 
+## 0. Check Foundation exists
+
+**A ticket cuts a vertical slice through every layer.** If those layers don't exist, it cannot be cut — it becomes a wish, and the agent building it invents structure and design instead of adding to them.
+
+Before anything else, confirm `CLAUDE.md` exists and `src/modules/` (or the project's equivalent) has the shape `docs/architecture.md` describes.
+
+**If Foundation hasn't run, stop.** Tell the user the order is `/design` → `/foundation` → `/tickets`, and which of those is missing. Do not cut tickets against a plan alone.
+
 ## 1. Read the settled decisions
 
 - `CONTEXT.md` — ticket titles and descriptions use this vocabulary
