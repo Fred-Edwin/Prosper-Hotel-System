@@ -47,9 +47,38 @@ Ask which, unless it's obvious.
 
 ## Setup (first run only)
 
-### 0. Derive the screen list, and ask who uses what
+### 0. Derive the navigation, and ask who uses what
 
-**Read `CONTEXT.md` and `docs/architecture.md`** and derive the screens this app needs from the domain model and modules. A module with a record type implies a list, a detail view, and a form. Present the list to the user and let them correct it — this is the menu the refinement rounds pick from.
+**Read `CONTEXT.md` and `docs/architecture.md`.** Derive what the app must show from the domain model and modules — a module with a record type implies a list, a detail view, and a form.
+
+**That derivation is working material, not the deliverable. Never present it.** It is a completeness check, and on a real domain it produces thirty to fifty views. A list that long is unreviewable: the user cannot picture using it, and the only reaction available is alarm at the number.
+
+**What you present is the navigation.** Convert before showing anything:
+
+| | |
+|---|---|
+| **Destination** | A nav link. What the user picks from a menu |
+| **View** | A tab, drill-down, sheet or section *inside* a destination |
+
+Views are cheap; destinations are expensive. Thirty views across seven destinations is ordinary software. Thirty destinations is unusable, and the difference is entirely in how they're grouped.
+
+**Group by person, never by module.** Modules are an architecture concept — they describe where code lives, and no user experiences them. A screen list grouped by module shows the system's structure; grouped by person it shows someone's working day, which is the only thing the user can actually judge. Where the same view serves several people, say so rather than duplicating it.
+
+**Then apply merge pressure, before presenting.** The derivation only ever generates. Nothing else in this step pushes back, so push back deliberately:
+
+- **A question answered at two zoom levels is one destination, not two.** *Am I making money* and *how much cash should I have* are one dashboard, not a profit page and a cash page
+- **Explanation belongs in one place.** Every "why is this number what it is" view — histories, movements, audit — is tabs of a single ledger destination, not separate pages
+- **A filter is not a destination.** "Low stock" is stock on hand with a `WHERE` clause
+- **A field is not a destination.** Setting a price is a field on the product form, owner-gated
+- **An action on a record is not a destination.** Taking a repayment happens on the customer, not on a Repayments page
+- **Identical forms differing by one value are one form with a selector.** Wastage, staff meals and giveaways are one screen with a reason
+- **CRUD triplets collapse.** List plus detail plus form is usually one destination with a sheet or a drill-down
+
+**Then state what you refused to merge, and why.** Merging is not free, and some separations are load-bearing: two shells, two different people, or a deliberate control. Naming those tells the user you weren't merging on autopilot, and gives them the specific thing to overrule.
+
+**Target roughly 5–8 destinations per person.** Over eight, merge harder. Under four, check nothing important is buried.
+
+**Present:** the destinations per person, what's inside each, one line on what each does, and the merges you made. Let the user correct it. This is the menu the refinement rounds pick from.
 
 **Then ask who uses this, on what device.** Lead with a recommendation based on what `docs/discovery.md` says about the users.
 
@@ -118,7 +147,9 @@ Three blocks:
 
 ### 2. Pick the screens to prototype on
 
-From the screen list derived in step 0. Default **2–3**, with **real content** — seed data or realistic placeholder, never lorem ipsum.
+From the navigation derived in step 0. Default **2–3**, with **real content** — seed data or realistic placeholder, never lorem ipsum.
+
+**Prototype a destination with its views, not a view alone.** A dashboard is its hero figures *and* the tables under them; a ledger is the tab bar *and* a populated tab. Where the merges in step 0 put several things on one page, the round has to test whether that page holds together — which is precisely what a single view in isolation cannot show.
 
 The user can name specific screens or ask for more at any point.
 
@@ -126,6 +157,7 @@ Weight toward what stresses the design hardest:
 - The densest data view
 - The longest form
 - A screen with an empty state
+- **The destination that absorbed the most in step 0** — the biggest merge is the biggest risk
 
 A design that survives those survives the app. If two shells were chosen, prototype at least one screen in each.
 
@@ -296,6 +328,8 @@ If anything is still in **Not yet shown**, list it explicitly in the handover. T
 ## Never
 
 - **Never build primitives from scratch.** Start from shadcn
+- **Never present the raw derived view list.** It is a completeness check, not a deliverable. Convert it to navigation first — a forty-item list is unreviewable, and its length reads as a proposal to build forty pages
+- **Never group screens by module when presenting to the user.** Modules describe where code lives. Group by person, because a working day is the only thing the user can judge
 - **Never produce variants that differ only in colour or copy.** Real variants disagree about structure
 - **Never judge a design on an empty page.** Real data, real density
 - **Never write token values into `docs/design.md`**
