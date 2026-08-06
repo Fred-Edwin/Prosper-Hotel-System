@@ -22,10 +22,37 @@ export type Location = "restaurant" | "canteen";
 
 export type ProductKind = "goods" | "cooked" | "service" | "packaging";
 
+/**
+ * Till categories.
+ *
+ * Distinct from `kind`, deliberately. `kind` is the accounting classification
+ * from CONTEXT.md — it decides whether a thing is stocked and costed. A
+ * category is how a cashier finds something in a hurry, which is a different
+ * question: "drinks" spans bought-in sodas and kitchen-made tea, and no
+ * cashier thinks of those as different sorts of thing.
+ */
+export type Category =
+  | "food"
+  | "drinks"
+  | "snacks"
+  | "stationery"
+  | "household"
+  | "services";
+
+export const categories: { key: Category; label: string }[] = [
+  { key: "food", label: "Food" },
+  { key: "drinks", label: "Drinks" },
+  { key: "snacks", label: "Snacks" },
+  { key: "stationery", label: "Stationery" },
+  { key: "household", label: "Household" },
+  { key: "services", label: "Services" },
+];
+
 export interface Product {
   id: string;
   name: string;
   kind: ProductKind;
+  category: Category;
   price: number;
   /** Null where no recipe exists — cooked food without a recorded yield. */
   unitCost: number | null;
@@ -35,42 +62,50 @@ export interface Product {
 
 export const products: Product[] = [
   // Cooked food — restaurant kitchen
-  { id: "p1", name: "Mukimo", kind: "cooked", price: 150, unitCost: 89, location: ["restaurant"], stock: 24 },
-  { id: "p2", name: "Chips", kind: "cooked", price: 100, unitCost: 41, location: ["restaurant", "canteen"], stock: 38 },
-  { id: "p3", name: "Chapati", kind: "cooked", price: 20, unitCost: 11, location: ["restaurant", "canteen"], stock: 64 },
-  { id: "p4", name: "Githeri", kind: "cooked", price: 120, unitCost: 67, location: ["restaurant"], stock: 18 },
-  { id: "p5", name: "Beef stew", kind: "cooked", price: 180, unitCost: null, location: ["restaurant"], stock: 12 },
-  { id: "p6", name: "Tea", kind: "cooked", price: 30, unitCost: 8, location: ["restaurant", "canteen"], stock: 40 },
-  { id: "p7", name: "Rice", kind: "cooked", price: 100, unitCost: 52, location: ["restaurant"], stock: 22 },
-  { id: "p8", name: "Ugali", kind: "cooked", price: 50, unitCost: 19, location: ["restaurant"], stock: 30 },
+  { id: "p1", name: "Mukimo", kind: "cooked", category: "food", price: 150, unitCost: 89, location: ["restaurant"], stock: 24 },
+  { id: "p2", name: "Chips", kind: "cooked", category: "food", price: 100, unitCost: 41, location: ["restaurant", "canteen"], stock: 38 },
+  { id: "p3", name: "Chapati", kind: "cooked", category: "food", price: 20, unitCost: 11, location: ["restaurant", "canteen"], stock: 64 },
+  { id: "p4", name: "Githeri", kind: "cooked", category: "food", price: 120, unitCost: 67, location: ["restaurant"], stock: 18 },
+  { id: "p5", name: "Beef stew", kind: "cooked", category: "food", price: 180, unitCost: null, location: ["restaurant"], stock: 12 },
+  { id: "p6", name: "Tea", kind: "cooked", category: "drinks", price: 30, unitCost: 8, location: ["restaurant", "canteen"], stock: 40 },
+  { id: "p7", name: "Rice", kind: "cooked", category: "food", price: 100, unitCost: 52, location: ["restaurant"], stock: 22 },
+  { id: "p8", name: "Ugali", kind: "cooked", category: "food", price: 50, unitCost: 19, location: ["restaurant"], stock: 30 },
+  { id: "p26", name: "Pilau", kind: "cooked", category: "food", price: 180, unitCost: 96, location: ["restaurant"], stock: 16 },
+  { id: "p27", name: "Sukuma wiki", kind: "cooked", category: "food", price: 50, unitCost: 18, location: ["restaurant"], stock: 28 },
+  { id: "p28", name: "Beans", kind: "cooked", category: "food", price: 80, unitCost: 34, location: ["restaurant"], stock: 20 },
+  { id: "p29", name: "Mandazi", kind: "cooked", category: "snacks", price: 20, unitCost: 8, location: ["restaurant", "canteen"], stock: 45 },
+  { id: "p30", name: "Samosa", kind: "cooked", category: "snacks", price: 30, unitCost: 14, location: ["restaurant", "canteen"], stock: 32 },
+  { id: "p31", name: "Coffee", kind: "cooked", category: "drinks", price: 40, unitCost: 12, location: ["restaurant"], stock: 30 },
+  { id: "p32", name: "Chai ya maziwa", kind: "cooked", category: "drinks", price: 40, unitCost: 14, location: ["restaurant"], stock: 35 },
 
   // Goods — canteen retail
-  { id: "p9", name: "Soda 500ml", kind: "goods", price: 80, unitCost: 58, location: ["canteen", "restaurant"], stock: 96 },
-  { id: "p10", name: "Water 1L", kind: "goods", price: 60, unitCost: 42, location: ["canteen"], stock: 54 },
-  { id: "p11", name: "Biscuits", kind: "goods", price: 50, unitCost: 36, location: ["canteen"], stock: 120 },
-  { id: "p12", name: "Crisps", kind: "goods", price: 60, unitCost: 44, location: ["canteen"], stock: 78 },
-  { id: "p13", name: "Sweets", kind: "goods", price: 10, unitCost: 7, location: ["canteen"], stock: 340 },
-  { id: "p14", name: "Exercise book", kind: "goods", price: 60, unitCost: 43, location: ["canteen"], stock: 85 },
-  { id: "p15", name: "Foolscaps", kind: "goods", price: 5, unitCost: 3, location: ["canteen"], stock: 500 },
-  { id: "p16", name: "Pen", kind: "goods", price: 20, unitCost: 12, location: ["canteen"], stock: 145 },
-  { id: "p17", name: "ENO", kind: "goods", price: 30, unitCost: 21, location: ["canteen"], stock: 42 },
-  { id: "p18", name: "Painkillers", kind: "goods", price: 20, unitCost: 13, location: ["canteen"], stock: 68 },
-  { id: "p19", name: "Airtime 50", kind: "goods", price: 50, unitCost: 48, location: ["canteen"], stock: null },
-  { id: "p20", name: "Handkerchief", kind: "goods", price: 50, unitCost: 34, location: ["canteen"], stock: 26 },
+  { id: "p9", name: "Soda 500ml", kind: "goods", category: "drinks", price: 80, unitCost: 58, location: ["canteen", "restaurant"], stock: 96 },
+  { id: "p10", name: "Water 1L", kind: "goods", category: "drinks", price: 60, unitCost: 42, location: ["canteen", "restaurant"], stock: 54 },
+  { id: "p11", name: "Biscuits", kind: "goods", category: "snacks", price: 50, unitCost: 36, location: ["canteen"], stock: 120 },
+  { id: "p12", name: "Crisps", kind: "goods", category: "snacks", price: 60, unitCost: 44, location: ["canteen"], stock: 78 },
+  { id: "p13", name: "Sweets", kind: "goods", category: "snacks", price: 10, unitCost: 7, location: ["canteen"], stock: 340 },
+  { id: "p14", name: "Exercise book", kind: "goods", category: "stationery", price: 60, unitCost: 43, location: ["canteen"], stock: 85 },
+  { id: "p15", name: "Foolscaps", kind: "goods", category: "stationery", price: 5, unitCost: 3, location: ["canteen"], stock: 500 },
+  { id: "p16", name: "Pen", kind: "goods", category: "stationery", price: 20, unitCost: 12, location: ["canteen"], stock: 145 },
+  { id: "p17", name: "ENO", kind: "goods", category: "household", price: 30, unitCost: 21, location: ["canteen"], stock: 42 },
+  { id: "p18", name: "Painkillers", kind: "goods", category: "household", price: 20, unitCost: 13, location: ["canteen"], stock: 68 },
+  { id: "p19", name: "Airtime 50", kind: "goods", category: "services", price: 50, unitCost: 48, location: ["canteen"], stock: null },
+  { id: "p20", name: "Handkerchief", kind: "goods", category: "household", price: 50, unitCost: 34, location: ["canteen"], stock: 26 },
 
   // Services — no stock
-  { id: "p21", name: "Photocopy (per page)", kind: "service", price: 5, unitCost: 2, location: ["canteen", "restaurant"], stock: null },
-  { id: "p22", name: "Printing (per page)", kind: "service", price: 10, unitCost: 4, location: ["canteen"], stock: null },
-  { id: "p23", name: "Binding", kind: "service", price: 100, unitCost: 35, location: ["canteen"], stock: null },
+  { id: "p21", name: "Photocopy (per page)", kind: "service", category: "services", price: 5, unitCost: 2, location: ["canteen", "restaurant"], stock: null },
+  { id: "p22", name: "Printing (per page)", kind: "service", category: "services", price: 10, unitCost: 4, location: ["canteen"], stock: null },
+  { id: "p23", name: "Binding", kind: "service", category: "services", price: 100, unitCost: 35, location: ["canteen"], stock: null },
 
   // Packaging
-  { id: "p24", name: "Takeaway container", kind: "packaging", price: 20, unitCost: 14, location: ["restaurant"], stock: 210 },
+  { id: "p24", name: "Takeaway container", kind: "packaging", category: "household", price: 20, unitCost: 14, location: ["restaurant"], stock: 210 },
 
   // STRESS CASE — 200-character name. Overflow must truncate with a tooltip.
   {
     id: "p25",
     name: "Large capacity insulated food flask with double-walled stainless steel interior and locking clip lid, supplied by the Nakuru wholesaler, used for the school delivery run on Tuesdays and Thursdays only",
     kind: "goods",
+    category: "household",
     price: 1200,
     unitCost: 940,
     location: ["canteen"],
