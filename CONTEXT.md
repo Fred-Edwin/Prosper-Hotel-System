@@ -120,6 +120,19 @@ because a debt needs a named [[Customer]] and cannot wait for a count.
 A single recorded change to the quantity of a [[Product]] or [[Ingredient]] at a
 [[Location]], at a point in time, by a [[Staff Member]].
 
+Movements divide into two families, because the two things they move behave
+differently and the client reads them as separate records:
+
+- **Product movement** — a [[Product]] moving. Produced, transferred, sold.
+  Value is realised at the **selling price**, so these rows carry sales value,
+  cost of sales and profit.
+- **Store movement** — an [[Ingredient]] or supply moving through the store.
+  Purchased, issued to the kitchen, spoiled. Value is carried at **cost**, and
+  nothing here has a selling price because none of it is sold.
+
+The families share the reason list below; what differs is how they are valued
+and therefore how they are read.
+
 Every movement carries a **reason**, and the reasons are kept apart rather than
 lumped together:
 
@@ -143,6 +156,29 @@ lumped together:
 A stock level is not a number that is maintained. It is the sum of the movements.
 This is what makes the historical record in the client's own Excel shape possible:
 the history of an item on a day is simply its movements for that day, in order.
+
+## Non-sales Stock Consumption
+
+Stock that left without being sold: **wasted**, **consumed** by staff, or
+**given away**. One category, because the act is the same — stock went, no money
+came — and the client reads them together.
+
+Valued two ways, because both answer something: **at cost**, the expenditure
+incurred; and **at selling price**, the sale that was missed.
+
+Where a per-unit cost is known — a purchase price, or a [[Recipe]] — that is the
+cost. Where none exists, cost is estimated at **60% of the selling price**, per
+the figure given in discovery, and such rows are marked as estimated. The
+estimate is for this report only and never feeds profit.
+
+**A stock correction is not part of this.** Non-sales consumption is stock that
+left; a correction is the *record* being wrong, it may be positive, and only the
+owner may make one. Grouping them would make a correction that finds extra stock
+read as negative consumption. They sit adjacent and stay distinct.
+
+**These amounts are not deducted from profit a second time.** Stock no longer
+present at the closing count is already counted as used up in cost of goods sold.
+This record shows where stock went; it does not change the profit figure.
 
 ## Handover
 
@@ -174,6 +210,11 @@ makes a single expected-cash figure meaningful.
 
 Money the owner takes for personal use is recorded as a cash movement out **and** a
 debt owed back to the business, so the expected balance stays truthful.
+
+Cash movements form a **running balance**, and the balance is the point. Every
+individual movement is a delta; the balance is what makes the expected cash
+figure traceable line by line rather than merely asserted. Cash and M-Pesa each
+carry their own balance and are never pooled.
 
 ## Expense
 

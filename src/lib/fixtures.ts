@@ -516,6 +516,297 @@ export const trend: DayPoint[] = [
   { date: "2026-08-06", label: "Thu 6", revenue: 24000, netProfit: 6820, cash: 23200, mpesa: 41350, owed: 8030, drawings: 15000 },
 ];
 
+/* ---------------------------------------------------------------- ledger -- */
+
+/**
+ * Ledger rows.
+ *
+ * Each row is one item at one location over the selected period: opening at
+ * the period's start, movements summed across it, closing at its end. The
+ * columns aggregate arithmetically, so a month is one row per item rather than
+ * thirty — and `days` carries the detail for when she needs to investigate.
+ *
+ * Product rows split by location deliberately. Chips exist at both, and a
+ * combined row would hide which location holds the stock, which is the first
+ * thing a count needs to know.
+ */
+export interface LedgerDay {
+  date: string;
+  opening: number;
+  produced: number;
+  received: number;
+  transferredIn: number;
+  transferredOut: number;
+  sold: number;
+  nonSales: number;
+  closing: number;
+}
+
+export interface ProductLedgerRow {
+  id: string;
+  item: string;
+  location: Location;
+  category: Category;
+  openingQty: number;
+  openingValue: number;
+  produced: number;
+  received: number;
+  transferredIn: number;
+  transferredOut: number;
+  sold: number;
+  nonSales: number;
+  salesValue: number;
+  /** Null where no recipe exists — cost is unknown, not zero. */
+  unitCost: number | null;
+  sellingPrice: number;
+  closingQty: number;
+  days: LedgerDay[];
+}
+
+const day = (
+  date: string,
+  o: number,
+  p: number,
+  ti: number,
+  to: number,
+  s: number,
+  ns: number,
+  r = 0,
+): LedgerDay => ({
+  date,
+  opening: o,
+  produced: p,
+  received: r,
+  transferredIn: ti,
+  transferredOut: to,
+  sold: s,
+  nonSales: ns,
+  closing: o + p + r + ti - to - s - ns,
+});
+
+export const productLedger: ProductLedgerRow[] = [
+  {
+    id: "pl1", item: "Chips", location: "restaurant", category: "food",
+    openingQty: 8, openingValue: 328, produced: 205, received: 0,
+    transferredIn: 0, transferredOut: 60, sold: 112, nonSales: 3,
+    salesValue: 11200, unitCost: 41, sellingPrice: 100, closingQty: 38,
+    days: [
+      day("2026-08-02", 8, 40, 0, 10, 26, 2),
+      day("2026-08-03", 10, 38, 0, 12, 30, 0),
+      day("2026-08-04", 6, 42, 0, 12, 28, 1),
+      day("2026-08-05", 7, 40, 0, 14, 25, 0),
+      day("2026-08-06", 8, 45, 0, 12, 3, 0),
+    ],
+  },
+  {
+    id: "pl2", item: "Chips", location: "canteen", category: "food",
+    openingQty: 2, openingValue: 82, produced: 0, received: 0,
+    transferredIn: 60, transferredOut: 0, sold: 58, nonSales: 1,
+    salesValue: 5800, unitCost: 41, sellingPrice: 100, closingQty: 3,
+    days: [
+      day("2026-08-02", 2, 0, 10, 0, 11, 0),
+      day("2026-08-03", 1, 0, 12, 0, 12, 1),
+      day("2026-08-04", 0, 0, 12, 0, 11, 0),
+      day("2026-08-05", 1, 0, 14, 0, 13, 0),
+      day("2026-08-06", 2, 0, 12, 0, 11, 0),
+    ],
+  },
+  {
+    id: "pl3", item: "Mukimo", location: "restaurant", category: "food",
+    openingQty: 4, openingValue: 356, produced: 148, received: 0,
+    transferredIn: 0, transferredOut: 0, sold: 126, nonSales: 2,
+    salesValue: 18900, unitCost: 89, sellingPrice: 150, closingQty: 24,
+    days: [
+      day("2026-08-02", 4, 28, 0, 0, 24, 1),
+      day("2026-08-03", 7, 30, 0, 0, 28, 0),
+      day("2026-08-04", 9, 30, 0, 0, 26, 1),
+      day("2026-08-05", 12, 30, 0, 0, 28, 0),
+      day("2026-08-06", 14, 30, 0, 0, 20, 0),
+    ],
+  },
+  {
+    // STRESS CASE — no recipe, so no unit cost. Profit cannot be stated.
+    id: "pl4", item: "Beef stew", location: "restaurant", category: "food",
+    openingQty: 3, openingValue: 0, produced: 96, received: 0,
+    transferredIn: 0, transferredOut: 0, sold: 84, nonSales: 3,
+    salesValue: 15120, unitCost: null, sellingPrice: 180, closingQty: 12,
+    days: [
+      day("2026-08-02", 3, 18, 0, 0, 16, 0),
+      day("2026-08-03", 5, 20, 0, 0, 18, 1),
+      day("2026-08-04", 6, 20, 0, 0, 17, 0),
+      day("2026-08-05", 9, 18, 0, 0, 16, 2),
+      day("2026-08-06", 9, 20, 0, 0, 17, 0),
+    ],
+  },
+  {
+    id: "pl5", item: "Soda 500ml", location: "canteen", category: "drinks",
+    openingQty: 84, openingValue: 4872, produced: 0, received: 120,
+    transferredIn: 0, transferredOut: 0, sold: 106, nonSales: 2,
+    salesValue: 8480, unitCost: 58, sellingPrice: 80, closingQty: 96,
+    days: [
+      day("2026-08-02", 84, 0, 0, 0, 22, 0, 0),
+      day("2026-08-03", 62, 0, 0, 0, 18, 1, 60),
+      day("2026-08-04", 103, 0, 0, 0, 24, 0, 0),
+      day("2026-08-05", 79, 0, 0, 0, 21, 1, 60),
+      day("2026-08-06", 117, 0, 0, 0, 21, 0, 0),
+    ],
+  },
+  {
+    id: "pl6", item: "Chapati", location: "restaurant", category: "food",
+    openingQty: 12, openingValue: 132, produced: 260, received: 0,
+    transferredIn: 0, transferredOut: 100, sold: 104, nonSales: 4,
+    salesValue: 2080, unitCost: 11, sellingPrice: 20, closingQty: 64,
+    days: [
+      day("2026-08-02", 12, 50, 0, 20, 20, 1),
+      day("2026-08-03", 21, 52, 0, 20, 22, 0),
+      day("2026-08-04", 31, 50, 0, 20, 20, 2),
+      day("2026-08-05", 39, 54, 0, 20, 21, 1),
+      day("2026-08-06", 51, 54, 0, 20, 21, 0),
+    ],
+  },
+  {
+    id: "pl7", item: "Exercise book", location: "canteen", category: "stationery",
+    openingQty: 62, openingValue: 2666, produced: 0, received: 60,
+    transferredIn: 0, transferredOut: 0, sold: 36, nonSales: 1,
+    salesValue: 2160, unitCost: 43, sellingPrice: 60, closingQty: 85,
+    days: [
+      day("2026-08-02", 62, 0, 0, 0, 8, 0, 0),
+      day("2026-08-03", 54, 0, 0, 0, 6, 1, 0),
+      day("2026-08-04", 47, 0, 0, 0, 7, 0, 60),
+      day("2026-08-05", 100, 0, 0, 0, 8, 0, 0),
+      day("2026-08-06", 92, 0, 0, 0, 7, 0, 0),
+    ],
+  },
+];
+
+export interface StoreLedgerRow {
+  id: string;
+  item: string;
+  unit: string;
+  openingQty: number;
+  purchasedQty: number;
+  purchasedValue: number;
+  unitCost: number;
+  /** Weighted average moves with each purchase; the change is the answer to
+      "why did my costs rise". */
+  previousUnitCost: number;
+  issuedToKitchen: number;
+  transferredOut: number;
+  spoilage: number;
+  closingQty: number;
+}
+
+export const storeLedger: StoreLedgerRow[] = [
+  { id: "sl1", item: "Potatoes", unit: "kg", openingQty: 34, purchasedQty: 120, purchasedValue: 7560, unitCost: 65, previousUnitCost: 61, issuedToKitchen: 104, transferredOut: 0, spoilage: 2, closingQty: 48 },
+  { id: "sl2", item: "Beef", unit: "kg", openingQty: 6, purchasedQty: 36, purchasedValue: 20880, unitCost: 580, previousUnitCost: 560, issuedToKitchen: 34, transferredOut: 0, spoilage: 0, closingQty: 8 },
+  { id: "sl3", item: "Cooking oil", unit: "L", openingQty: 18, purchasedQty: 12, purchasedValue: 3840, unitCost: 320, previousUnitCost: 320, issuedToKitchen: 16, transferredOut: 0, spoilage: 0, closingQty: 14 },
+  { id: "sl4", item: "Maize flour", unit: "kg", openingQty: 28, purchasedQty: 50, purchasedValue: 3900, unitCost: 78, previousUnitCost: 74, issuedToKitchen: 46, transferredOut: 0, spoilage: 0, closingQty: 32 },
+  { id: "sl5", item: "Wheat flour", unit: "kg", openingQty: 20, purchasedQty: 40, purchasedValue: 3680, unitCost: 92, previousUnitCost: 88, issuedToKitchen: 36, transferredOut: 0, spoilage: 0, closingQty: 24 },
+  { id: "sl6", item: "Rice", unit: "kg", openingQty: 22, purchasedQty: 30, purchasedValue: 4950, unitCost: 165, previousUnitCost: 165, issuedToKitchen: 26, transferredOut: 0, spoilage: 0, closingQty: 26 },
+  { id: "sl7", item: "Printing paper", unit: "ream", openingQty: 6, purchasedQty: 8, purchasedValue: 4960, unitCost: 620, previousUnitCost: 600, issuedToKitchen: 0, transferredOut: 5, spoilage: 0, closingQty: 9 },
+];
+
+export type NonSalesReason = "wasted" | "consumed" | "given-away";
+
+export interface NonSalesRow {
+  id: string;
+  date: string;
+  item: string;
+  location: Location;
+  reason: NonSalesReason;
+  qty: number;
+  sellingPrice: number;
+  /** Null where no recipe exists — the 60% rule then applies. */
+  unitCost: number | null;
+  recordedBy: string;
+}
+
+export const nonSalesLedger: NonSalesRow[] = [
+  { id: "ns1", date: "2026-08-06", item: "Beef stew", location: "restaurant", reason: "wasted", qty: 3, sellingPrice: 180, unitCost: null, recordedBy: "Mercy" },
+  { id: "ns2", date: "2026-08-06", item: "Tea", location: "restaurant", reason: "consumed", qty: 5, sellingPrice: 30, unitCost: 8, recordedBy: "Sarah" },
+  { id: "ns3", date: "2026-08-06", item: "Ugali", location: "restaurant", reason: "consumed", qty: 4, sellingPrice: 50, unitCost: 19, recordedBy: "Sarah" },
+  { id: "ns4", date: "2026-08-06", item: "Soda 500ml", location: "restaurant", reason: "given-away", qty: 2, sellingPrice: 80, unitCost: 58, recordedBy: "Mercy" },
+  { id: "ns5", date: "2026-08-05", item: "Chapati", location: "restaurant", reason: "wasted", qty: 4, sellingPrice: 20, unitCost: 11, recordedBy: "Janiffer" },
+  { id: "ns6", date: "2026-08-05", item: "Chips", location: "canteen", reason: "wasted", qty: 1, sellingPrice: 100, unitCost: 41, recordedBy: "Anne" },
+  { id: "ns7", date: "2026-08-04", item: "Mukimo", location: "restaurant", reason: "given-away", qty: 1, sellingPrice: 150, unitCost: 89, recordedBy: "Lucy" },
+  { id: "ns8", date: "2026-08-04", item: "Exercise book", location: "canteen", reason: "wasted", qty: 1, sellingPrice: 60, unitCost: 43, recordedBy: "Anne" },
+];
+
+/**
+ * Where the 60% rule applies.
+ *
+ * proposal.md §10.5: cooked food with no recipe is valued at 60% of selling
+ * price, and the estimate is used for this report only. Where a real cost
+ * exists — a purchase price, or a recipe — it is used instead, because 60% of
+ * a soda's price is not its cost.
+ */
+export const nonSalesCost = (r: NonSalesRow) =>
+  r.unitCost !== null
+    ? { value: r.unitCost * r.qty, estimated: false }
+    : { value: Math.round(r.sellingPrice * 0.6 * r.qty), estimated: true };
+
+export type CashCategory =
+  | "handover"
+  | "stock"
+  | "running"
+  | "asset"
+  | "drawing"
+  | "repayment";
+
+export interface CashRow {
+  id: string;
+  date: string;
+  description: string;
+  category: CashCategory;
+  method: "cash" | "mpesa";
+  in: number;
+  out: number;
+  balance: number;
+  recordedBy: string;
+  location: Location | "both";
+}
+
+/**
+ * Cash movements, with a running balance.
+ *
+ * The balance column is the point: every other row is a delta, and this is
+ * what makes the dashboard's "cash you should hold" traceable line by line.
+ */
+export const cashLedger: CashRow[] = [
+  { id: "c1", date: "2026-08-04", description: "Opening balance", category: "handover", method: "cash", in: 0, out: 0, balance: 41200, recordedBy: "—", location: "both" },
+  { id: "c2", date: "2026-08-04", description: "Rent — August", category: "running", method: "cash", in: 0, out: 25000, balance: 16200, recordedBy: "Lucy", location: "both" },
+  { id: "c3", date: "2026-08-04", description: "Handover — Sarah", category: "handover", method: "cash", in: 7840, out: 0, balance: 24040, recordedBy: "Lucy", location: "restaurant" },
+  { id: "c4", date: "2026-08-04", description: "Handover — Anne", category: "handover", method: "cash", in: 3960, out: 0, balance: 28000, recordedBy: "Lucy", location: "canteen" },
+  { id: "c5", date: "2026-08-05", description: "Electricity", category: "running", method: "cash", in: 0, out: 3200, balance: 24800, recordedBy: "Lucy", location: "both" },
+  { id: "c6", date: "2026-08-05", description: "Personal drawing", category: "drawing", method: "cash", in: 0, out: 15000, balance: 9800, recordedBy: "Lucy", location: "both" },
+  { id: "c7", date: "2026-08-05", description: "Handover — Sarah", category: "handover", method: "cash", in: 8120, out: 0, balance: 17920, recordedBy: "Lucy", location: "restaurant" },
+  { id: "c8", date: "2026-08-05", description: "Handover — Mercy", category: "handover", method: "cash", in: 5400, out: 0, balance: 23320, recordedBy: "Lucy", location: "restaurant" },
+  { id: "c9", date: "2026-08-05", description: "Repayment — Kimani", category: "repayment", method: "cash", in: 1200, out: 0, balance: 24520, recordedBy: "Anne", location: "canteen" },
+  { id: "c10", date: "2026-08-06", description: "Potatoes, beef — Nakuru supplier", category: "stock", method: "cash", in: 0, out: 9560, balance: 14960, recordedBy: "Lucy", location: "restaurant" },
+  { id: "c11", date: "2026-08-06", description: "Gas refill", category: "running", method: "cash", in: 0, out: 2400, balance: 12560, recordedBy: "Lucy", location: "restaurant" },
+  { id: "c12", date: "2026-08-06", description: "Handover — Sarah", category: "handover", method: "cash", in: 8150, out: 0, balance: 20710, recordedBy: "Lucy", location: "restaurant" },
+  { id: "c13", date: "2026-08-06", description: "Handover — Mercy", category: "handover", method: "cash", in: 5240, out: 0, balance: 25950, recordedBy: "Lucy", location: "restaurant" },
+  { id: "c14", date: "2026-08-06", description: "Handover — Anne", category: "handover", method: "cash", in: 4120, out: 0, balance: 30070, recordedBy: "Lucy", location: "canteen" },
+  { id: "c15", date: "2026-08-06", description: "Charcoal", category: "running", method: "cash", in: 0, out: 1800, balance: 28270, recordedBy: "Janiffer", location: "restaurant" },
+  { id: "c16", date: "2026-08-06", description: "Sodas, water — canteen delivery", category: "stock", method: "cash", in: 0, out: 4200, balance: 24070, recordedBy: "Anne", location: "canteen" },
+  { id: "c17", date: "2026-08-06", description: "Freezer repair", category: "running", method: "cash", in: 0, out: 870, balance: 23200, recordedBy: "Lucy", location: "restaurant" },
+];
+
+export const cashCategoryLabel: Record<CashCategory, string> = {
+  handover: "Handover",
+  stock: "Stock",
+  running: "Running cost",
+  asset: "Asset",
+  drawing: "Drawing",
+  repayment: "Repayment",
+};
+
+export const nonSalesReasonLabel: Record<NonSalesReason, string> = {
+  wasted: "Wasted",
+  consumed: "Staff meal",
+  "given-away": "Complimentary",
+};
+
 export const money = (n: number) =>
   `KSh ${n.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
 
