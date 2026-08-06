@@ -433,6 +433,53 @@ export const dashboard = {
   canteenCostRate: 0.72,
 };
 
+/** Per-location trading figures, for the comparison the dashboard carries. */
+export const locationPerformance = [
+  {
+    location: "restaurant" as Location,
+    revenue: 18600,
+    costOfGoods: 9600,
+    grossProfit: 9000,
+    runningCosts: 1700,
+    netProfit: 7300,
+    margin: 0.484,
+    transactions: 47,
+    provisional: false,
+  },
+  {
+    location: "canteen" as Location,
+    revenue: 5400,
+    costOfGoods: 5280,
+    grossProfit: 120,
+    runningCosts: 600,
+    netProfit: -480,
+    margin: 0.022,
+    transactions: 1,
+    provisional: true,
+  },
+];
+
+/** Today's stock flow at both locations, summarised by reason. */
+export const stockFlow = [
+  { reason: "Received", qty: 52, value: 9560, location: "both" },
+  { reason: "Produced", qty: 75, value: 4515, location: "restaurant" },
+  { reason: "Transferred", qty: 34, value: 1952, location: "both" },
+  { reason: "Sold", qty: 118, value: 8940, location: "both" },
+  { reason: "Wasted", qty: 3, value: 324, location: "restaurant" },
+  { reason: "Consumed", qty: 9, value: 116, location: "restaurant" },
+  { reason: "Given away", qty: 2, value: 116, location: "restaurant" },
+];
+
+/** The restaurant store specifically: in from suppliers, out to kitchen and canteen. */
+export const storeFlow = [
+  { item: "Potatoes", received: 40, issued: 18, transferred: 0, closing: 48 },
+  { item: "Beef", received: 12, issued: 6, transferred: 0, closing: 8 },
+  { item: "Cooking oil", received: 0, issued: 3, transferred: 0, closing: 14 },
+  { item: "Maize flour", received: 0, issued: 8, transferred: 0, closing: 32 },
+  { item: "Chips", received: 0, issued: 0, transferred: 12, closing: 38 },
+  { item: "Chapati", received: 0, issued: 0, transferred: 20, closing: 64 },
+];
+
 export const money = (n: number) =>
   `KSh ${n.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
 

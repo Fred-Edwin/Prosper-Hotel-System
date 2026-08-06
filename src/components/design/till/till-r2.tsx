@@ -26,10 +26,20 @@
  *
  * The header carries page, location and account with deliberate hierarchy.
  * Location is heaviest because architecture.md calls it the cutting dimension —
- * it decides what stock exists and which day the entry belongs to. The accent
- * rail down the left edge is coloured per location so the answer is available
- * pre-attentively, before anything is read: it exists to stop a canteen sale
- * being recorded against the restaurant.
+ * it decides what stock exists and which day the entry belongs to.
+ *
+ * Accent discipline, corrected after round two. The first pass used the accent
+ * for the active mode, the active pill, basket badges, card borders, the
+ * avatar and the location rail — eleven accent elements, against UI-RULES'
+ * one per screen. The effect was the opposite of the intent: "Complete sale"
+ * sat off-screen while already-tapped cards shouted for attention. Accent is
+ * now reserved for the primary action alone; selection states carry neutral
+ * fills, which read as "chosen" without competing with "do this next".
+ *
+ * The per-location colour rail is gone too. It solved a problem not yet known
+ * to exist — staff only ever see one location — and spent the accent budget
+ * doing it. If mis-located entries turn out to be real, a location chip in the
+ * header is the honest fix, because it can be read rather than learned.
  */
 
 import { useMemo, useState } from "react";
@@ -73,12 +83,6 @@ const modes: { key: Mode; label: string; icon: typeof Store }[] = [
   { key: "delivery", label: "Delivery", icon: Truck },
   { key: "credit", label: "Credit", icon: CreditCard },
 ];
-
-/** Per-location accent, so which location you are in is legible before reading. */
-const locationAccent: Record<Location, string> = {
-  restaurant: "var(--color-brand-600)",
-  canteen: "var(--color-success)",
-};
 
 export function TillR2({
   location = "restaurant",
@@ -147,7 +151,6 @@ export function TillR2({
         .filter((l) => l.qty > 0),
     );
 
-  const accent = locationAccent[location];
   const canComplete =
     lines.length > 0 &&
     (mode === "credit" || remaining === 0) &&
@@ -156,16 +159,13 @@ export function TillR2({
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       {/* Identity. Location heaviest; page and account quiet but findable. */}
-      <header
-        className="flex items-center gap-3 border-b bg-card px-4 py-2.5"
-        style={{ borderLeft: `3px solid ${accent}` }}
-      >
+      <header className="flex items-center gap-3 border-b bg-card px-4 py-2.5">
         <div className="min-w-0 flex-1">
           <div className="text-[15px] leading-tight font-semibold capitalize">
             {location}
           </div>
           <div className="text-[11px] leading-tight text-muted-foreground">
-            Sell · {staffName}
+            New sale · {staffName}
           </div>
         </div>
 
@@ -181,15 +181,15 @@ export function TillR2({
         )}
 
         <div
-          className="flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-          style={{ background: accent }}
+          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-700 text-[11px] font-semibold text-white"
           title={`Signed in as ${staffName}`}
         >
           {staffName[0]}
         </div>
       </header>
 
-      {/* Mode. The one interactive thing up here, so it gets its own row. */}
+      {/* Mode. The one interactive thing up here, so it gets its own row.
+          Selection is a neutral fill — "chosen", not "do this next". */}
       <div className="border-b bg-card px-3 py-2">
         <div className="flex gap-1 rounded-lg bg-muted p-1">
           {modes.map((m) => {
@@ -200,9 +200,10 @@ export function TillR2({
                 key={m.key}
                 onClick={() => setMode(m.key)}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-[13px] font-medium transition-colors duration-100 ${
-                  on ? "text-white shadow-sm" : "text-muted-foreground"
+                  on
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground"
                 }`}
-                style={on ? { background: accent } : undefined}
                 aria-pressed={on}
               >
                 <Icon className="size-3.5" />
@@ -235,7 +236,7 @@ export function TillR2({
         </div>
 
         <div className="-mx-3 mt-2 flex gap-1.5 overflow-x-auto px-3 pb-0.5">
-          <Pill on={category === "all"} onClick={() => setCategory("all")} accent={accent}>
+          <Pill on={category === "all"} onClick={() => setCategory("all")}>
             All
           </Pill>
           {available.map((c) => (
@@ -243,7 +244,6 @@ export function TillR2({
               key={c.key}
               on={category === c.key}
               onClick={() => setCategory(c.key)}
-              accent={accent}
             >
               {c.label}
             </Pill>
@@ -279,8 +279,9 @@ export function TillR2({
                   key={p.id}
                   onClick={() => add(p)}
                   title={p.name}
-                  className="relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 active:bg-accent"
-                  style={inBasket ? { borderColor: accent } : undefined}
+                  className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 active:bg-accent ${
+                    inBasket ? "border-neutral-400" : ""
+                  }`}
                 >
                   <span className="line-clamp-2 text-[13px] leading-tight font-medium">
                     {p.name}
@@ -289,10 +290,7 @@ export function TillR2({
                     {money(p.price)}
                   </span>
                   {inBasket && (
-                    <span
-                      className="tabular absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-                      style={{ background: accent }}
-                    >
+                    <span className="tabular absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-[11px] font-semibold text-white">
                       {inBasket.qty}
                     </span>
                   )}
@@ -426,7 +424,7 @@ export function TillR2({
                     }
                     className="tabular h-10 flex-1 text-right"
                   />
-                  {pays.length > 2 && (
+                  {pays.length > 1 && (
                     <Button
                       size="icon"
                       variant="ghost"
@@ -434,7 +432,7 @@ export function TillR2({
                       onClick={() =>
                         setPays((ps) => ps.filter((x) => x.id !== p.id))
                       }
-                      aria-label="Remove this payment line"
+                      aria-label={`Remove ${p.method} payment`}
                     >
                       <X className="size-3.5" />
                     </Button>
@@ -474,11 +472,8 @@ export function TillR2({
             )}
           </div>
 
-          <Button
-            className="h-12 w-full text-[15px]"
-            style={canComplete ? { background: accent } : undefined}
-            disabled={!canComplete}
-          >
+          {/* The only accent element on the screen. */}
+          <Button className="h-12 w-full text-[15px]" disabled={!canComplete}>
             {mode === "credit" ? "Record on account" : "Complete sale"}
           </Button>
         </div>
@@ -490,21 +485,20 @@ export function TillR2({
 function Pill({
   on,
   onClick,
-  accent,
   children,
 }: {
   on: boolean;
   onClick: () => void;
-  accent: string;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
       className={`shrink-0 rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors duration-100 ${
-        on ? "text-white" : "bg-card text-muted-foreground"
+        on
+          ? "border-neutral-800 bg-neutral-800 text-white"
+          : "bg-card text-muted-foreground"
       }`}
-      style={on ? { background: accent, borderColor: accent } : undefined}
       aria-pressed={on}
     >
       {children}
