@@ -109,7 +109,7 @@ module is the wrong shape.
 | App | Next.js, as a PWA | One codebase, installs to a phone from a link, no app store. Staff use their own phones. |
 | Language | TypeScript | The domain is money and stock; types catch real errors. |
 | Database | PostgreSQL | The movement ledger and daily closes need real transactions. Non-negotiable for accounting. |
-| Data access | Drizzle | SQL-shaped. The reports here are genuine SQL, not object graphs. |
+| Data access | Prisma | Schema-first, generated migrations, and a visual browser. See [ADR 0006](adr/0006-prisma-for-data-access.md). |
 | Auth | Owned, in `people` | Access is location-scoped and role-shaped in a way off-the-shelf auth fights. |
 | Hosting | One host, app and database together | Solo developer. Splitting hosts creates a preview-deployment problem for no gain. |
 
