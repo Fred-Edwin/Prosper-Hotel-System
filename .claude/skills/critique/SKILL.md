@@ -38,7 +38,7 @@ Read the diff, the ticket, and the rendered screens if `/verify` produced screen
 - Missing `focus-visible` styles; icon buttons without `aria-label`
 - Contrast failures — `gray-400` on white fails
 - Icons from the wrong set or the wrong size
-- A page not using a template from `components/layout/`
+- A page not opening inside a shell from `components/layout/`, or not composed from `components/patterns/` where a matching pattern exists
 - A component duplicating something already in `components/ui/`
 - A new component added to `components/ui/` — that should have been a stop-and-ask
 

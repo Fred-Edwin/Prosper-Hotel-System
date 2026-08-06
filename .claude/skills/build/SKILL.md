@@ -72,7 +72,7 @@ CRUD, wiring, config, layout. Test after, or not at all where a test would add n
 - **Run the tests you touched continuously**
 - **Full suite once, at the end**
 - Never mock our own code. Real test database
-- Compose UI from `components/ui/` and `components/layout/`
+- Compose UI from `components/ui/`, `components/patterns/`, and `components/layout/`
 - Follow the module boundary: cross-module imports through `index.ts` only
 
 ## 5. Prepare the manual check

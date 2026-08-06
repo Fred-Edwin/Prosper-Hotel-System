@@ -75,19 +75,26 @@ Suspect something is shallow? Imagine deleting it.
 
 ## Where UI lives
 
-Three tiers, split by reusability:
+Four tiers, split by reusability:
 
 | Location | Contains | Knows about the domain? |
 |---|---|---|
 | `components/ui/` | Primitives — button, input, dialog, table | No |
-| `components/layout/` | App shell, page templates | No |
+| `components/patterns/` | Page templates — record table, detail page, form, summary strip, the five states | No |
+| `components/layout/` | The app shells — nav, header, content frame. One per shell (e.g. `admin-shell.tsx`, `staff-shell.tsx`) | No |
 | `modules/<x>/ui/` | `InvoiceTable`, `InvoiceStatusBadge` | Yes |
+
+**`patterns/` vs `layout/`.** A pattern composes *inside* a page — a table, a form, a strip of figures. A shell wraps the *whole page* — it owns the nav and the header and takes page content as children. Both are domain-blind; the split exists because a ticket reaches for them differently: one shell per screen, any number of patterns per screen.
+
+**A shape used by exactly one destination is not a template.** It stays with the module that uses it, in `modules/<x>/ui/`, even if it looks reusable. Promoting it early is exactly the speculative generality this structure exists to avoid — wait for a second caller.
 
 **If it mentions a domain concept, it lives in the module. If it's generic, it lives in `components/`.**
 
 This keeps `components/` small and stable — which is what makes the design system hold — and keeps a module's UI next to its logic and tests.
 
 When two modules need the same domain component, put it in whichever module owns the concept; the other imports it through the interface. Never duplicate.
+
+**Design-phase output does not move here as-is.** The Design skill prototypes destinations as flat pages under `components/design/<destination>/` with fixture data and dev-only switchers. At Foundation, each destination's *content* becomes a module under `modules/<x>/`; only the shell(s) and the patterns it composed move into `components/layout/` and `components/patterns/` respectively. Fixture data, state/variant switchers and anything gated on `process.env.NODE_ENV === "production"` do not survive the move.
 
 ## Designing for testability
 

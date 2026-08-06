@@ -47,10 +47,14 @@ src/
 ├── shared/               ← db client, auth, errors, logging
 └── components/
     ├── ui/               ← shadcn primitives
-    └── layout/           ← app shell, page templates
+    ├── patterns/         ← page templates: record table, detail page, form,
+    │                        summary strip, the five states
+    └── layout/           ← the app shell(s) — nav, header, content frame
 ```
 
 **Module names come from `CONTEXT.md`**, not from technical roles. `billing/`, not `controllers/`.
+
+**`components/patterns/` and `components/layout/` are migrated from Design, not written fresh.** If `docs/design.md` names them, they already exist under `src/components/patterns/` and `src/components/design/<shell>/` in the design branch — move them, don't reinvent them. See step 6.
 
 **Add a lint rule banning deep cross-module imports** — `modules/*/…` may only be imported via `modules/*/index.ts`. The boundary must be enforced by tooling; discipline erodes.
 
@@ -74,7 +78,28 @@ Roles and permission checks working end to end, not stubbed.
 
 ## 6. App shell and page templates
 
-From Design System, wired to real routing. The shell, plus the page templates: list, detail, form, dashboard, settings, and the empty/onboarding and error states.
+**Migrate, don't rebuild.** Design already produced these under
+`src/components/design/` on the design branch — `components/patterns/` is
+already populated (record table, detail page, form, summary strip, the five
+states) and each shell already exists (e.g. `shell/admin-shell.tsx`,
+`staff/shell-home.tsx`). Move the pattern files to `components/patterns/` and
+each shell to `components/layout/` unchanged, then wire them to real routing
+and real data.
+
+**What does not survive the move:**
+- Fixture data (`@/lib/fixtures`) — replaced by the real data access layer
+- Variant and state switchers, and anything gated on
+  `process.env.NODE_ENV === "production"` — those were judgment tools for a
+  human comparing options, not app code
+- The destination bodies under `components/design/<destination>/` (dashboard,
+  ledger, stock, money-out, people, catalogue, activity, till) — their
+  *content* becomes the first screen of the matching module in step 2 onward,
+  built against the real schema. Only the shell and the patterns they
+  composed are reusable as-is.
+
+Confirm every destination still renders through the real shell before moving
+on — a page that only ever worked against fixture data has not actually been
+migrated.
 
 ## 7. Test harness
 
@@ -165,7 +190,9 @@ src/modules/<feature>/   feature-first. Each owns schema, queries, logic,
                          routes, ui, tests
 src/shared/              db client, auth, errors. Cross-cutting only
 components/ui/           shadcn primitives. Do not add to this
-components/layout/       app shell and page templates
+components/patterns/     page templates — record table, detail page, form,
+                         summary strip, states. Do not add to this
+components/layout/       the app shell(s) — nav, header, content frame
 
 ## Module rules
 - Cross-module imports go through the module's index.ts only.
@@ -183,9 +210,9 @@ components/layout/       app shell and page templates
 - Seams are listed in docs/architecture.md. Don't test at new ones.
 
 ## UI rules
-- Compose from components/ui/. Never add to it.
-- If a needed component doesn't exist, STOP and ask. Never invent one.
-- Every page uses a template from components/layout/.
+- Compose from components/ui/ and components/patterns/. Never add to either.
+- Every page opens inside a shell from components/layout/.
+- If a needed pattern doesn't exist, STOP and ask. Never invent one.
 - All values from theme tokens. No arbitrary values (p-[13px]), no raw hex.
 - Icons: <set> only. 16px inline, 20px standalone.
 - One accent element per screen — the primary action.

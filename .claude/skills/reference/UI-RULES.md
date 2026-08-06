@@ -68,7 +68,7 @@ Project-specific rules in `docs/design.md` and `CLAUDE.md` **override** anything
 
 ## Layout
 
-- [ ] Every page uses a template from `components/layout/` — no invented layouts
+- [ ] Every page opens inside a shell from `components/layout/` and composes patterns from `components/patterns/` — no invented layouts
 - [ ] Page-level actions top-right of the page header, consistently
 - [ ] Max content width set — full-width on a 27" monitor is unusable
 - [ ] Works at 1280px
