@@ -39,8 +39,14 @@ export const Default: Story = {
   },
 };
 
-/** With filters and a visible toggle. */
+/** With filters and a visible toggle. Interactive — the count follows them. */
 export const WithFilters: Story = {
+  args: {
+    query: "",
+    onQuery: () => {},
+    count: 47,
+    total: 47,
+  },
   render: function Render() {
     const [query, setQuery] = useState("");
     const [location, setLocation] = useState("all");

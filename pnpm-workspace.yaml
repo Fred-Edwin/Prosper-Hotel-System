@@ -1,0 +1,15 @@
+allowBuilds:
+  esbuild: false
+minimumReleaseAgeExclude:
+  - '@chromatic-com/storybook@5.3.0'
+  - '@storybook/addon-a11y@10.5.7'
+  - '@storybook/addon-docs@10.5.7'
+  - '@storybook/addon-vitest@10.5.7'
+  - '@storybook/builder-vite@10.5.7'
+  - '@storybook/csf-plugin@10.5.7'
+  - '@storybook/nextjs-vite@10.5.7'
+  - '@storybook/react-dom-shim@10.5.7'
+  - '@storybook/react-vite@10.5.7'
+  - '@storybook/react@10.5.7'
+  - storybook@10.5.7
+  - vite@8.2.1
