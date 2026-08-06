@@ -78,6 +78,24 @@ Consequences already applied, and the reason each is not its own destination:
 
 ## Colour
 
+**The accent is violet.** Chosen from a shortlist that ruled out teal, deep green
+and amber *before* any visual comparison: three semantic colours are already
+spoken for — red danger, green success, amber warning — and an accent that sits
+near any of them produces a primary button mistakable for a state. That
+constraint leaves the blue-to-violet arc and essentially nothing else.
+
+Violet keeps blue's structural advantages — maximum hue distance from red and
+green, strongest colour-blind safety — while being distinctive enough that the
+software has an identity. Validated with the `dataviz` script rather than by eye:
+against danger red, ΔE 30.4 under protanopia against a target of ≥8; step 600
+clears AA on white at 6.37.
+
+**The brand colour and the accent are allowed to differ.** The client's logo is
+purple; violet sits beside it without the interface trying to *be* the logo. A
+logo lives on white at large size, while an accent must clear 4.5:1 at 14px and
+survive hover and disabled states — so derive a ramp from the brand hue rather
+than using the brand hex directly.
+
 **One accent element per screen: the primary action.** Nothing else.
 
 This was got wrong once and is worth recording. An early till used the accent for

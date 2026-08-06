@@ -11,15 +11,15 @@
 import { useEffect, useState } from "react";
 
 const candidates = [
+  { key: "violet", label: "Violet — chosen", hue: "oklch(0.511 0.222 292)" },
   { key: "indigo", label: "Indigo", hue: "oklch(0.511 0.222 275)" },
-  { key: "violet", label: "Violet", hue: "oklch(0.511 0.222 292)" },
   { key: "blue", label: "Blue", hue: "oklch(0.546 0.245 262)" },
 ];
 
 const STORAGE_KEY = "design-accent";
 
 export function AccentSwitcher() {
-  const [accent, setAccent] = useState("indigo");
+  const [accent, setAccent] = useState("violet");
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);

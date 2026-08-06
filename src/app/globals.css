@@ -33,15 +33,19 @@
   --color-neutral-950: oklch(0.145 0.005 250);
 
   /* Accent — one only. The primary action, and nothing decorative.
-     Currently a candidate, not settled: the default here is indigo, and
-     `data-accent="violet"` on <html> swaps the ramp for comparison. Both were
-     validated against the semantic colours with the dataviz validator — worst
-     pair against danger red is ΔE 30+ under protanopia, well clear of the ≥8
-     target, and step 600 clears AA on white (6.20 / 6.37).
+     Violet is the chosen accent; indigo and blue are kept alongside it so the
+     choice can still be re-checked on real screens. `data-accent` on <html>
+     swaps the ramp, and the switcher stays until the user says to clear it.
 
-     Teal, deep green and amber were ruled out before validation: each collides
+     All three were validated against the semantic colours with the dataviz
+     validator rather than by eye: worst pair against danger red is ΔE 30.4
+     under protanopia for violet, well clear of the ≥8 target, and step 600
+     clears AA on white at 6.37.
+
+     Teal, deep green and amber were ruled out before validation — each collides
      with a semantic colour already spoken for, and a primary button that can be
-     mistaken for a success or warning state is a defect, not a style. */
+     mistaken for a success or warning state is a defect, not a style. That
+     leaves the blue-to-violet arc. */
   --color-brand-50: var(--brand-50);
   --color-brand-100: var(--brand-100);
   --color-brand-200: var(--brand-200);
@@ -97,21 +101,9 @@
   shadcn component variables, mapped onto the ramps above.
   Radius base is 0.375rem — enterprise software, not a consumer app.
 */
-/* Accent candidates. Indigo is the default; `data-accent="violet"` swaps it. */
+/* Violet is the chosen accent and the default. Indigo and blue remain
+   switchable while the choice is still being checked on real screens. */
 :root,
-:root[data-accent="indigo"] {
-  --brand-50: oklch(0.970 0.016 275);
-  --brand-100: oklch(0.936 0.036 275);
-  --brand-200: oklch(0.888 0.070 275);
-  --brand-300: oklch(0.820 0.120 275);
-  --brand-400: oklch(0.714 0.180 275);
-  --brand-500: oklch(0.606 0.212 275);
-  --brand-600: oklch(0.511 0.222 275);
-  --brand-700: oklch(0.446 0.204 275);
-  --brand-800: oklch(0.388 0.170 275);
-  --brand-900: oklch(0.343 0.132 275);
-}
-
 :root[data-accent="violet"] {
   --brand-50: oklch(0.970 0.016 292);
   --brand-100: oklch(0.936 0.036 292);
@@ -123,6 +115,19 @@
   --brand-700: oklch(0.446 0.204 292);
   --brand-800: oklch(0.388 0.170 292);
   --brand-900: oklch(0.343 0.132 292);
+}
+
+:root[data-accent="indigo"] {
+  --brand-50: oklch(0.970 0.016 275);
+  --brand-100: oklch(0.936 0.036 275);
+  --brand-200: oklch(0.888 0.070 275);
+  --brand-300: oklch(0.820 0.120 275);
+  --brand-400: oklch(0.714 0.180 275);
+  --brand-500: oklch(0.606 0.212 275);
+  --brand-600: oklch(0.511 0.222 275);
+  --brand-700: oklch(0.446 0.204 275);
+  --brand-800: oklch(0.388 0.170 275);
+  --brand-900: oklch(0.343 0.132 275);
 }
 
 :root[data-accent="blue"] {
