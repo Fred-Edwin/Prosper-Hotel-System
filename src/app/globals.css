@@ -177,15 +177,29 @@
   --chart-4: var(--color-neutral-500);
   --chart-5: var(--color-brand-800);
 
-  --sidebar: white;
-  --sidebar-foreground: var(--color-neutral-900);
-  --sidebar-primary: var(--color-brand-600);
-  --sidebar-primary-foreground: white;
-  --sidebar-accent: var(--color-neutral-100);
-  --sidebar-accent-foreground: var(--color-neutral-900);
-  --sidebar-border: var(--color-neutral-200);
-  --sidebar-ring: var(--color-brand-500);
+  /* The rail. Brand hue at low chroma — violet enough to be recognised, dark
+     enough to stay furniture. Not the brand hex: a logo lives on white at large
+     size, while this ground has to carry 13px text.
+
+     Chosen in the frame round from three candidates. Every foreground was
+     contrast-checked against it rather than eyeballed: muted labels at 7.29:1
+     and the accent position marker at 6.91:1, both well past AA's 4.5. That
+     headroom is what makes 13px muted labels legible on a dark ground at all.
+
+     The sidebar is the one surface visible on every admin screen, which makes
+     it the cheapest place to give the software an identity — and the only place
+     a strong colour sits without spending the page's one-accent budget. */
+  --sidebar: oklch(0.180 0.030 292);
+  --sidebar-foreground: oklch(0.960 0.008 292);
+  --sidebar-muted: oklch(0.720 0.022 292);
+  --sidebar-primary: var(--color-brand-400);
+  --sidebar-primary-foreground: oklch(0.180 0.030 292);
+  --sidebar-accent: oklch(1 0 0 / 9%);
+  --sidebar-accent-foreground: white;
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: var(--color-brand-400);
 }
+
 
 .dark {
   --background: var(--color-neutral-950);
@@ -213,13 +227,17 @@
   --input: oklch(1 0 0 / 15%);
   --ring: var(--color-brand-400);
 
-  --sidebar: var(--color-neutral-900);
-  --sidebar-foreground: var(--color-neutral-50);
+  /* The rail is already dark in light mode; in dark mode it goes slightly
+     deeper than the page so it stays a distinct surface rather than merging
+     into it. */
+  --sidebar: oklch(0.150 0.026 292);
+  --sidebar-foreground: oklch(0.960 0.008 292);
+  --sidebar-muted: oklch(0.720 0.022 292);
   --sidebar-primary: var(--color-brand-400);
-  --sidebar-primary-foreground: var(--color-neutral-950);
-  --sidebar-accent: var(--color-neutral-800);
-  --sidebar-accent-foreground: var(--color-neutral-50);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-primary-foreground: oklch(0.150 0.026 292);
+  --sidebar-accent: oklch(1 0 0 / 9%);
+  --sidebar-accent-foreground: white;
+  --sidebar-border: oklch(1 0 0 / 12%);
   --sidebar-ring: var(--color-brand-400);
 }
 
@@ -259,6 +277,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  /* Falls back to the light default, so an unset tone still renders. */
+  --color-sidebar-muted: var(--sidebar-muted, var(--color-neutral-600));
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);

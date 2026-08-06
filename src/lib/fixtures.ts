@@ -889,3 +889,334 @@ export const reasonLabel: Record<MovementReason, string> = {
   "given-away": "Given away",
   corrected: "Corrected",
 };
+
+/* ------------------------------------------------------------- people ------ */
+
+/**
+ * Per-person detail, for the People destination.
+ *
+ * A staff member is the app's most complete record: identity, employment terms,
+ * money the business owes them, money they owe it, and a history of days worked
+ * and handovers. It exercises every part of a detail page, which is why the
+ * detail template is prototyped on it.
+ */
+export interface WorkedDay {
+  date: string;
+  location: Location;
+  /** Absent days are recorded, not omitted — a gap is not the same as a zero. */
+  worked: boolean;
+  note?: string;
+}
+
+export interface StaffDetail {
+  id: string;
+  daysWorked: WorkedDay[];
+  /** Earned but not yet paid. */
+  owedToStaff: number;
+  /** Advances taken against future pay. */
+  advances: number;
+  lastPaid: string | null;
+  startedOn: string;
+  phone: string | null;
+  /** Shortfalls attributed to this person over the period. */
+  shortfalls: { date: string; amount: number; resolved: boolean }[];
+}
+
+export const staffDetail: Record<string, StaffDetail> = {
+  s2: {
+    id: "s2",
+    startedOn: "2024-03-11",
+    phone: "0721 664 032",
+    daysWorked: [
+      { date: "2026-08-06", location: "restaurant", worked: true },
+      { date: "2026-08-05", location: "restaurant", worked: true },
+      { date: "2026-08-04", location: "restaurant", worked: true },
+      { date: "2026-08-03", location: "restaurant", worked: false, note: "Sick" },
+      { date: "2026-08-02", location: "restaurant", worked: true },
+    ],
+    owedToStaff: 2800,
+    advances: 1000,
+    lastPaid: "2026-07-31",
+    shortfalls: [],
+  },
+  s3: {
+    id: "s3",
+    startedOn: "2025-06-02",
+    phone: "0715 220 981",
+    daysWorked: [
+      { date: "2026-08-06", location: "restaurant", worked: true },
+      { date: "2026-08-05", location: "restaurant", worked: true },
+      { date: "2026-08-04", location: "restaurant", worked: true },
+      { date: "2026-08-03", location: "restaurant", worked: true },
+      { date: "2026-08-02", location: "restaurant", worked: true },
+    ],
+    owedToStaff: 2750,
+    advances: 0,
+    lastPaid: "2026-07-31",
+    // STRESS CASE — an unresolved shortfall on a person's own record.
+    shortfalls: [{ date: "2026-08-06", amount: 250, resolved: false }],
+  },
+  s5: {
+    id: "s5",
+    startedOn: "2025-11-18",
+    phone: null,
+    daysWorked: [
+      { date: "2026-08-06", location: "canteen", worked: true },
+      { date: "2026-08-05", location: "canteen", worked: true },
+      { date: "2026-08-04", location: "canteen", worked: false, note: "Not needed" },
+      { date: "2026-08-03", location: "canteen", worked: true },
+      { date: "2026-08-02", location: "canteen", worked: true },
+    ],
+    owedToStaff: 2400,
+    advances: 500,
+    lastPaid: "2026-07-31",
+    shortfalls: [{ date: "2026-08-06", amount: 130, resolved: false }],
+  },
+};
+
+export const roleLabel: Record<Staff["role"], string> = {
+  owner: "Owner",
+  "store-manager": "Store manager",
+  cashier: "Cashier",
+  attendant: "Attendant",
+};
+
+/* ------------------------------------------------------------- recipes ----- */
+
+/**
+ * A recipe is not a record — it is a composition, and the only shape in this
+ * app that is neither a table row nor a fact list. Ingredient lines at cost sum
+ * to a batch cost; batch cost divided by yield gives the per-unit cost that
+ * every profit figure in the system depends on.
+ *
+ * **Recipes are versioned, effective-dated.** architecture.md: closed figures
+ * are never edited. Changing a recipe cannot retroactively change what last
+ * month's chips cost, so a change is a new version from a date, and past
+ * movements keep the version they were costed with. That is why the UI shows a
+ * version history rather than an edit form.
+ */
+export interface RecipeLine {
+  ingredientId: string;
+  qty: number;
+}
+
+export interface RecipeVersion {
+  /** Applies from this date forward. Past figures keep the earlier version. */
+  effectiveFrom: string;
+  /** How many sellable units one batch produces. */
+  yield: number;
+  lines: RecipeLine[];
+  note?: string;
+  recordedBy: string;
+}
+
+export interface Recipe {
+  id: string;
+  productId: string;
+  product: string;
+  unit: string;
+  /** Newest first. `versions[0]` is what applies today. */
+  versions: RecipeVersion[];
+}
+
+export const recipes: Recipe[] = [
+  {
+    id: "r1",
+    productId: "p2",
+    product: "Chips",
+    unit: "plate",
+    versions: [
+      {
+        effectiveFrom: "2026-07-01",
+        yield: 12,
+        recordedBy: "Janiffer",
+        note: "Oil went up; measured the batch again",
+        lines: [
+          { ingredientId: "i1", qty: 6 },
+          { ingredientId: "i4", qty: 0.5 },
+        ],
+      },
+      {
+        effectiveFrom: "2026-03-15",
+        yield: 12,
+        recordedBy: "Lucy",
+        lines: [
+          { ingredientId: "i1", qty: 6 },
+          { ingredientId: "i4", qty: 0.4 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "r2",
+    productId: "p4",
+    product: "Githeri",
+    unit: "plate",
+    versions: [
+      {
+        effectiveFrom: "2026-05-20",
+        yield: 20,
+        recordedBy: "Janiffer",
+        lines: [
+          { ingredientId: "i6", qty: 2 },
+          { ingredientId: "i2", qty: 1.5 },
+          { ingredientId: "i4", qty: 0.2 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "r3",
+    productId: "p5",
+    product: "Beef stew",
+    unit: "portion",
+    versions: [
+      {
+        effectiveFrom: "2026-06-02",
+        yield: 15,
+        recordedBy: "Janiffer",
+        lines: [
+          { ingredientId: "i5", qty: 3 },
+          { ingredientId: "i4", qty: 0.3 },
+          { ingredientId: "i1", qty: 1 },
+        ],
+      },
+    ],
+  },
+];
+
+/** Batch cost, and the per-unit cost every profit figure depends on. */
+export const recipeCost = (v: RecipeVersion) => {
+  const batch = v.lines.reduce((sum, l) => {
+    const ing = ingredients.find((i) => i.id === l.ingredientId);
+    return sum + (ing ? ing.unitCost * l.qty : 0);
+  }, 0);
+  return { batch, perUnit: v.yield > 0 ? batch / v.yield : 0 };
+};
+
+/** Cooked products with no recipe — their cost is unknown, never zero. */
+export const productsWithoutRecipe = () =>
+  products.filter(
+    (p) => p.kind === "cooked" && !recipes.some((r) => r.productId === p.id),
+  );
+
+/* ----------------------------------------------------------- customers ----- */
+
+/**
+ * Customer detail. Customers moved from Catalogue to People in round E — a
+ * customer is not reference data, it is a live balance that moves with every
+ * credit sale and every repayment.
+ *
+ * The balance is an arithmetic, not a stored number: credit extended less
+ * repayments. That is why the detail page shows the movements rather than the
+ * figure alone — the client's recurring question is never "what is the number"
+ * but "how did we get there".
+ */
+export interface CustomerMovement {
+  date: string;
+  kind: "credit" | "repayment";
+  description: string;
+  amount: number;
+  recordedBy: string;
+}
+
+export interface CustomerDetail {
+  id: string;
+  since: string;
+  movements: CustomerMovement[];
+  /** Oldest unpaid credit, in days. The number that decides who to chase. */
+  oldestDays: number;
+}
+
+export const customerDetail: Record<string, CustomerDetail> = {
+  c1: {
+    id: "c1",
+    since: "2025-09-14",
+    oldestDays: 18,
+    movements: [
+      { date: "2026-08-04", kind: "credit", description: "Lunch × 4", amount: 620, recordedBy: "Sarah" },
+      { date: "2026-08-01", kind: "repayment", description: "Cash", amount: 800, recordedBy: "Lucy" },
+      { date: "2026-07-19", kind: "credit", description: "Lunch × 6, sodas", amount: 1420, recordedBy: "Mercy" },
+    ],
+  },
+  c6: {
+    id: "c6",
+    since: "2025-04-02",
+    // STRESS CASE — the largest debt, and the oldest. Who to chase first.
+    oldestDays: 74,
+    movements: [
+      { date: "2026-08-05", kind: "credit", description: "Staff lunches, week", amount: 2100, recordedBy: "Janiffer" },
+      { date: "2026-07-02", kind: "repayment", description: "M-Pesa", amount: 1500, recordedBy: "Lucy" },
+      { date: "2026-05-24", kind: "credit", description: "Function catering", amount: 2850, recordedBy: "Lucy" },
+    ],
+  },
+};
+
+/* ------------------------------------------------------------- activity ---- */
+
+/**
+ * The audit trail. Every change, who made it, when.
+ *
+ * architecture.md: every entry carries two dates, effective and entered.
+ * Normally identical; for a correction they differ, and that gap is the
+ * information — it distinguishes "what Tuesday looked like on Tuesday" from
+ * "what Tuesday looks like now".
+ *
+ * This is the destination that reaches 1000+ rows first, so it is the one that
+ * has to stay readable at volume.
+ */
+export type ActivityKind =
+  | "sale"
+  | "handover"
+  | "expense"
+  | "movement"
+  | "correction"
+  | "void"
+  | "recipe"
+  | "person";
+
+export interface ActivityEntry {
+  id: string;
+  /** When it was recorded. */
+  enteredAt: string;
+  /** What day it belongs to. Differs from enteredAt only for a correction. */
+  effectiveOn: string;
+  kind: ActivityKind;
+  who: string;
+  what: string;
+  location: Location | null;
+  amount: number | null;
+  /** Why, where a correction or void requires one. */
+  reason?: string;
+}
+
+export const activityKindLabel: Record<ActivityKind, string> = {
+  sale: "Sale",
+  handover: "Handover",
+  expense: "Money out",
+  movement: "Stock",
+  correction: "Correction",
+  void: "Void",
+  recipe: "Recipe",
+  person: "People",
+};
+
+export const activity: ActivityEntry[] = [
+  { id: "ac1", enteredAt: "2026-08-06 14:22", effectiveOn: "2026-08-06", kind: "sale", who: "Sarah", what: "Sale S-1184 · 3 items", location: "restaurant", amount: 480 },
+  { id: "ac2", enteredAt: "2026-08-06 14:05", effectiveOn: "2026-08-06", kind: "expense", who: "Janiffer", what: "Charcoal, 2 sacks — pending your confirmation", location: "restaurant", amount: 1600 },
+  // STRESS CASE — a correction whose effective date is in the past.
+  { id: "ac3", enteredAt: "2026-08-06 13:40", effectiveOn: "2026-08-03", kind: "correction", who: "Lucy", what: "Canteen takings restated", location: "canteen", amount: 900, reason: "M-Pesa message arrived late; original figure kept" },
+  { id: "ac4", enteredAt: "2026-08-06 12:58", effectiveOn: "2026-08-06", kind: "movement", who: "Janiffer", what: "12kg potatoes issued to kitchen", location: "restaurant", amount: null },
+  // STRESS CASE — a void, attributed, shown on the day's summary.
+  { id: "ac5", enteredAt: "2026-08-06 12:31", effectiveOn: "2026-08-06", kind: "void", who: "Mercy", what: "Sale S-1179 voided", location: "restaurant", amount: 260, reason: "Customer changed their order" },
+  { id: "ac6", enteredAt: "2026-08-06 11:14", effectiveOn: "2026-08-06", kind: "recipe", who: "Janiffer", what: "Chips recipe — new version", location: null, amount: null, reason: "Oil went up; measured the batch again" },
+  { id: "ac7", enteredAt: "2026-08-06 09:02", effectiveOn: "2026-08-06", kind: "handover", who: "Anne", what: "Handed over cash and M-Pesa", location: "canteen", amount: 5270 },
+  { id: "ac8", enteredAt: "2026-08-05 19:47", effectiveOn: "2026-08-05", kind: "handover", who: "Sarah", what: "Handed over — cash short KSh 250", location: "restaurant", amount: 14350, reason: "Gave change from my own money for a 1000 note" },
+  { id: "ac9", enteredAt: "2026-08-05 18:20", effectiveOn: "2026-08-05", kind: "person", who: "Lucy", what: "Mercy — daily rate changed to KSh 550", location: null, amount: null },
+  { id: "ac10", enteredAt: "2026-08-05 16:05", effectiveOn: "2026-08-05", kind: "movement", who: "Janiffer", what: "Delivery received — 40kg potatoes", location: "restaurant", amount: 2600 },
+  { id: "ac11", enteredAt: "2026-08-05 15:31", effectiveOn: "2026-08-05", kind: "sale", who: "Anne", what: "Canteen takings recorded", location: "canteen", amount: 4800 },
+  { id: "ac12", enteredAt: "2026-08-05 11:12", effectiveOn: "2026-08-05", kind: "expense", who: "Lucy", what: "Electricity — July", location: null, amount: 3400 },
+];
+
+/** How many entries the real trail holds. The list must survive this. */
+export const activityTotal = 1284;
