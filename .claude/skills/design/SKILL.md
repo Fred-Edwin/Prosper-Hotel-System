@@ -116,9 +116,17 @@ Write it to the OS temp directory — `$TMPDIR` or `/tmp` — as `design-spec-<p
 
 **Never write it into the repo.** It describes the current state of an in-flight phase, which is exactly what goes stale. The durable parts land in `docs/design.md` at lock.
 
-Three blocks:
+Four blocks:
 
 ```markdown
+## Destinations
+| Destination | Rounds | State |
+|---|---|---|
+| Till | 2 | **Settled** — do not rebuild |
+| Dashboard | 3 | **Settled** |
+| Ledger | 2 | Live — cash table still wrong |
+| Stock | 0 | Not prototyped — build from templates at lock |
+
 ## Locked
 | Decision | Round | Choice — in the user's words |
 |---|---|---|
@@ -139,11 +147,15 @@ Three blocks:
 - Permission-denied view
 ```
 
+**Destinations** tracks convergence **per destination, not for the phase**. Different destinations settle at different times, and without this the model keeps offering rounds on something the user finished two rounds ago — or worse, quietly revises it. It also makes the lock honest: at lock, every destination is either settled or explicitly marked as never prototyped.
+
 **Locked** entries are **constraints on every later round**, not suggestions. A variant that re-litigates a locked decision is a bug — the user already spent judgment on it. If you believe a locked decision is now wrong, say so explicitly and ask; never quietly vary it.
 
 **Record the user's own words.** *"She needs to see a whole service without scrolling"* carries the reason; *"density: high"* doesn't. The reason is what tells a later round whether an exception is allowed.
 
 **Not yet shown** is seeded from the required states in `<skills>/reference/UI-RULES.md` and from the stress cases in step 2. It's the coverage tracker — it tells you what a later round should cover, and at lock it tells you what you never actually looked at.
+
+**Strike from it every round, or it decays into a list written once and never read.** A round that covered an empty state and left loading, error and permission-denied untouched should say so — that is the block doing its job. An untouched **Not yet shown** at lock usually means it stopped being maintained, not that nothing was covered.
 
 ### 2. Pick the screens to prototype on
 
@@ -169,6 +181,20 @@ If two drafts come out similar, redo one with an explicit constraint — *"do no
 
 Hold each variant to the page's real data, and to the project's styling system.
 
+**If a variant needs a chart, load the `dataviz` skill before writing any chart code.** Not after, and not from memory of what charts should look like — it carries a form heuristic that will often tell you the honest answer is a stat tile rather than a chart at all, and a palette validator to run instead of eyeballing colour-blind safety. Charts are exactly the kind of thing an agent produces plausible-looking slop for, which is what this whole skill exists to prevent.
+
+**Three is for round one. Later rounds usually want one.**
+
+Round one is a menu — the user does not yet know what they want, so options are how they find out. Once their feedback names specific parts to combine, it is a **specification**, and building three variants of a specification means deliberately building two the user has already ruled out.
+
+| The reaction sounds like | Build |
+|---|---|
+| *"I like B's header but C's table"* | **One** — the combination, assembled |
+| *"Something's off but I can't say what"* | **Three** — still exploring |
+| *"Not this, and not that either"* | **Stop** — go to [When a round disappoints](#when-a-round-disappoints) |
+
+**Say which you are building and why, before you build it.** A user expecting three and receiving one will read it as the model cutting corners; a user told "you've specified this, so I'm building the one thing you described" gets to correct the reading if it is wrong. Ask if genuinely unsure — it is one question and it saves a round.
+
 ### 4. Wire the switcher
 
 - One route, gated by `?variant=A|B|C`
@@ -180,9 +206,18 @@ Hold each variant to the page's real data, and to the project's styling system.
 
 Prefer mounting variants **inside a real existing page** over creating a standalone route. A throwaway route is a vacuum — every variant looks fine in isolation.
 
-### 5. Hand over
+### 5. Check the round against the rules, then hand over
 
-Give the user the URL and the variant keys. They'll flip through.
+**Before the user sees it, check what is mechanically checkable.** The rules in `<skills>/reference/UI-RULES.md` exist to be applied, and a round that breaks one wastes a whole cycle on something the skill already knew was wrong. Cheapest first:
+
+- **Accent count.** One accent element per screen — the primary action. Count them in the diff. Selection states, badges, active tabs and borders are the usual offenders, and they multiply quietly
+- **Arbitrary values.** No `p-[13px]`, no raw hex, no off-scale spacing
+- **Table density.** Rows 36–48px, cell padding 8–12px
+- **The disabled primary.** If the page's one accent element is off-screen or disabled in the default state, the hierarchy is inverted whatever the rest looks like
+
+This is a scan, not an audit — `/critique` does the thorough version after Build. It exists because these specific failures are invisible while building and obvious in a screenshot, which means the user catches them, which costs a round.
+
+**Then give the user the URL and the variant keys.** They'll flip through.
 
 **End every handover with the fallback line:**
 
@@ -288,13 +323,20 @@ Once converged:
 
 1. **Extract the winner into theme tokens.** Values live in the theme file — that's the source of truth
 2. **Build the app shell** — the persistent frame: nav, header, content area, collapsible sidebar with persisted state
-3. **Build the page templates.** The piece almost nobody builds and the highest-leverage thing here, because layout is where generic AI output is most visible:
+3. **Build the page templates.** The piece almost nobody builds and the highest-leverage thing here, because layout is where generic AI output is most visible.
+
+   **Derive them from the destinations that converged, not from this list.** The rounds spent the user's judgment on specific pages; a template that ignores what they settled throws that away and reintroduces the vacuum. Extract the *structure* the winner arrived at — where the header sits, how figures relate to their detail, how a table's rows and children are treated — and make it the template. Then check the list below for anything the app needs that no round covered, and build those too:
+
    - **List page** — header, toolbar with search and filters, table, pagination footer
    - **Detail page** — breadcrumb, header with actions, key-facts strip, tabs or sections
    - **Form page** — single column, sections, sticky action bar for long forms
    - **Dashboard page** — stat row, chart grid, recent activity
    - **Settings page** — sub-navigation, independently saveable panels
    - **Empty / onboarding** and **error / permission-denied** states
+
+   **A template is not a screenshot of the winning page.** It is the parts of it that recur, with the content taken out. If only one page will ever use it, it is a page, not a template.
+
+   **Every destination not prototyped must be buildable from these templates without a new decision.** That is the test — if `/build` would have to invent something to make the fourth admin page, the templates are incomplete and the vacuum is still there.
 4. **Write Storybook stories** for every component — default, hover, disabled, loading, error, empty
 5. **Write `docs/design.md`**, distilled from the design spec
 6. **Move losing variants to a throwaway branch** and delete the switcher from main
@@ -315,6 +357,10 @@ Once converged:
 
 A locked decision stated here becomes checkable by `/critique`. That's the payoff for recording the reason rather than just the choice.
 
+**Write every decision with its reason, and keep the reason project-specific.** *"No pie charts"* is a rule the next reader will resent and eventually break. *"No pie charts on the dashboard — the questions here are about level, not proportion, and a pie cannot mark an estimated segment as estimated"* tells them exactly when a pie would be fine. A rule without its reason cannot be applied to a case it did not anticipate.
+
+**Do not promote a project decision into the house style.** It is tempting, after a long phase, to write the user's preferences into `<skills>/reference/` so the next project starts ahead. Resist it unless the user asks: much of what a phase settles is a conclusion about *this* domain, and freezing it as a global rule hands the user a constraint they never chose. A preference earns promotion by recurring across several projects, and that is the user's call to make, not the model's.
+
 ### Handing over the design spec
 
 The spec has done its job once `docs/design.md` is written. It stays outside the repo.
@@ -331,6 +377,10 @@ If anything is still in **Not yet shown**, list it explicitly in the handover. T
 - **Never present the raw derived view list.** It is a completeness check, not a deliverable. Convert it to navigation first — a forty-item list is unreviewable, and its length reads as a proposal to build forty pages
 - **Never group screens by module when presenting to the user.** Modules describe where code lives. Group by person, because a working day is the only thing the user can judge
 - **Never produce variants that differ only in colour or copy.** Real variants disagree about structure
+- **Never build three variants of a specification.** Once the user's reaction names the parts to combine, build the one thing they described and say that's what you're doing
+- **Never hand over a round without the rules scan.** Accent count, arbitrary values, row density. These are invisible while building and obvious in a screenshot, so the user catches them, and that costs a round
+- **Never write a chart without loading `dataviz` first.** It will often say the honest form is a stat tile, and it carries a validator to run instead of eyeballing colour-blind safety
+- **Never promote a project decision into `<skills>/reference/` unprompted.** A phase's conclusions are about its domain; the house style is the user's to build
 - **Never judge a design on an empty page.** Real data, real density
 - **Never write token values into `docs/design.md`**
 - **Never leave losing variants or the switcher in main** — they rot fast and confuse the next reader, including the user in six months
@@ -341,6 +391,8 @@ If anything is still in **Not yet shown**, list it explicitly in the handover. T
 
 ## Done when
 
-A round produces no change the user cares about, the theme is set, the shell and templates are built, every component has stories, `docs/design.md` is written, and the design spec has been handed over.
+Every destination is either settled or explicitly marked as never prototyped, the theme is set, the shell and templates are built, every component has stories, `docs/design.md` is written, losing variants and the switcher are gone from main, and the design spec has been handed over.
+
+**The test that matters: could `/build` make a destination nobody prototyped, without inventing anything?** If not, the templates are incomplete — and converged screens without templates are decoration, because the vacuum the whole skill exists to close is still open.
 
 Then tell the user to run **`/foundation`**.
