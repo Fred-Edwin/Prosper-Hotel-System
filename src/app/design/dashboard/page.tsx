@@ -1,23 +1,19 @@
 import { Suspense } from "react";
 import { VariantSwitcher, type VariantDef } from "@/components/design/variant-switcher";
+import { DashboardR3 } from "@/components/design/dashboard/dashboard-r3";
 import { DashboardR2A } from "@/components/design/dashboard/dashboard-r2a";
 import { DashboardR2B } from "@/components/design/dashboard/dashboard-r2b";
 import { DashboardR2C } from "@/components/design/dashboard/dashboard-r2c";
-import { DashboardA } from "@/components/design/dashboard/dashboard-a";
-import { DashboardB } from "@/components/design/dashboard/dashboard-b";
-import { DashboardC } from "@/components/design/dashboard/dashboard-c";
 
 /**
- * Round two leads. All three share the settled figure treatment and differ in
- * layout only. Round one stays reachable for comparison until lock.
+ * Round three leads: the hybrid. Round two stays reachable for comparison
+ * until lock; round one is retired, having been superseded twice.
  */
 const variants: VariantDef[] = [
-  { key: "R2A", name: "P&L column", note: "Profit read downward, cash beside" },
-  { key: "R2B", name: "Headline row", note: "Breakdown under each figure" },
-  { key: "R2C", name: "Waterfall + tabs", note: "Proportional bars, tabbed detail" },
-  { key: "A", name: "R1 · Stat row", note: "For comparison" },
-  { key: "B", name: "R1 · Two questions", note: "For comparison" },
-  { key: "C", name: "R1 · Exceptions first", note: "For comparison" },
+  { key: "R3", name: "Hybrid", note: "C's waterfall · B's cash · charts" },
+  { key: "R2A", name: "R2 · P&L column", note: "For comparison" },
+  { key: "R2B", name: "R2 · Headline row", note: "For comparison" },
+  { key: "R2C", name: "R2 · Waterfall + tabs", note: "For comparison" },
 ];
 
 export default async function DashboardPage({
@@ -26,22 +22,18 @@ export default async function DashboardPage({
   searchParams: Promise<{ variant?: string }>;
 }) {
   const { variant } = await searchParams;
-  const key = variant?.toUpperCase() ?? "R2A";
+  const key = variant?.toUpperCase() ?? "R3";
 
   return (
     <Suspense>
-      {key === "R2B" ? (
+      {key === "R2A" ? (
+        <DashboardR2A />
+      ) : key === "R2B" ? (
         <DashboardR2B />
       ) : key === "R2C" ? (
         <DashboardR2C />
-      ) : key === "A" ? (
-        <DashboardA />
-      ) : key === "B" ? (
-        <DashboardB />
-      ) : key === "C" ? (
-        <DashboardC />
       ) : (
-        <DashboardR2A />
+        <DashboardR3 />
       )}
       <VariantSwitcher variants={variants} />
     </Suspense>

@@ -179,13 +179,6 @@ export function TillR2({
             </div>
           </div>
         )}
-
-        <div
-          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-700 text-[11px] font-semibold text-white"
-          title={`Signed in as ${staffName}`}
-        >
-          {staffName[0]}
-        </div>
       </header>
 
       {/* Mode. The one interactive thing up here, so it gets its own row.

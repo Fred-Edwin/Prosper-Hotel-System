@@ -480,8 +480,52 @@ export const storeFlow = [
   { item: "Chapati", received: 0, issued: 0, transferred: 20, closing: 64 },
 ];
 
+/**
+ * Fourteen trading days to today.
+ *
+ * Trend is the one thing a single figure cannot carry: it turns "6,820 today"
+ * into "6,820, and that is normal" or "…and that is the worst this fortnight".
+ * Sundays are closed, so the series has genuine gaps rather than zeroes — a
+ * chart that draws a zero on a closed day tells a lie about trading.
+ */
+export interface DayPoint {
+  date: string;
+  label: string;
+  revenue: number | null;
+  netProfit: number | null;
+  cash: number;
+  mpesa: number;
+  owed: number;
+  drawings: number;
+}
+
+export const trend: DayPoint[] = [
+  { date: "2026-07-24", label: "Fri 24", revenue: 21400, netProfit: 5980, cash: 18200, mpesa: 32100, owed: 6200, drawings: 0 },
+  { date: "2026-07-25", label: "Sat 25", revenue: 26800, netProfit: 8140, cash: 24600, mpesa: 38400, owed: 6450, drawings: 0 },
+  { date: "2026-07-26", label: "Sun 26", revenue: null, netProfit: null, cash: 24600, mpesa: 38400, owed: 6450, drawings: 0 },
+  { date: "2026-07-27", label: "Mon 27", revenue: 19200, netProfit: 5210, cash: 12800, mpesa: 40200, owed: 6890, drawings: 5000 },
+  { date: "2026-07-28", label: "Tue 28", revenue: 22600, netProfit: 6740, cash: 16400, mpesa: 41800, owed: 7100, drawings: 5000 },
+  { date: "2026-07-29", label: "Wed 29", revenue: 20100, netProfit: 5420, cash: 19900, mpesa: 39600, owed: 7340, drawings: 5000 },
+  { date: "2026-07-30", label: "Thu 30", revenue: 23800, netProfit: 7260, cash: 22100, mpesa: 42300, owed: 7520, drawings: 5000 },
+  { date: "2026-07-31", label: "Fri 31", revenue: 24900, netProfit: 7880, cash: 26800, mpesa: 44100, owed: 7680, drawings: 5000 },
+  { date: "2026-08-01", label: "Sat 1", revenue: 28200, netProfit: 9140, cash: 31200, mpesa: 46900, owed: 7810, drawings: 5000 },
+  { date: "2026-08-02", label: "Sun 2", revenue: null, netProfit: null, cash: 31200, mpesa: 46900, owed: 7810, drawings: 5000 },
+  { date: "2026-08-03", label: "Mon 3", revenue: 18900, netProfit: 4820, cash: 14600, mpesa: 43200, owed: 7940, drawings: 10000 },
+  { date: "2026-08-04", label: "Tue 4", revenue: 21700, netProfit: 6110, cash: 18300, mpesa: 41700, owed: 8120, drawings: 10000 },
+  { date: "2026-08-05", label: "Wed 5", revenue: 22400, netProfit: 6390, cash: 20900, mpesa: 40800, owed: 8210, drawings: 15000 },
+  { date: "2026-08-06", label: "Thu 6", revenue: 24000, netProfit: 6820, cash: 23200, mpesa: 41350, owed: 8030, drawings: 15000 },
+];
+
 export const money = (n: number) =>
   `KSh ${n.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
+
+/** Compact form for axis ticks and sparkline labels, where space is scarce. */
+export const moneyCompact = (n: number) => {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "−" : "";
+  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(abs >= 10000 ? 0 : 1)}k`;
+  return `${sign}${abs}`;
+};
 
 export const reasonLabel: Record<MovementReason, string> = {
   received: "Received",
