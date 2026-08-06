@@ -747,49 +747,107 @@ export const nonSalesCost = (r: NonSalesRow) =>
 
 export type CashCategory =
   | "handover"
+  | "repayment"
   | "stock"
   | "running"
   | "asset"
-  | "drawing"
-  | "repayment";
+  | "drawing";
 
-export interface CashRow {
+export interface CashTransaction {
   id: string;
-  date: string;
   description: string;
   category: CashCategory;
   method: "cash" | "mpesa";
   in: number;
   out: number;
-  balance: number;
   recordedBy: string;
   location: Location | "both";
 }
 
 /**
- * Cash movements, with a running balance.
+ * The cash ledger: one row per day, categories as columns.
  *
- * The balance column is the point: every other row is a delta, and this is
- * what makes the dashboard's "cash you should hold" traceable line by line.
+ * Deliberately the same shape as the product and store ledgers — opening, what
+ * came in, what went out by category, closing — so all three read as one kind
+ * of record. An earlier version listed one row per transaction, which made cash
+ * look like a different sort of thing and could not answer "what did I spend on
+ * stock this week" without arithmetic.
+ *
+ * Closing is the point of the row: every column is a delta, and the closing
+ * balance is what makes the dashboard's expected cash traceable line by line.
  */
-export const cashLedger: CashRow[] = [
-  { id: "c1", date: "2026-08-04", description: "Opening balance", category: "handover", method: "cash", in: 0, out: 0, balance: 41200, recordedBy: "—", location: "both" },
-  { id: "c2", date: "2026-08-04", description: "Rent — August", category: "running", method: "cash", in: 0, out: 25000, balance: 16200, recordedBy: "Lucy", location: "both" },
-  { id: "c3", date: "2026-08-04", description: "Handover — Sarah", category: "handover", method: "cash", in: 7840, out: 0, balance: 24040, recordedBy: "Lucy", location: "restaurant" },
-  { id: "c4", date: "2026-08-04", description: "Handover — Anne", category: "handover", method: "cash", in: 3960, out: 0, balance: 28000, recordedBy: "Lucy", location: "canteen" },
-  { id: "c5", date: "2026-08-05", description: "Electricity", category: "running", method: "cash", in: 0, out: 3200, balance: 24800, recordedBy: "Lucy", location: "both" },
-  { id: "c6", date: "2026-08-05", description: "Personal drawing", category: "drawing", method: "cash", in: 0, out: 15000, balance: 9800, recordedBy: "Lucy", location: "both" },
-  { id: "c7", date: "2026-08-05", description: "Handover — Sarah", category: "handover", method: "cash", in: 8120, out: 0, balance: 17920, recordedBy: "Lucy", location: "restaurant" },
-  { id: "c8", date: "2026-08-05", description: "Handover — Mercy", category: "handover", method: "cash", in: 5400, out: 0, balance: 23320, recordedBy: "Lucy", location: "restaurant" },
-  { id: "c9", date: "2026-08-05", description: "Repayment — Kimani", category: "repayment", method: "cash", in: 1200, out: 0, balance: 24520, recordedBy: "Anne", location: "canteen" },
-  { id: "c10", date: "2026-08-06", description: "Potatoes, beef — Nakuru supplier", category: "stock", method: "cash", in: 0, out: 9560, balance: 14960, recordedBy: "Lucy", location: "restaurant" },
-  { id: "c11", date: "2026-08-06", description: "Gas refill", category: "running", method: "cash", in: 0, out: 2400, balance: 12560, recordedBy: "Lucy", location: "restaurant" },
-  { id: "c12", date: "2026-08-06", description: "Handover — Sarah", category: "handover", method: "cash", in: 8150, out: 0, balance: 20710, recordedBy: "Lucy", location: "restaurant" },
-  { id: "c13", date: "2026-08-06", description: "Handover — Mercy", category: "handover", method: "cash", in: 5240, out: 0, balance: 25950, recordedBy: "Lucy", location: "restaurant" },
-  { id: "c14", date: "2026-08-06", description: "Handover — Anne", category: "handover", method: "cash", in: 4120, out: 0, balance: 30070, recordedBy: "Lucy", location: "canteen" },
-  { id: "c15", date: "2026-08-06", description: "Charcoal", category: "running", method: "cash", in: 0, out: 1800, balance: 28270, recordedBy: "Janiffer", location: "restaurant" },
-  { id: "c16", date: "2026-08-06", description: "Sodas, water — canteen delivery", category: "stock", method: "cash", in: 0, out: 4200, balance: 24070, recordedBy: "Anne", location: "canteen" },
-  { id: "c17", date: "2026-08-06", description: "Freezer repair", category: "running", method: "cash", in: 0, out: 870, balance: 23200, recordedBy: "Lucy", location: "restaurant" },
+export interface CashLedgerDay {
+  date: string;
+  opening: number;
+  handovers: number;
+  repayments: number;
+  stock: number;
+  running: number;
+  assets: number;
+  drawings: number;
+  closing: number;
+  transactions: CashTransaction[];
+}
+
+export const cashLedger: CashLedgerDay[] = [
+  {
+    date: "2026-08-02",
+    opening: 38600, handovers: 9400, repayments: 0,
+    stock: 0, running: 0, assets: 0, drawings: 0, closing: 48000,
+    transactions: [
+      { id: "t1", description: "Handover — Sarah", category: "handover", method: "cash", in: 6200, out: 0, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t2", description: "Handover — Anne", category: "handover", method: "cash", in: 3200, out: 0, recordedBy: "Lucy", location: "canteen" },
+    ],
+  },
+  {
+    date: "2026-08-03",
+    opening: 48000, handovers: 10800, repayments: 800,
+    stock: 12400, running: 6000, assets: 0, drawings: 0, closing: 41200,
+    transactions: [
+      { id: "t3", description: "Maize flour, rice — wholesaler", category: "stock", method: "cash", in: 0, out: 12400, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t4", description: "Wages — week", category: "running", method: "cash", in: 0, out: 6000, recordedBy: "Lucy", location: "both" },
+      { id: "t5", description: "Handover — Sarah", category: "handover", method: "cash", in: 7100, out: 0, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t6", description: "Handover — Anne", category: "handover", method: "cash", in: 3700, out: 0, recordedBy: "Lucy", location: "canteen" },
+      { id: "t7", description: "Repayment — Wanjiru", category: "repayment", method: "cash", in: 800, out: 0, recordedBy: "Anne", location: "canteen" },
+    ],
+  },
+  {
+    date: "2026-08-04",
+    opening: 41200, handovers: 11800, repayments: 0,
+    stock: 0, running: 25000, assets: 0, drawings: 0, closing: 28000,
+    transactions: [
+      { id: "t8", description: "Rent — August", category: "running", method: "cash", in: 0, out: 25000, recordedBy: "Lucy", location: "both" },
+      { id: "t9", description: "Handover — Sarah", category: "handover", method: "cash", in: 7840, out: 0, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t10", description: "Handover — Anne", category: "handover", method: "cash", in: 3960, out: 0, recordedBy: "Lucy", location: "canteen" },
+    ],
+  },
+  {
+    date: "2026-08-05",
+    opening: 28000, handovers: 13520, repayments: 1200,
+    stock: 0, running: 3200, assets: 0, drawings: 15000, closing: 24520,
+    transactions: [
+      { id: "t11", description: "Electricity", category: "running", method: "cash", in: 0, out: 3200, recordedBy: "Lucy", location: "both" },
+      { id: "t12", description: "Personal drawing", category: "drawing", method: "cash", in: 0, out: 15000, recordedBy: "Lucy", location: "both" },
+      { id: "t13", description: "Handover — Sarah", category: "handover", method: "cash", in: 8120, out: 0, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t14", description: "Handover — Mercy", category: "handover", method: "cash", in: 5400, out: 0, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t15", description: "Repayment — Kimani", category: "repayment", method: "cash", in: 1200, out: 0, recordedBy: "Anne", location: "canteen" },
+    ],
+  },
+  {
+    date: "2026-08-06",
+    opening: 24520, handovers: 17510, repayments: 0,
+    stock: 13760, running: 5070, assets: 0, drawings: 0, closing: 23200,
+    transactions: [
+      { id: "t16", description: "Potatoes, beef — Nakuru supplier", category: "stock", method: "cash", in: 0, out: 9560, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t17", description: "Sodas, water — canteen delivery", category: "stock", method: "cash", in: 0, out: 4200, recordedBy: "Anne", location: "canteen" },
+      { id: "t18", description: "Gas refill", category: "running", method: "cash", in: 0, out: 2400, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t19", description: "Charcoal", category: "running", method: "cash", in: 0, out: 1800, recordedBy: "Janiffer", location: "restaurant" },
+      { id: "t20", description: "Freezer repair", category: "running", method: "cash", in: 0, out: 870, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t21", description: "Handover — Sarah", category: "handover", method: "cash", in: 8150, out: 0, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t22", description: "Handover — Mercy", category: "handover", method: "cash", in: 5240, out: 0, recordedBy: "Lucy", location: "restaurant" },
+      { id: "t23", description: "Handover — Anne", category: "handover", method: "cash", in: 4120, out: 0, recordedBy: "Lucy", location: "canteen" },
+    ],
+  },
 ];
 
 export const cashCategoryLabel: Record<CashCategory, string> = {

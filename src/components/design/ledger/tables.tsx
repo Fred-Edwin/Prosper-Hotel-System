@@ -1,21 +1,31 @@
 "use client";
 
 /**
- * The ledger's four tables, shared across the round-two layouts.
+ * The ledger's four sub-ledgers.
  *
- * Column order follows the arithmetic — identity, opening, what came in, what
- * went out, what it was worth, closing — so reading a row left to right is
- * doing the calculation. Grouped headers let the eye find a region before it
- * finds a column, which is what makes twelve columns navigable rather than
- * merely present.
+ * "Ledger" is the record; "table" is the component showing it. Each of these is
+ * a sub-ledger in the accounting sense — the complete record of movements for
+ * one class of thing over a period — and the stats bar is the summary they roll
+ * up into.
  *
- * A period is one row per item, not thirty. Opening at the period's start,
- * movements summed across it, closing at its end; these columns aggregate, so
- * a month reduces honestly. The chevron expands a row to its days for when the
- * question moves from "what happened" to "when did it happen".
+ * All four share one shape: **one row per subject, movement types as columns**,
+ * opening on the left and closing on the right, so reading a row left to right
+ * is doing the calculation. Product and store rows are one per item; cash rows
+ * are one per day. That consistency is deliberate — an earlier cash version
+ * listed one row per transaction and read as a different sort of record
+ * entirely.
  *
- * Every table is searchable and filterable, and the first column is frozen so
- * horizontal scrolling never loses the item's identity.
+ * A period is one row per subject, not thirty. These columns aggregate, so a
+ * month reduces honestly; the chevron expands a row to its constituent days or
+ * transactions for when the question moves from "what happened" to "when".
+ *
+ * Child rows carry a deliberate visual treatment: a spine down the left anchored
+ * under the parent's chevron, recessive type, and a closing edge beneath the
+ * last child. Without it an expanded block in the middle of a long table bleeds
+ * into the next parent and the hierarchy is lost.
+ *
+ * Every sub-ledger is searchable and filterable, and the first column is frozen
+ * so horizontal scrolling never costs the subject's identity.
  */
 
 import { Fragment, useMemo, useState } from "react";
@@ -49,9 +59,28 @@ import { ChevronRight, Search, X, ArrowDownUp } from "lucide-react";
 /* ------------------------------------------------------------- primitives -- */
 
 /** Frozen first column: identity survives horizontal scrolling. */
-const FROZEN =
-  "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
+const FROZEN = "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
 const FROZEN_HEAD = "sticky left-0 z-30 bg-muted/60 border-r";
+
+/**
+ * Child-row treatment. Subtle enough not to shout, distinct enough that an
+ * expanded block never reads as a run of parents.
+ */
+const CHILD_ROW = "bg-muted/25 text-[12px]";
+const CHILD_FROZEN = "sticky left-0 z-20 bg-muted/25 border-r";
+const CHILD_LAST = "border-b-2 border-b-neutral-300";
+
+/** The spine: anchored under the parent's chevron, tying children to it. */
+function Spine({ label, muted }: { label: string; muted?: boolean }) {
+  return (
+    <span className="flex items-stretch gap-2 pl-[7px]">
+      <span className="w-px shrink-0 bg-neutral-300" aria-hidden />
+      <span className={`py-0.5 pl-2 ${muted ? "text-muted-foreground" : ""}`}>
+        {label}
+      </span>
+    </span>
+  );
+}
 
 function Toolbar({
   query,
@@ -126,16 +155,10 @@ function Num({
   tone?: "danger" | "success";
   strong?: boolean;
 }) {
-  if (value === null)
-    return <span className="text-muted-foreground">—</span>;
-  if (value === 0 && muted)
-    return <span className="text-muted-foreground">—</span>;
+  if (value === null) return <span className="text-muted-foreground">—</span>;
+  if (value === 0 && muted) return <span className="text-muted-foreground">—</span>;
   const cls =
-    tone === "danger"
-      ? "text-danger"
-      : tone === "success"
-        ? "text-success"
-        : "";
+    tone === "danger" ? "text-danger" : tone === "success" ? "text-success" : "";
   return (
     <span className={`tabular ${cls} ${strong ? "font-medium" : ""}`}>
       {asMoney ? money(value) : value}
@@ -143,9 +166,61 @@ function Num({
   );
 }
 
-/* ------------------------------------------------------- product movements -- */
+function Th({
+  children,
+  border,
+  align = "right",
+}: {
+  children?: React.ReactNode;
+  border?: boolean;
+  align?: "left" | "right";
+}) {
+  return (
+    <th
+      className={`px-2 py-2 font-medium whitespace-nowrap ${
+        align === "right" ? "text-right" : "text-left"
+      } ${border ? "border-l" : ""}`}
+    >
+      {children}
+    </th>
+  );
+}
 
-export function ProductMovements() {
+function Td({
+  children,
+  border,
+  align = "right",
+  muted,
+}: {
+  children?: React.ReactNode;
+  border?: boolean;
+  align?: "left" | "right";
+  muted?: boolean;
+}) {
+  return (
+    <td
+      className={`px-2 py-2 whitespace-nowrap ${
+        align === "right" ? "text-right" : "text-left"
+      } ${border ? "border-l" : ""} ${muted ? "text-muted-foreground" : ""}`}
+    >
+      {children}
+    </td>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <ChevronRight
+      className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-100 ${
+        open ? "rotate-90" : ""
+      }`}
+    />
+  );
+}
+
+/* ---------------------------------------------------------- product ledger -- */
+
+export function ProductLedgerTable() {
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState<Location | "all">("all");
   const [category, setCategory] = useState<string>("all");
@@ -170,10 +245,6 @@ export function ProductMovements() {
 
   const costOfSales = (r: ProductLedgerRow) =>
     r.unitCost === null ? null : r.unitCost * r.sold;
-  const profit = (r: ProductLedgerRow) => {
-    const c = costOfSales(r);
-    return c === null ? null : r.salesValue - c;
-  };
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
@@ -215,7 +286,6 @@ export function ProductMovements() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] text-[13px]">
             <thead>
-              {/* Grouped headers: find the region, then the column. */}
               <tr className="border-b bg-muted/60 text-[11px] text-muted-foreground">
                 <th className={`${FROZEN_HEAD} px-3 py-1.5 text-left font-medium`}>
                   Item
@@ -262,7 +332,7 @@ export function ProductMovements() {
             <tbody>
               {rows.map((r) => {
                 const cos = costOfSales(r);
-                const p = profit(r);
+                const p = cos === null ? null : r.salesValue - cos;
                 const margin =
                   p === null || r.salesValue === 0 ? null : (p / r.salesValue) * 100;
                 const open = expanded === r.id;
@@ -275,11 +345,7 @@ export function ProductMovements() {
                           className="flex items-center gap-1.5 text-left"
                           aria-expanded={open}
                         >
-                          <ChevronRight
-                            className={`size-3.5 shrink-0 text-muted-foreground transition-transform duration-100 ${
-                              open ? "rotate-90" : ""
-                            }`}
-                          />
+                          <Chevron open={open} />
                           <span>
                             <span className="font-medium">{r.item}</span>
                             <span className="block text-[11px] capitalize text-muted-foreground">
@@ -325,26 +391,35 @@ export function ProductMovements() {
                         />
                       </Td>
                     </tr>
+
                     {open &&
-                      r.days.map((d) => (
-                        <tr key={`${r.id}-${d.date}`} className="border-b bg-muted/20 text-[12px]">
-                          <td className={`${FROZEN} bg-muted/20 py-1.5 pr-3 pl-9 text-muted-foreground`}>
-                            {d.date}
-                          </td>
-                          <Td border><Num value={d.opening} muted /></Td>
-                          <Td />
-                          <Td border><Num value={d.produced} muted /></Td>
-                          <Td><Num value={d.received} muted /></Td>
-                          <Td><Num value={d.transferredIn} muted /></Td>
-                          <Td border><Num value={d.sold} /></Td>
-                          <Td><Num value={d.transferredOut} muted /></Td>
-                          <Td><Num value={d.nonSales} muted tone="danger" /></Td>
-                          <Td border><Num value={d.sold * r.sellingPrice} money muted /></Td>
-                          <Td /><Td /><Td /><Td />
-                          <Td border><Num value={d.closing} /></Td>
-                          <Td />
-                        </tr>
-                      ))}
+                      r.days.map((d, i) => {
+                        const last = i === r.days.length - 1;
+                        return (
+                          <tr
+                            key={`${r.id}-${d.date}`}
+                            className={`${CHILD_ROW} ${last ? CHILD_LAST : "border-b"}`}
+                          >
+                            <td className={`${CHILD_FROZEN} py-1.5 pr-3 pl-3`}>
+                              <Spine label={d.date} muted />
+                            </td>
+                            <Td border><Num value={d.opening} muted /></Td>
+                            <Td />
+                            <Td border><Num value={d.produced} muted /></Td>
+                            <Td><Num value={d.received} muted /></Td>
+                            <Td><Num value={d.transferredIn} muted /></Td>
+                            <Td border><Num value={d.sold} /></Td>
+                            <Td><Num value={d.transferredOut} muted /></Td>
+                            <Td><Num value={d.nonSales} muted tone="danger" /></Td>
+                            <Td border>
+                              <Num value={d.sold * r.sellingPrice} money muted />
+                            </Td>
+                            <Td /><Td /><Td /><Td />
+                            <Td border><Num value={d.closing} /></Td>
+                            <Td />
+                          </tr>
+                        );
+                      })}
                   </Fragment>
                 );
               })}
@@ -356,9 +431,9 @@ export function ProductMovements() {
   );
 }
 
-/* --------------------------------------------------------- store movements -- */
+/* ------------------------------------------------------------ store ledger -- */
 
-export function StoreMovementsTable() {
+export function StoreLedgerTable() {
   const [query, setQuery] = useState("");
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -460,9 +535,9 @@ export function StoreMovementsTable() {
   );
 }
 
-/* ---------------------------------------------- non-sales stock consumption -- */
+/* -------------------------------------------------------- non-sales ledger -- */
 
-export function NonSalesConsumption() {
+export function NonSalesLedgerTable() {
   const [query, setQuery] = useState("");
   const [reason, setReason] = useState<NonSalesReason | "all">("all");
 
@@ -471,17 +546,16 @@ export function NonSalesConsumption() {
     return nonSalesLedger.filter(
       (r) =>
         (reason === "all" || r.reason === reason) &&
-        (!q || r.item.toLowerCase().includes(q) || r.recordedBy.toLowerCase().includes(q)),
+        (!q ||
+          r.item.toLowerCase().includes(q) ||
+          r.recordedBy.toLowerCase().includes(q)),
     );
   }, [query, reason]);
 
   const totals = rows.reduce(
     (a, r) => {
       const c = nonSalesCost(r);
-      return {
-        cost: a.cost + c.value,
-        price: a.price + r.sellingPrice * r.qty,
-      };
+      return { cost: a.cost + c.value, price: a.price + r.sellingPrice * r.qty };
     },
     { cost: 0, price: 0 },
   );
@@ -509,7 +583,13 @@ export function NonSalesConsumption() {
       </Toolbar>
 
       {rows.length === 0 ? (
-        <Empty onClear={() => { setQuery(""); setReason("all"); }} filtered />
+        <Empty
+          onClear={() => {
+            setQuery("");
+            setReason("all");
+          }}
+          filtered
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-[13px]">
@@ -556,9 +636,7 @@ export function NonSalesConsumption() {
                         )}
                       </span>
                     </Td>
-                    <Td>
-                      <Num value={r.sellingPrice * r.qty} money muted />
-                    </Td>
+                    <Td><Num value={r.sellingPrice * r.qty} money muted /></Td>
                     <Td align="left" muted>{r.recordedBy}</Td>
                   </tr>
                 );
@@ -583,26 +661,48 @@ export function NonSalesConsumption() {
   );
 }
 
-/* ---------------------------------------------------------- cash movements -- */
+/* ------------------------------------------------------------- cash ledger -- */
 
-export function CashMovements() {
+/**
+ * One row per day, categories as columns — the same shape as the product and
+ * store ledgers, so all three read as one kind of record. Expanding a day gives
+ * its individual transactions.
+ */
+export function CashLedgerTable() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CashCategory | "all">("all");
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return cashLedger.filter(
-      (r) =>
-        (category === "all" || r.category === category) &&
-        (!q ||
-          r.description.toLowerCase().includes(q) ||
-          r.recordedBy.toLowerCase().includes(q)),
+    if (!q && category === "all") return cashLedger;
+    return cashLedger.filter((d) =>
+      d.transactions.some(
+        (t) =>
+          (category === "all" || t.category === category) &&
+          (!q ||
+            t.description.toLowerCase().includes(q) ||
+            t.recordedBy.toLowerCase().includes(q)),
+      ),
     );
   }, [query, category]);
 
+  const filtered = query !== "" || category !== "all";
+  const clear = () => {
+    setQuery("");
+    setCategory("all");
+  };
+
   const totals = rows.reduce(
-    (a, r) => ({ in: a.in + r.in, out: a.out + r.out }),
-    { in: 0, out: 0 },
+    (a, d) => ({
+      handovers: a.handovers + d.handovers,
+      repayments: a.repayments + d.repayments,
+      stock: a.stock + d.stock,
+      running: a.running + d.running,
+      assets: a.assets + d.assets,
+      drawings: a.drawings + d.drawings,
+    }),
+    { handovers: 0, repayments: 0, stock: 0, running: 0, assets: 0, drawings: 0 },
   );
 
   return (
@@ -630,112 +730,168 @@ export function CashMovements() {
       </Toolbar>
 
       {rows.length === 0 ? (
-        <Empty onClear={() => { setQuery(""); setCategory("all"); }} filtered />
+        <Empty onClear={clear} filtered={filtered} />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-[13px]">
+          <table className="w-full min-w-[980px] text-[13px]">
             <thead>
               <tr className="border-b bg-muted/60 text-[11px] text-muted-foreground">
-                <th className={`${FROZEN_HEAD} px-3 py-2 text-left font-medium`}>
-                  Description
+                <th className={`${FROZEN_HEAD} px-3 py-1.5 text-left font-medium`}>
+                  Day
                 </th>
-                <Th align="left">Date</Th>
-                <Th align="left">Category</Th>
-                <Th align="left">Method</Th>
-                <Th border>In</Th>
-                <Th>Out</Th>
+                <th className="border-l px-2 py-1.5 text-center font-medium">
+                  Opening
+                </th>
+                <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={2}>
+                  In
+                </th>
+                <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={4}>
+                  Out
+                </th>
+                <th className="border-l px-2 py-1.5 text-center font-medium">
+                  Closing
+                </th>
+              </tr>
+              <tr className="border-b text-[11px] text-muted-foreground">
+                <th className={`${FROZEN_HEAD} px-3 py-2 text-left font-medium`}>
+                  Date
+                </th>
                 <Th border>Balance</Th>
-                <Th align="left">By</Th>
+                <Th border>Handovers</Th>
+                <Th>Repayments</Th>
+                <Th border>Stock</Th>
+                <Th>Running</Th>
+                <Th>Assets</Th>
+                <Th>Drawings</Th>
+                <Th border>Balance</Th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="group border-b hover:bg-muted/40">
-                  <td className={`${FROZEN} px-3 py-2`}>
-                    <span className="font-medium">{r.description}</span>
-                    <span className="block text-[11px] capitalize text-muted-foreground">
-                      {r.location}
-                    </span>
-                  </td>
-                  <Td align="left" muted>{r.date}</Td>
-                  <Td align="left">
-                    <Badge variant="outline" className="text-[10px] font-normal">
-                      {cashCategoryLabel[r.category]}
-                    </Badge>
-                  </Td>
-                  <Td align="left" muted>
-                    {r.method === "mpesa" ? "M-Pesa" : "Cash"}
-                  </Td>
-                  <Td border>
-                    <Num value={r.in} money muted tone="success" />
-                  </Td>
-                  <Td>
-                    <Num value={r.out} money muted tone="danger" />
-                  </Td>
-                  <Td border>
-                    <Num value={r.balance} money strong />
-                  </Td>
-                  <Td align="left" muted>{r.recordedBy}</Td>
-                </tr>
-              ))}
+              {rows.map((d) => {
+                const open = expanded === d.date;
+                const shown = d.transactions.filter(
+                  (t) =>
+                    (category === "all" || t.category === category) &&
+                    (!query.trim() ||
+                      t.description.toLowerCase().includes(query.trim().toLowerCase()) ||
+                      t.recordedBy.toLowerCase().includes(query.trim().toLowerCase())),
+                );
+                return (
+                  <Fragment key={d.date}>
+                    <tr className="group border-b hover:bg-muted/40">
+                      <td className={`${FROZEN} px-3 py-2`}>
+                        <button
+                          onClick={() => setExpanded(open ? null : d.date)}
+                          className="flex items-center gap-1.5 text-left"
+                          aria-expanded={open}
+                        >
+                          <Chevron open={open} />
+                          <span>
+                            <span className="font-medium">{d.date}</span>
+                            <span className="block text-[11px] text-muted-foreground">
+                              {d.transactions.length} entries
+                            </span>
+                          </span>
+                        </button>
+                      </td>
+                      <Td border><Num value={d.opening} money /></Td>
+                      <Td border><Num value={d.handovers} money muted tone="success" /></Td>
+                      <Td><Num value={d.repayments} money muted tone="success" /></Td>
+                      <Td border><Num value={d.stock} money muted tone="danger" /></Td>
+                      <Td><Num value={d.running} money muted tone="danger" /></Td>
+                      <Td><Num value={d.assets} money muted tone="danger" /></Td>
+                      <Td><Num value={d.drawings} money muted tone="danger" /></Td>
+                      <Td border><Num value={d.closing} money strong /></Td>
+                    </tr>
+
+                    {open &&
+                      shown.map((t, i) => {
+                        const last = i === shown.length - 1;
+                        return (
+                          <tr
+                            key={t.id}
+                            className={`${CHILD_ROW} ${last ? CHILD_LAST : "border-b"}`}
+                          >
+                            <td className={`${CHILD_FROZEN} py-1.5 pr-3 pl-3`}>
+                              <Spine label={t.description} />
+                            </td>
+                            <Td border muted>
+                              {t.method === "mpesa" ? "M-Pesa" : "Cash"}
+                            </Td>
+                            <Td border>
+                              <Num
+                                value={t.category === "handover" ? t.in : 0}
+                                money
+                                muted
+                              />
+                            </Td>
+                            <Td>
+                              <Num
+                                value={t.category === "repayment" ? t.in : 0}
+                                money
+                                muted
+                              />
+                            </Td>
+                            <Td border>
+                              <Num
+                                value={t.category === "stock" ? t.out : 0}
+                                money
+                                muted
+                              />
+                            </Td>
+                            <Td>
+                              <Num
+                                value={t.category === "running" ? t.out : 0}
+                                money
+                                muted
+                              />
+                            </Td>
+                            <Td>
+                              <Num
+                                value={t.category === "asset" ? t.out : 0}
+                                money
+                                muted
+                              />
+                            </Td>
+                            <Td>
+                              <Num
+                                value={t.category === "drawing" ? t.out : 0}
+                                money
+                                muted
+                              />
+                            </Td>
+                            <Td border muted>
+                              {t.recordedBy}
+                            </Td>
+                          </tr>
+                        );
+                      })}
+                  </Fragment>
+                );
+              })}
+
               <tr className="bg-muted/40 font-medium">
-                <td className={`${FROZEN} bg-muted/40 px-3 py-2`}>Total</td>
-                <Td /><Td /><Td />
-                <Td border><Num value={totals.in} money strong tone="success" /></Td>
-                <Td><Num value={totals.out} money strong tone="danger" /></Td>
+                <td className={`${FROZEN} bg-muted/40 px-3 py-2`}>Period</td>
+                <Td border><Num value={rows[0]?.opening ?? 0} money /></Td>
+                <Td border><Num value={totals.handovers} money tone="success" /></Td>
+                <Td><Num value={totals.repayments} money tone="success" /></Td>
+                <Td border><Num value={totals.stock} money tone="danger" /></Td>
+                <Td><Num value={totals.running} money tone="danger" /></Td>
+                <Td><Num value={totals.assets} money muted tone="danger" /></Td>
+                <Td><Num value={totals.drawings} money tone="danger" /></Td>
                 <Td border>
-                  <Num value={rows[rows.length - 1]?.balance ?? 0} money strong />
+                  <Num value={rows[rows.length - 1]?.closing ?? 0} money strong />
                 </Td>
-                <Td />
               </tr>
             </tbody>
           </table>
         </div>
       )}
+      <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
+        Cash and M-Pesa carry their own balances and are never pooled. Assets and
+        drawings reduce this balance but not profit — the money has genuinely
+        left.
+      </p>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ cells -- */
-
-function Th({
-  children,
-  border,
-  align = "right",
-}: {
-  children?: React.ReactNode;
-  border?: boolean;
-  align?: "left" | "right";
-}) {
-  return (
-    <th
-      className={`px-2 py-2 font-medium whitespace-nowrap ${
-        align === "right" ? "text-right" : "text-left"
-      } ${border ? "border-l" : ""}`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  border,
-  align = "right",
-  muted,
-}: {
-  children?: React.ReactNode;
-  border?: boolean;
-  align?: "left" | "right";
-  muted?: boolean;
-}) {
-  return (
-    <td
-      className={`px-2 py-2 whitespace-nowrap ${
-        align === "right" ? "text-right" : "text-left"
-      } ${border ? "border-l" : ""} ${muted ? "text-muted-foreground" : ""}`}
-    >
-      {children}
-    </td>
   );
 }
