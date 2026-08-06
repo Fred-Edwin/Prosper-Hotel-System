@@ -1,21 +1,23 @@
 import { Suspense } from "react";
-import { VariantSwitcher, type VariantDef } from "@/components/design/variant-switcher";
+import {
+  VariantSwitcher,
+  type VariantDef,
+} from "@/components/design/variant-switcher";
 import { AccentSwitcher } from "@/components/design/accent-switcher";
 import { TillR2 } from "@/components/design/till/till-r2";
-import { TillA } from "@/components/design/till/till-a";
-import { TillB } from "@/components/design/till/till-b";
-import { TillC } from "@/components/design/till/till-c";
 
 /**
- * Round two leads. Round one stays reachable so the combination can be
- * compared against what it came from — deleted at lock along with the switcher.
+ * The till, settled after round two. The round-one variants are gone — they
+ * live on `design-variants-archive` if the reasoning behind the combination
+ * ever needs re-reading.
+ *
+ * The switcher stays for now, carrying the two locations: the same screen
+ * serves Sarah at the restaurant and Anne at the canteen, and the difference
+ * between them is worth being able to flip between.
  */
 const variants: VariantDef[] = [
-  { key: "R2", name: "Round two", note: "A's grid · B's modes · C's payments" },
-  { key: "R2C", name: "Round two — canteen", note: "Same screen, Anne's location" },
-  { key: "A", name: "R1 · One screen", note: "For comparison" },
-  { key: "B", name: "R1 · Three modes", note: "For comparison" },
-  { key: "C", name: "R1 · Toggle + lines", note: "For comparison" },
+  { key: "R2", name: "Restaurant", note: "Sarah · the counter flow" },
+  { key: "R2C", name: "Canteen", note: "Anne · same screen, her location" },
 ];
 
 export default async function TillPage({
@@ -29,13 +31,7 @@ export default async function TillPage({
   return (
     <Suspense>
       <div className="mx-auto max-w-md border-x">
-        {key === "A" ? (
-          <TillA />
-        ) : key === "B" ? (
-          <TillB />
-        ) : key === "C" ? (
-          <TillC />
-        ) : key === "R2C" ? (
+        {key === "R2C" ? (
           <TillR2 location="canteen" staffName="Anne" />
         ) : (
           <TillR2 />

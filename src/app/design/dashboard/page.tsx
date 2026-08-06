@@ -1,43 +1,13 @@
-import { Suspense } from "react";
-import { VariantSwitcher, type VariantDef } from "@/components/design/variant-switcher";
-import { AccentSwitcher } from "@/components/design/accent-switcher";
-import { DashboardR3 } from "@/components/design/dashboard/dashboard-r3";
-import { DashboardR2A } from "@/components/design/dashboard/dashboard-r2a";
-import { DashboardR2B } from "@/components/design/dashboard/dashboard-r2b";
-import { DashboardR2C } from "@/components/design/dashboard/dashboard-r2c";
+import { redirect } from "next/navigation";
 
 /**
- * Round three leads: the hybrid. Round two stays reachable for comparison
- * until lock; round one is retired, having been superseded twice.
+ * The dashboard now lives at `/design/shell`, inside the settled admin shell.
+ *
+ * This route existed to compare the round-two and round-three variants against
+ * each other; those are gone, and a dashboard judged outside its frame is
+ * exactly the vacuum the design phase closed. Redirects rather than 404s
+ * because the old URL is in the design spec and in the conversation history.
  */
-const variants: VariantDef[] = [
-  { key: "R3", name: "Hybrid", note: "C's waterfall · B's cash · charts" },
-  { key: "R2A", name: "R2 · P&L column", note: "For comparison" },
-  { key: "R2B", name: "R2 · Headline row", note: "For comparison" },
-  { key: "R2C", name: "R2 · Waterfall + tabs", note: "For comparison" },
-];
-
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ variant?: string }>;
-}) {
-  const { variant } = await searchParams;
-  const key = variant?.toUpperCase() ?? "R3";
-
-  return (
-    <Suspense>
-      {key === "R2A" ? (
-        <DashboardR2A />
-      ) : key === "R2B" ? (
-        <DashboardR2B />
-      ) : key === "R2C" ? (
-        <DashboardR2C />
-      ) : (
-        <DashboardR3 />
-      )}
-      <VariantSwitcher variants={variants} />
-      <AccentSwitcher />
-    </Suspense>
-  );
+export default function DashboardPage() {
+  redirect("/design/shell");
 }
