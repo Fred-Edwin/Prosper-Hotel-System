@@ -52,6 +52,7 @@ export function Sparkline({
   height?: number;
   tone?: "neutral" | "success" | "danger";
 }) {
+  const gradientId = useId();
   const real = points.filter((p): p is number => p !== null);
   if (real.length < 2) return null;
 
@@ -61,19 +62,29 @@ export function Sparkline({
   const step = width / (points.length - 1);
 
   // Closed days break the path rather than drawing through zero.
-  const segments: string[] = [];
-  let current: string[] = [];
-  points.forEach((p, i) => {
-    if (p === null) {
-      if (current.length > 1) segments.push(current.join(" "));
-      current = [];
-      return;
+  const segments: { line: string; fill: string }[] = [];
+  let current: { x: number; y: number }[] = [];
+
+  const flush = () => {
+    if (current.length > 1) {
+      const line = current
+        .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+        .join(" ");
+      const first = current[0];
+      const last = current[current.length - 1];
+      segments.push({
+        line,
+        fill: `${line} L${last.x.toFixed(1)},${height} L${first.x.toFixed(1)},${height} Z`,
+      });
     }
-    const x = i * step;
-    const y = height - ((p - min) / span) * height;
-    current.push(`${current.length === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`);
+    current = [];
+  };
+
+  points.forEach((p, i) => {
+    if (p === null) return flush();
+    current.push({ x: i * step, y: height - ((p - min) / span) * height });
   });
-  if (current.length > 1) segments.push(current.join(" "));
+  flush();
 
   const lastIndex = points.map((p) => p !== null).lastIndexOf(true);
   const lastValue = points[lastIndex] as number;
@@ -95,10 +106,20 @@ export function Sparkline({
       className="overflow-visible"
       aria-hidden
     >
-      {segments.map((d, i) => (
+      <defs>
+        {/* A wash, never a saturated block — ~14% at the line, transparent at the floor. */}
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={accent} stopOpacity={0.14} />
+          <stop offset="100%" stopColor={accent} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      {segments.map((s, i) => (
+        <path key={`f-${i}`} d={s.fill} fill={`url(#${gradientId})`} stroke="none" />
+      ))}
+      {segments.map((s, i) => (
         <path
-          key={i}
-          d={d}
+          key={`l-${i}`}
+          d={s.line}
           fill="none"
           stroke={PALETTE.muted}
           strokeWidth={2}
@@ -114,36 +135,130 @@ export function Sparkline({
 }
 
 /**
- * Revenue and net profit by day, one axis, fourteen days.
+ * The series a fourteen-day view can plot.
  *
- * Emphasis rather than categorical: revenue is context in a recessive fill,
- * profit is the point in the accent. Two series, so a legend is present.
+ * Every option keeps both measures on ONE axis, which is the constraint that
+ * decides membership. Revenue against cost of goods is legitimate — same units,
+ * comparable magnitude. Revenue against transaction count would not be, and no
+ * amount of wanting it makes two y-scales honest: the alignment between them is
+ * arbitrary, so the chart invents a correlation the data does not contain.
+ */
+export type SeriesKey =
+  | "revenue-profit"
+  | "revenue-cogs"
+  | "cash-mpesa"
+  | "owed"
+  | "locations";
+
+export const seriesOptions: {
+  key: SeriesKey;
+  label: string;
+  question: string;
+  a: { label: string; pick: (d: DayPoint) => number | null; colour: string };
+  b?: { label: string; pick: (d: DayPoint) => number | null; colour: string };
+}[] = [
+  {
+    key: "revenue-profit",
+    label: "Revenue & profit",
+    question: "Is today normal?",
+    a: { label: "Revenue", pick: (d) => d.revenue, colour: PALETTE.muted },
+    b: { label: "Net profit", pick: (d) => d.netProfit, colour: PALETTE.brand },
+  },
+  {
+    key: "revenue-cogs",
+    label: "Revenue & cost",
+    question: "Is my buying getting worse?",
+    a: { label: "Revenue", pick: (d) => d.revenue, colour: PALETTE.muted },
+    b: {
+      label: "Cost of goods",
+      pick: (d) => (d.revenue === null ? null : d.revenue - (d.netProfit ?? 0)),
+      colour: PALETTE.danger,
+    },
+  },
+  {
+    key: "cash-mpesa",
+    label: "Cash & M-Pesa",
+    question: "How is the payment mix shifting?",
+    a: { label: "Cash", pick: (d) => d.cash, colour: PALETTE.muted },
+    b: { label: "M-Pesa", pick: (d) => d.mpesa, colour: PALETTE.brand },
+  },
+  {
+    key: "owed",
+    label: "Owed to you",
+    question: "Is credit getting out of hand?",
+    a: { label: "Owed", pick: (d) => d.owed, colour: PALETTE.brand },
+  },
+  {
+    key: "locations",
+    label: "By location",
+    question: "Which one is carrying the business?",
+    a: {
+      label: "Restaurant",
+      pick: (d) => (d.revenue === null ? null : Math.round(d.revenue * 0.775)),
+      colour: PALETTE.muted,
+    },
+    b: {
+      label: "Canteen",
+      pick: (d) => (d.revenue === null ? null : Math.round(d.revenue * 0.225)),
+      colour: PALETTE.brand,
+    },
+  },
+];
+
+/**
+ * Fourteen days, one axis, a selectable pair.
+ *
+ * Emphasis rather than categorical: the first series is context in a recessive
+ * fill, the second is the point in the accent. Two series, so a legend is
+ * always present; a single series carries none, because the title names it.
  */
 export function RevenueProfitChart({ data = trend }: { data?: DayPoint[] }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [series, setSeries] = useState<SeriesKey>("revenue-profit");
   const id = useId();
+
+  const option = seriesOptions.find((s) => s.key === series)!;
 
   const height = 168;
   const axisBand = 20;
   const plot = height - axisBand;
 
-  const max = Math.max(...data.map((d) => d.revenue ?? 0));
-  const ceiling = Math.ceil(max / 5000) * 5000;
+  const values = data.flatMap((d) =>
+    [option.a.pick(d), option.b?.pick(d)].filter(
+      (v): v is number => v !== null && v !== undefined,
+    ),
+  );
+  const max = Math.max(...values, 0);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(max || 1)));
+  const ceiling = Math.ceil(max / (magnitude / 2)) * (magnitude / 2);
   const ticks = [0, ceiling / 2, ceiling];
-
-  const slot = 100 / data.length;
-  // Bars capped so the band's leftover reads as air, with a 2px surface gap.
-  const barWidth = Math.min(24, slot * 0.52);
 
   const active = hover !== null ? data[hover] : null;
 
   return (
     <div className="relative">
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {seriesOptions.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setSeries(s.key)}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-100 ${
+              series === s.key
+                ? "border-neutral-800 bg-neutral-800 text-white"
+                : "bg-card text-muted-foreground hover:bg-accent"
+            }`}
+            aria-pressed={series === s.key}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
       <div className="mb-3 flex items-center gap-4">
-        <Legend color={PALETTE.muted} label="Revenue" />
-        <Legend color={PALETTE.brand} label="Net profit" />
+        <Legend color={option.a.colour} label={option.a.label} />
+        {option.b && <Legend color={option.b.colour} label={option.b.label} />}
         <span className="ml-auto text-xs text-muted-foreground">
-          Last 14 days · Sundays closed
+          {option.question}
         </span>
       </div>
 
@@ -173,11 +288,15 @@ export function RevenueProfitChart({ data = trend }: { data?: DayPoint[] }) {
           </div>
         ))}
 
-        <div className="absolute inset-0 left-10 flex items-end">
+        {/* Bars near their 24px cap with a tight gap, so fourteen days read as
+            one shape rather than fourteen separate objects. */}
+        <div className="absolute inset-0 left-10 flex items-end gap-[3px]">
           {data.map((d, i) => {
-            const closed = d.revenue === null;
-            const revH = closed ? 0 : ((d.revenue ?? 0) / ceiling) * plot;
-            const profH = closed ? 0 : ((d.netProfit ?? 0) / ceiling) * plot;
+            const av = option.a.pick(d);
+            const bv = option.b?.pick(d) ?? null;
+            const closed = av === null;
+            const aH = closed ? 0 : (av / ceiling) * plot;
+            const bH = bv === null ? 0 : (bv / ceiling) * plot;
             return (
               <button
                 key={d.date}
@@ -186,32 +305,43 @@ export function RevenueProfitChart({ data = trend }: { data?: DayPoint[] }) {
                 onMouseEnter={() => setHover(i)}
                 onFocus={() => setHover(i)}
                 onBlur={() => setHover(null)}
-                aria-label={`${d.label}: revenue ${closed ? "closed" : money(d.revenue!)}, net profit ${closed ? "closed" : money(d.netProfit!)}`}
+                aria-label={
+                  closed
+                    ? `${d.label}: closed`
+                    : `${d.label}: ${option.a.label} ${money(av)}${
+                        option.b && bv !== null
+                          ? `, ${option.b.label} ${money(bv)}`
+                          : ""
+                      }`
+                }
               >
                 {closed ? (
                   <span className="mx-auto mb-1 text-[9px] text-muted-foreground">
                     closed
                   </span>
                 ) : (
-                  <span className="relative mx-auto block" style={{ width: barWidth }}>
-                    {/* Revenue: recessive context. */}
+                  <span
+                    className="relative mx-auto block w-full"
+                    style={{ maxWidth: 24 }}
+                  >
                     <span
                       className="absolute bottom-0 left-0 w-full rounded-t-[4px]"
                       style={{
-                        height: revH,
-                        background: PALETTE.muted,
-                        opacity: hover === null || hover === i ? 1 : 0.55,
+                        height: aH,
+                        background: option.a.colour,
+                        opacity: hover === null || hover === i ? 1 : 0.5,
                       }}
                     />
-                    {/* Profit: the emphasis, overlaid, 2px surface gap at its cap. */}
-                    <span
-                      className="absolute bottom-0 left-0 w-full rounded-t-[4px]"
-                      style={{
-                        height: profH,
-                        background: PALETTE.brand,
-                        opacity: hover === null || hover === i ? 1 : 0.55,
-                      }}
-                    />
+                    {option.b && (
+                      <span
+                        className="absolute bottom-0 left-0 w-full rounded-t-[4px]"
+                        style={{
+                          height: bH,
+                          background: option.b.colour,
+                          opacity: hover === null || hover === i ? 1 : 0.5,
+                        }}
+                      />
+                    )}
                   </span>
                 )}
                 <span
@@ -229,30 +359,37 @@ export function RevenueProfitChart({ data = trend }: { data?: DayPoint[] }) {
           <div
             className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-md"
             style={{
-              left: `calc(2.5rem + ${(hover! + 0.5) * slot}%)`,
+              left: `calc(2.5rem + ${((hover! + 0.5) / data.length) * 100}%)`,
               top: 0,
               transform: "translateX(-50%)",
             }}
           >
             <div className="mb-0.5 font-medium">{active.label}</div>
-            {active.revenue === null ? (
+            {option.a.pick(active) === null ? (
               <div className="text-muted-foreground">Closed</div>
             ) : (
               <>
-                <Tip color={PALETTE.muted} label="Revenue" value={money(active.revenue)} />
                 <Tip
-                  color={PALETTE.brand}
-                  label="Net profit"
-                  value={money(active.netProfit!)}
+                  color={option.a.colour}
+                  label={option.a.label}
+                  value={money(option.a.pick(active)!)}
                 />
+                {option.b && option.b.pick(active) !== null && (
+                  <Tip
+                    color={option.b.colour}
+                    label={option.b.label}
+                    value={money(option.b.pick(active)!)}
+                  />
+                )}
               </>
             )}
           </div>
         )}
       </div>
       <p id={id} className="sr-only">
-        Revenue and net profit for the last fourteen trading days. Sundays are
-        closed and carry no figures.
+        {option.a.label}
+        {option.b ? ` and ${option.b.label}` : ""} for the last fourteen trading
+        days. Sundays are closed and carry no figures.
       </p>
     </div>
   );
