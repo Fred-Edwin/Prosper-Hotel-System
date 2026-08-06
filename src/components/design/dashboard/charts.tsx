@@ -288,9 +288,13 @@ export function RevenueProfitChart({ data = trend }: { data?: DayPoint[] }) {
           </div>
         ))}
 
-        {/* Bars near their 24px cap with a tight gap, so fourteen days read as
-            one shape rather than fourteen separate objects. */}
-        <div className="absolute inset-0 left-10 flex items-end gap-[3px]">
+        {/* Tight intervals, square caps. What makes a trend readable is the gap
+            between days, not the width of the bars — narrow marks close together
+            read as one shape; the same marks spaced apart read as fourteen
+            separate objects. Square tops because a rounded cap adds a couple of
+            pixels of ambiguity to where the value actually sits, which matters
+            when the eye is comparing heights across a series. */}
+        <div className="absolute inset-0 left-10 flex items-end gap-[2px]">
           {data.map((d, i) => {
             const av = option.a.pick(d);
             const bv = option.b?.pick(d) ?? null;
@@ -322,10 +326,10 @@ export function RevenueProfitChart({ data = trend }: { data?: DayPoint[] }) {
                 ) : (
                   <span
                     className="relative mx-auto block w-full"
-                    style={{ maxWidth: 24 }}
+                    style={{ maxWidth: 14 }}
                   >
                     <span
-                      className="absolute bottom-0 left-0 w-full rounded-t-[4px]"
+                      className="absolute bottom-0 left-0 w-full"
                       style={{
                         height: aH,
                         background: option.a.colour,
@@ -334,7 +338,7 @@ export function RevenueProfitChart({ data = trend }: { data?: DayPoint[] }) {
                     />
                     {option.b && (
                       <span
-                        className="absolute bottom-0 left-0 w-full rounded-t-[4px]"
+                        className="absolute bottom-0 left-0 w-full"
                         style={{
                           height: bH,
                           background: option.b.colour,
