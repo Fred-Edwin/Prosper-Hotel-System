@@ -80,7 +80,13 @@ Check the diff for each. Anything missing is a finding.
 
 ## 5. Aggregate
 
-Present under `## Standards` and `## Ticket` headings, verbatim or lightly cleaned.
+Present under `## Standards` and `## Ticket` headings. The sub-agents may use precise jargon (module boundary, N+1, feature envy, etc.) — that vocabulary is what makes their analysis specific, so don't ask them to avoid it. But **when presenting each finding to the user, translate it**, don't just relay the sub-agent's raw wording:
+
+- **Name the term once, then say what it means in plain words** — a sentence a non-specialist can follow, not the jargon alone.
+- **State the concrete consequence** — what actually breaks, or could break, and under what condition (e.g. "if yield is ever 0, this divides by zero and shows a broken number" beats "missing validation").
+- **State severity plainly** — is this urgent, or a minor cleanup? Say so directly ("not urgent, nobody can hit this yet because X" or "worth fixing now because Y"), don't leave the user to infer it from category names.
+
+Keep the underlying finding (file/line, quoted hunk) intact — translate the framing, not the evidence.
 
 End with one line: total findings per axis, and the worst issue **within each axis**. **Don't pick a single winner across axes.**
 
