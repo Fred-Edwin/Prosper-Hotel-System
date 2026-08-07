@@ -67,6 +67,13 @@ export async function findIngredientById(
   return db.ingredient.findUnique({ where: { id } });
 }
 
+export async function findIngredientsByIds(
+  db: PrismaClient,
+  ids: string[],
+): Promise<Ingredient[]> {
+  return db.ingredient.findMany({ where: { id: { in: ids } } });
+}
+
 export async function createIngredientRecord(
   db: PrismaClient,
   data: { name: string; unitOfMeasure: string; lastKnownCostMinor: number | null },

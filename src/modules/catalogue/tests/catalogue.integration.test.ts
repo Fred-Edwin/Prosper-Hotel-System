@@ -359,6 +359,30 @@ describe("recipes", () => {
     expect(result).toEqual({ ok: false, reason: "not_found" });
   });
 
+  test("a recipe must have at least one ingredient line", async () => {
+    const { product } = await chipsAndFlour();
+
+    const result = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "invalid_recipe" });
+  });
+
+  test("a recipe's yield quantity must be positive", async () => {
+    const { product, flour } = await chipsAndFlour();
+
+    const result = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 0,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "invalid_recipe" });
+  });
+
   // Deactivation-time is deliberately permissive, unlike creation-time
   // validation above: an existing recipe is a past-and-present fact and
   // must stay readable exactly as it was, per "records that must not

@@ -6,6 +6,7 @@ import {
   createRecipeRecord,
   findIngredientById,
   findIngredientByName,
+  findIngredientsByIds,
   findProductById,
   findProductByName,
   findRecipeInForceAt,
@@ -23,7 +24,10 @@ type WriteResult<T> =
 
 type RecipeWriteResult<T> =
   | { ok: true; value: T }
-  | { ok: false; reason: "forbidden" | "not_found" | "invalid_ingredients" };
+  | {
+      ok: false;
+      reason: "forbidden" | "not_found" | "invalid_ingredients" | "invalid_recipe";
+    };
 
 function requireOwner(requester: AuthenticatedStaff): boolean {
   return requester.staff.role === "owner";
@@ -177,15 +181,22 @@ export async function createRecipe(
 ): Promise<RecipeWriteResult<Recipe>> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
+  if (input.lines.length === 0 || input.yieldQuantity <= 0) {
+    return { ok: false, reason: "invalid_recipe" };
+  }
+
   const product = await findProductById(db, input.productId);
   if (!product || product.kind !== "cooked_food" || !product.active) {
     return { ok: false, reason: "not_found" };
   }
 
-  const ingredients = await Promise.all(
-    input.lines.map((line) => findIngredientById(db, line.ingredientId)),
+  const ingredients = await findIngredientsByIds(
+    db,
+    input.lines.map((line) => line.ingredientId),
   );
-  const allActive = ingredients.every((ingredient) => ingredient?.active === true);
+  const allActive = input.lines.every((line) =>
+    ingredients.some((ingredient) => ingredient.id === line.ingredientId && ingredient.active),
+  );
   if (!allActive) return { ok: false, reason: "invalid_ingredients" };
 
   const recipe = await createRecipeRecord(db, {
@@ -203,15 +214,16 @@ async function withPerUnitCost(
   db: PrismaClient,
   recipe: Recipe,
 ): Promise<RecipeWithCost> {
-  const ingredients = await Promise.all(
-    recipe.lines.map((line) => findIngredientById(db, line.ingredientId)),
+  const ingredients = await findIngredientsByIds(
+    db,
+    recipe.lines.map((line) => line.ingredientId),
   );
 
   let totalCostMinor = 0;
-  for (let i = 0; i < recipe.lines.length; i++) {
-    const cost = ingredients[i]?.lastKnownCostMinor;
+  for (const line of recipe.lines) {
+    const cost = ingredients.find((i) => i.id === line.ingredientId)?.lastKnownCostMinor;
     if (cost == null) return { ...recipe, perUnitCostMinor: null };
-    totalCostMinor += cost * recipe.lines[i]!.quantity;
+    totalCostMinor += cost * line.quantity;
   }
 
   return { ...recipe, perUnitCostMinor: Math.round(totalCostMinor / recipe.yieldQuantity) };
