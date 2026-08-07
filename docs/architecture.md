@@ -246,6 +246,48 @@ development.
 benefit. Because the stack is not split across hosts, the preview-deployment problem — a
 preview frontend pointing at a production backend — does not arise.
 
+### Rollback
+
+Every image is tagged with its git SHA (`ghcr.io/fred-edwin/prosper-hotel:<sha>`), and
+`docker compose up -d --no-deps app` against a different `APP_IMAGE` swaps the running
+container in a few seconds without touching Postgres or Caddy. Tested by hand: rolled the
+live app back one deploy, confirmed `HTTP 200` on the rolled-back image, rolled forward
+again.
+
+To roll back manually, on the droplet as `deploy`:
+
+```bash
+cd ~/prosper-hotel
+export APP_IMAGE="ghcr.io/fred-edwin/prosper-hotel:<prior-sha>"
+echo "APP_IMAGE=${APP_IMAGE}" > .env.deploy
+docker compose --env-file .env --env-file .env.deploy -f docker-compose.prod.yml up -d --no-deps app
+```
+
+Prior SHAs are visible via `docker images | grep prosper-hotel` (only images already
+pulled to the droplet are available without a re-pull) or from `git log` on GitHub.
+
+**This does not undo a migration.** Per the backward-compatibility rule below, a plain
+image rollback should be enough in the overwhelming majority of cases — the old code
+runs fine against a schema that only ever grew forward-compatibly. A migration that
+truly can't roll forward safely is a design error to fix, not something this procedure
+handles.
+
+**Migrations run automatically on deploy and must be backward-compatible** — the
+currently-running (old) code must never break against the new schema, because rollback
+does not reverse a migration.
+
+### Backups
+
+Daily `pg_dump` via cron on the droplet (`~/prosper-hotel/backup.sh`, 03:00 UTC),
+gzipped into `~/backups/`, 14-day local retention. Restore tested by hand: dumped the
+live database, restored into a scratch database on the same Postgres instance, diffed
+table list and row counts against the source, dropped the scratch database.
+
+Current gap: backups live on the same disk as the database they back up — no off-site
+copy yet (e.g. DO Spaces/S3). Fine for now given the data volume and one-droplet setup,
+but worth revisiting before this matters for a real incident (disk failure or droplet
+loss would take out both).
+
 ---
 
 ## Observability
