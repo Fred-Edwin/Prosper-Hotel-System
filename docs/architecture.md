@@ -376,6 +376,19 @@ requires once there's more than one test file.
 It was never a `people`-specific concern — every module's integration tests
 need the same test-database client. Import it as `@/shared/test-db`.
 
+**Deployed but not yet logged-into live**, unlike this session's Sentry/
+rollback/backup work. The migration ran cleanly in production (confirmed
+via `\dt` over SSH — `products` and `stock_movements` exist) and the app
+serves `HTTP 200`, but production's `staff_members` table is empty —
+nobody has run `pnpm seed` against the live database, and seeding real
+customer infrastructure wasn't done without asking. So the login → stock
+path is verified against local Postgres and in CI (integration + E2E), and
+manually in a local browser across three roles with correct location
+scoping — but not yet exercised against the live URL with a real session.
+**Revisit before calling this fully proven**: either seed production with
+placeholder staff for a one-time check, or wait until the owner's first
+real staff member is entered and check then.
+
 ## Non-functionals
 
 Five users. Two locations. Roughly 150 sellable lines. A few hundred sales a day at most.
