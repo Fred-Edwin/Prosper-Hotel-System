@@ -102,17 +102,19 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   (timestamp format `YYYYMMDDHHMMSS`, matching existing folders), then
   `prisma migrate deploy` to apply it to the dev database.
 - **`prisma.config.ts` hardcodes `datasource.url` to `process.env.DATABASE_URL`
-  via `dotenv/config`**, so `prisma migrate deploy` always targets the dev
+  via `dotenv/config`**, so `prisma migrate deploy` always targeted the dev
   database — setting `DATABASE_URL=$TEST_DATABASE_URL` in the shell before
-  the command does nothing, because `dotenv/config` reloads `.env` and
+  the command did nothing, because `dotenv/config` reloads `.env` and
   overwrites it. There's no `--datasource-url` flag on `migrate deploy` in
-  this Prisma version. The test database currently has no scripted way to
-  pick up a new migration; it was applied by hand — a throwaway Node script
-  run from inside the repo (needed for `node_modules` resolution, see the
-  Testing/Playwright section above) that connects via `pg` directly to
-  `TEST_DATABASE_URL`, runs the migration SQL, and inserts a matching row
-  into `_prisma_migrations` so future `prisma migrate deploy` runs against
-  the test DB don't try to reapply it. **Worth fixing properly**: either a
-  `pnpm test:migrate` script, or a `prisma.config.ts` that reads
-  `TEST_DATABASE_URL` when `NODE_ENV=test`.
+  this Prisma version. **Fixed**: `prisma.config.ts`'s `datasource.url` now
+  reads `TEST_DATABASE_URL` when `NODE_ENV=test`, else `DATABASE_URL`, and
+  `pnpm test:migrate` runs `NODE_ENV=test prisma migrate deploy`. Run it
+  after adding a new migration so the test database picks it up before
+  `pnpm test`.
+  (Historical note, first hit on the catalogue ticket: before this fix, a
+  migration was applied to the test DB by hand — a throwaway Node script
+  run from inside the repo, needed for `node_modules` resolution per the
+  Testing/Playwright section above — that connected via `pg` directly and
+  inserted a matching `_prisma_migrations` row. `pnpm test:migrate` replaces
+  that entirely; no need to repeat it.)
 - **Added:** 2026-08-07

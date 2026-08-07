@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run --project integration",
+    "test:migrate": "NODE_ENV=test prisma migrate deploy",
     "test:e2e": "playwright test",
     "seed": "tsx prisma/seed.ts",
     "storybook": "storybook dev -p 6006",
