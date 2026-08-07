@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// docs/architecture.md: location is the cutting dimension, not an attribute.
+enum LocationCode {
+  restaurant
+  canteen
+}
+
+// docs/architecture.md: four roles, drawn from how the business runs.
+enum StaffRole {
+  owner
+  store_manager
+  cashier
+  attendant
+}
+
+model Location {
+  id      String       @id @default(cuid())
+  code    LocationCode @unique
+  name    String
+  staff   StaffMember[]
+
+  @@map("locations")
+}
+
+model StaffMember {
+  id         String    @id @default(cuid())
+  name       String
+  phone      String    @unique
+  pinHash    String
+  role       StaffRole
+  locationId String
+  location   Location  @relation(fields: [locationId], references: [id])
+  // docs/architecture.md: deactivated, never deleted — a former employee's
+  // sales must stay attributed to them.
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  sessions   Session[]
+
+  @@map("staff_members")
+}
+
+model Session {
+  id            String      @id @default(cuid())
+  token         String      @unique
+  staffMemberId String
+  staffMember   StaffMember @relation(fields: [staffMemberId], references: [id])
+  expiresAt     DateTime
+  createdAt     DateTime    @default(now())
+
+  @@map("sessions")
+}
