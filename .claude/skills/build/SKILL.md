@@ -34,7 +34,7 @@ Read `docs/gotchas.md` **only if something looks strange** — it's a conditiona
 
 Aim for **few exports**. Four exports means four ways for other modules to become entangled. A lot of behaviour behind a small interface.
 
-For UI work, identify which existing components and which page template this composes from.
+For UI work, identify which existing components and which page template this composes from. **If the ticket needs a screen shape Design never prototyped** — check `docs/design.md` and the Storybook stories under `components/patterns/`, `components/layout/`, and `components/design/` (design-reference branch/worktree) for precedent. No precedent means this checkpoint carries a visual review, not just an interface review — see below.
 
 ## 3. Checkpoint — the one involvement point
 
@@ -43,10 +43,13 @@ Present to the user:
 1. The interface plan — what's exposed, what's internal
 2. The seam the tests will sit at
 3. Any concerns about the ticket
+4. **For a new screen composition with no Design precedent:** a rendered preview, not a description. Build the composition as a Storybook story first (see step 4a), **run the same pre-checklist scan Design runs before every handover** (`UI-RULES.md`'s cheapest checks: accent count, arbitrary values, table/row density, the primary action not disabled or off-screen) and fix anything it catches before the user ever sees it — don't spend their attention on something the rules already knew was wrong. Populate the story with **real seed data, never lorem ipsum or an empty form with nothing else on the page** — Design's own rule ("never judge a design on an empty page") applies here too, and an empty login form is exactly the empty-page case that rule warns about. Then screenshot it and show the user before writing the route/page that uses it. Get explicit visual approval — "looks right" or a correction — the same way Design got approval by showing built variants, not by describing them. **A screen already covered by Design's locked set skips this** — it was already approved during Design.
 
 **Wait for approval or correction.**
 
-This is the highest-value minute in the loop. **Correcting an interface before implementation is nearly free; afterwards it's a rewrite.**
+This is the highest-value minute in the loop. **Correcting an interface before implementation is nearly free; afterwards it's a rewrite — and the same is true of a screen's visual composition, not just its data interface.** A checklist (`UI-RULES.md`) can confirm a screen isn't broken; it cannot confirm it looks considered. Only a human comparing the rendered result can. Do not treat passing the checklist as equivalent to passing this checkpoint.
+
+**Why this step exists at all.** Design's own "Done when" gate promises that `/build` should be able to make any destination Design didn't prototype "without inventing anything," from its templates alone. When that promise holds, this step is nearly instant — there's a template, precedent is obvious, the preview is a formality. When it doesn't hold (a screen shape genuinely has no precedent — this has already happened twice in this project), this step is the only thing standing between that gap and a screen nobody looked at before it shipped. Treat a frequent need for this step as a signal the template library is still incomplete, worth mentioning to the user, not just working around ticket by ticket.
 
 Keep it short. The user approves in a sentence most of the time.
 
@@ -65,6 +68,19 @@ Keep it short. The user approves in a sentence most of the time.
 ### If the ticket is type **plumbing** — build, then test if useful
 
 CRUD, wiring, config, layout. Test after, or not at all where a test would add nothing.
+
+### 4a. New screen compositions — Storybook first, always
+
+**Every new screen or reusable UI composition gets a Storybook story, no exception, written before (for a new composition needing the checkpoint's visual approval) or immediately alongside the page that uses it.**
+
+This is not optional polish — it's the mechanism that makes both this checkpoint's visual review and future consistency possible:
+
+1. Build the composition as a component taking props/state, not a page tied to routing or a live fetch — same shape as `stock-list.tsx`'s `StockListView` split from `StockList`. A page component wired to `useRouter()` or a real `fetch()` can't be rendered in isolation; split the presentational half out so it can.
+2. Write the story covering the states `docs/design.md`/`UI-RULES.md` require: default, loading, empty, error, and any permission-denied state that applies.
+3. Render it (`pnpm storybook`, or a headless screenshot) and use that for the checkpoint's visual review, not a mental description of the plan.
+4. The story stays in the repo afterward — it's the precedent the *next* ticket checks for before assuming a screen shape doesn't exist yet.
+
+**Retrofitting stories after the fact is the failure this exists to prevent** — a screen built without one gets shipped on a plan-only checkpoint, which is exactly how the login page passed every checkable rule in `UI-RULES.md` and still landed visually flat: nobody looked at it before it existed as real code.
 
 ### Throughout
 
