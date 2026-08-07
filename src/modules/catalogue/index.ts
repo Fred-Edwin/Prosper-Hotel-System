@@ -1,2 +1,4 @@
 // Products, ingredients, recipes, prices. See docs/architecture.md.
-export {};
+
+export { listProducts, findProductsByIds } from "./queries";
+export type { Product, ProductKind } from "./schema";

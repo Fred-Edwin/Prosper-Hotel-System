@@ -19,6 +19,7 @@ import {
   ClipboardList,
   Trash2,
   Receipt,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -79,9 +80,17 @@ const all: Record<string, StaffLink> = {
     icon: Trash2,
     hint: "Wasted, staff meals, complimentary",
   },
+  stock: {
+    key: "stock",
+    label: "Stock",
+    icon: Boxes,
+    hint: "What's on hand at your location",
+  },
 };
 
-/** Six, three and five — the counts settled at setup. */
+/** Six, three and five — the counts settled at setup. Stock added for every
+ * role in the tracer slice: it's read-only and useful to everyone who works
+ * a location, not tied to one task the way the others are. */
 export const staffNav: Record<StaffRole, StaffLink[]> = {
   "store-manager": [
     all.sell,
@@ -89,8 +98,16 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     all.issue,
     all.count,
     all.wastage,
+    all.stock,
     all.handover,
   ],
-  cashier: [all.sell, all.wastage, all.handover],
-  attendant: [all.takings, all.receive, all.count, all.wastage, all.handover],
+  cashier: [all.sell, all.wastage, all.stock, all.handover],
+  attendant: [
+    all.takings,
+    all.receive,
+    all.count,
+    all.wastage,
+    all.stock,
+    all.handover,
+  ],
 };

@@ -41,6 +41,11 @@ export default defineConfig({
           environment: 'node',
           include: ['src/modules/**/tests/**/*.integration.test.ts'],
           setupFiles: ['./vitest.setup.integration.ts'],
+          // Suites share one real test database and the LocationCode enum
+          // only has two values — parallel files racing to create/clean up
+          // "restaurant"/"canteen" rows collide. Run integration files
+          // sequentially rather than mocking or partitioning the schema.
+          fileParallelism: false,
         },
       },
     ],

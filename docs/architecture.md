@@ -314,6 +314,68 @@ a chance to throw; it can't see the app being unreachable).
 
 ---
 
+## The tracer slice
+
+Built to establish the pattern every ticket copies: staff logs in, sees
+their own location's current stock. Live in production, permission-enforced,
+covered by an integration test, an E2E test and a Storybook story.
+
+**A movement needs something to move.** `stock` owns `StockMovement`;
+`catalogue` owns the minimal `Product` it points at. Reading a product from
+`stock/logic.ts` goes through `catalogue/index.ts`
+(`findProductsByIds`), never `catalogue/queries.ts` directly — the first
+real exercise of the cross-module-import rule with two modules that
+actually need each other.
+
+**Current stock is computed, not stored**, per the data-lifecycle decision
+above: `getCurrentStockAtLocation()` sums `StockMovement.quantity` (signed:
+positive in, negative out) grouped by product, via Prisma's `groupBy`. The
+daily closing-balance snapshot is deliberately not built yet — the tracer
+proves the shape, not the optimisation.
+
+**`canAccessLocation()` is enforced one layer below the route**, in
+`stock/logic.ts`, not in `routes.ts` and not in the UI. `getCurrentStockAtLocation(db, requester, locationId)`
+returns `{ ok: false, reason: "forbidden" }` rather than throwing, so the
+route maps it to a 403 and the UI renders `PermissionDenied` from
+`components/patterns/states.tsx`. Every future location-scoped read or
+write should call it the same way, at the same layer.
+
+**A design gap surfaced mid-slice, and how it was resolved.** The design
+phase produced `stock-body.tsx` — an admin/owner valuation table (cost,
+value, filters) — but no staff-shell "what's on hand" screen. Per
+`docs/design.md`'s closing rule ("if a needed pattern doesn't exist, STOP
+and ask"), this was raised rather than silently reusing the admin table or
+inventing a screen unreviewed. Resolved by building a new staff-shell
+composition (`stock/ui/stock-list.tsx`) from existing primitives only — no
+table-toolbar chrome, no cost/value columns, large tap-target rows per the
+mobile rules. **The lesson for future tickets:** design coverage was
+audited screen-by-screen during Design, not role-by-role — a role having no
+screen for a real need it has is the kind of gap that surfaces during
+Foundation or a ticket, not before. Surface it the same way: stop, ask,
+resolve explicitly, don't default to either extreme (blind reuse or silent
+invention).
+
+**The staff shell's `StaffRole` type (`components/layout/staff-nav.ts`) has
+no `owner` case**, and uses kebab-case (`store-manager`) where Prisma's
+`StaffRole` enum uses snake_case (`store_manager`) and adds `owner`. The
+tracer's `/staff` route maps `owner` to the `store-manager` nav (the
+broadest existing list) as a stopgap — `docs/scope.md`'s "still to
+establish" list doesn't cover this, so it's a real open question: does the
+owner get her own staff-shell nav, or is "broadest existing list" the
+permanent answer? Decide before a ticket needs the distinction to matter.
+
+**Integration test files must run sequentially.** `LocationCode` only has
+two values (`restaurant`, `canteen`) and every integration suite creates its
+own `Location` rows against the one shared real test database. Two suites
+racing in parallel collide on the enum's uniqueness constraint. Fixed with
+`fileParallelism: false` on the `integration` project in `vitest.config.ts`
+— not a workaround, just what "one real shared test database" actually
+requires once there's more than one test file.
+
+**`test-db.ts` moved from `modules/people/tests/` to `shared/test-db.ts`.**
+It was never a `people`-specific concern — every module's integration tests
+need the same test-database client. Import it as `@/shared/test-db`.
+
 ## Non-functionals
 
 Five users. Two locations. Roughly 150 sellable lines. A few hundred sales a day at most.

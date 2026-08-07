@@ -22,29 +22,81 @@ enum StaffRole {
 }
 
 model Location {
-  id      String       @id @default(cuid())
-  code    LocationCode @unique
-  name    String
-  staff   StaffMember[]
+  id        String          @id @default(cuid())
+  code      LocationCode    @unique
+  name      String
+  staff     StaffMember[]
+  movements StockMovement[]
 
   @@map("locations")
 }
 
 model StaffMember {
-  id         String    @id @default(cuid())
+  id         String          @id @default(cuid())
   name       String
-  phone      String    @unique
+  phone      String          @unique
   pinHash    String
   role       StaffRole
   locationId String
-  location   Location  @relation(fields: [locationId], references: [id])
+  location   Location        @relation(fields: [locationId], references: [id])
   // docs/architecture.md: deactivated, never deleted — a former employee's
   // sales must stay attributed to them.
-  active     Boolean   @default(true)
-  createdAt  DateTime  @default(now())
+  active     Boolean         @default(true)
+  createdAt  DateTime        @default(now())
   sessions   Session[]
+  movements  StockMovement[]
 
   @@map("staff_members")
+}
+
+// docs/architecture.md: catalogue owns products; stock owns movements.
+// Trimmed to what the tracer slice needs — see CONTEXT.md for the full
+// four-kind vocabulary this mirrors.
+enum ProductKind {
+  goods
+  cooked_food
+  service
+  packaging
+}
+
+model Product {
+  id        String          @id @default(cuid())
+  name      String
+  kind      ProductKind
+  createdAt DateTime        @default(now())
+  movements StockMovement[]
+
+  @@map("products")
+}
+
+// Trimmed subset of CONTEXT.md's full reason list (received, issued,
+// produced, transferred, sold, sold-derived, wasted, consumed, given away,
+// corrected) — enough for the tracer's receive/sell pattern. The full list
+// is deferred to the real stock ticket.
+enum StockMovementReason {
+  received
+  transferred
+  sold
+  wasted
+  corrected
+}
+
+model StockMovement {
+  id            String              @id @default(cuid())
+  productId     String
+  product       Product             @relation(fields: [productId], references: [id])
+  locationId    String
+  location      Location            @relation(fields: [locationId], references: [id])
+  // Signed: positive for stock arriving, negative for stock leaving.
+  // docs/architecture.md: a stock level is not a stored number, it is the
+  // sum of the movements.
+  quantity      Int
+  reason        StockMovementReason
+  staffMemberId String
+  staffMember   StaffMember         @relation(fields: [staffMemberId], references: [id])
+  occurredAt    DateTime            @default(now())
+
+  @@map("stock_movements")
 }
 
 model Session {

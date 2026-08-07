@@ -132,6 +132,7 @@ export function StaffHome({
       <button
         onClick={() => onOpen(primary.key)}
         className="mb-2 flex w-full items-center gap-3 rounded-lg border bg-card p-4 text-left transition-colors duration-100 active:bg-muted"
+        data-testid={`staff-tile-${primary.key}`}
       >
         <primary.icon className="size-6 shrink-0" />
         <div className="min-w-0 flex-1">
@@ -151,6 +152,7 @@ export function StaffHome({
               key={l.key}
               onClick={() => onOpen(l.key)}
               className="flex min-h-[88px] flex-col items-start justify-between rounded-lg border bg-card p-3 text-left transition-colors duration-100 active:bg-muted"
+              data-testid={`staff-tile-${l.key}`}
             >
               <Icon className="size-5 text-muted-foreground" />
               <div>

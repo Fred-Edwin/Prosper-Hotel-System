@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin, login, logout } from "@/modules/people";
 import { getAuthenticatedStaff } from "../logic";
-import { testDb } from "./test-db";
+import { testDb } from "@/shared/test-db";
 
 const PHONE = "+254700111222";
 const PIN = "4821";

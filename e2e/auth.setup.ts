@@ -6,11 +6,17 @@ const STORAGE_STATE = "e2e/.auth/staff.json";
 const SEED_PHONE = "+254700000003"; // Sarah Njeri, cashier, restaurant
 const SEED_PIN = "1234";
 
-setup("authenticate as a seeded cashier", async ({ request }) => {
-  const response = await request.post("/api/auth/login", {
-    data: { phone: SEED_PHONE, pin: SEED_PIN },
-  });
-  expect(response.ok()).toBeTruthy();
+// Through the real login page rather than a direct API call — this is what
+// makes the login page itself covered by E2E, not just built. A broken
+// login page produces one failing setup, not forty failing specs, because
+// every other spec reuses the saved storage state below.
+setup("authenticate as a seeded cashier", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByTestId("login-phone").fill(SEED_PHONE);
+  await page.getByTestId("login-pin").fill(SEED_PIN);
+  await page.getByTestId("login-submit").click();
 
-  await request.storageState({ path: STORAGE_STATE });
+  await expect(page).toHaveURL("/staff");
+
+  await page.context().storageState({ path: STORAGE_STATE });
 });
