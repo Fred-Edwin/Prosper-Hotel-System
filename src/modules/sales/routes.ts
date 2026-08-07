@@ -1,10 +1,11 @@
 import { db } from "@/shared/db";
 import { getSession, listCustomers } from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
-import { recordCounterSale, listTodaysSalesForStaff } from "./logic";
+import { recordCounterSale, listTodaysSalesForStaff, voidSale } from "./logic";
 
 function writeStatus(reason: string): number {
   if (reason === "forbidden") return 403;
+  if (reason === "not_found") return 404;
   return 400;
 }
 
@@ -63,4 +64,19 @@ export async function todaysSalesRoute(): Promise<Response> {
   }));
 
   return Response.json({ sales });
+}
+
+export async function voidSaleRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const result = await voidSale(db, session, id);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ sale: result.sale });
 }

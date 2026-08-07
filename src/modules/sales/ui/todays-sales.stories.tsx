@@ -74,3 +74,19 @@ export const Denied: Story = {
   name: "Permission denied",
   args: { state: { status: "denied" } },
 };
+
+export const VoidSucceeds: Story = {
+  name: "Void — succeeds",
+  args: {
+    state: Default.args.state,
+    onVoid: async () => ({ ok: true }),
+  },
+};
+
+export const VoidFails: Story = {
+  name: "Void — fails",
+  args: {
+    state: Default.args.state,
+    onVoid: async () => ({ ok: false, error: "already_voided" }),
+  },
+};

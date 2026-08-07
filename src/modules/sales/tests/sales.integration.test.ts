@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { getCurrentStockAtLocation } from "@/modules/stock";
-import { getCustomerBalance, listTodaysSalesForStaff, recordCounterSale } from "../logic";
+import { getCustomerBalance, listTodaysSalesForStaff, recordCounterSale, voidSale } from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -380,5 +380,141 @@ describe("listTodaysSalesForStaff", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.sales[0].voided).toBe(false);
+  });
+});
+
+describe("voidSale", () => {
+  test("the staff member who recorded a sale can void it the same day", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "cash", amountMinor: 160 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.voided).toBe(true);
+    expect(result.sale.voidedBy).toBe("staff-1");
+    expect(result.sale.voidedAt).not.toBeNull();
+  });
+
+  test("a different staff member at the same location can also void the sale", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const result = await voidSale(
+      testDb,
+      staffMemberAt("staff-2", "Other Cashier", "cashier", restaurantId),
+      recorded.sale.id,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.voided).toBe(true);
+    expect(result.sale.voidedBy).toBe("staff-2");
+  });
+
+  test("voiding a sale returns every stocked line's quantity to its pre-sale level", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 3 }],
+      paymentLines: [{ method: "cash", amountMinor: 240 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    const stock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", restaurantId),
+      restaurantId,
+    );
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual([
+      expect.objectContaining({ productId: sodaId, quantityOnHand: 0 }),
+    ]);
+  });
+
+  test("voiding a sale with a service line creates no stock movement for it", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: photocopyId, quantity: 5 }],
+      paymentLines: [{ method: "cash", amountMinor: 25 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    expect(result.ok).toBe(true);
+    const stock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", restaurantId),
+      restaurantId,
+    );
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual([]);
+  });
+
+  test("voiding an already-void sale is rejected", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    expect(result).toEqual({ ok: false, reason: "already_voided" });
+  });
+
+  test("voiding an unknown sale is rejected", async () => {
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), "nonexistent");
+
+    expect(result).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  test("voiding a sale from a previous day is rejected", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    await testDb.sale.update({ where: { id: recorded.sale.id }, data: { occurredAt: yesterday } });
+
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    expect(result).toEqual({ ok: false, reason: "not_same_day" });
+  });
+
+  test("a cashier at a different location cannot void a sale there", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const result = await voidSale(
+      testDb,
+      staffAt("cashier", canteenId, "canteen"),
+      recorded.sale.id,
+    );
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
   });
 });

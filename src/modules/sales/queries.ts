@@ -1,6 +1,25 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { PaymentMethod, Sale, SaleFulfilment } from "./schema";
 
+export async function findSaleById(db: PrismaClient, saleId: string): Promise<Sale | null> {
+  return db.sale.findUnique({
+    where: { id: saleId },
+    include: { lines: true, paymentLines: true },
+  });
+}
+
+export async function markSaleVoided(
+  db: PrismaClient,
+  saleId: string,
+  voidedBy: string,
+): Promise<Sale> {
+  return db.sale.update({
+    where: { id: saleId },
+    data: { voided: true, voidedAt: new Date(), voidedBy },
+    include: { lines: true, paymentLines: true },
+  });
+}
+
 export async function createSaleRecord(
   db: PrismaClient,
   data: {

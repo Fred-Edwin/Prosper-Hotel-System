@@ -2,7 +2,13 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { canAccessLocation, findCustomerById, type AuthenticatedStaff } from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
 import { recordStockMovement } from "@/modules/stock";
-import { createSaleRecord, findSalesForStaffToday, sumCreditForCustomer } from "./queries";
+import {
+  createSaleRecord,
+  findSaleById,
+  findSalesForStaffToday,
+  markSaleVoided,
+  sumCreditForCustomer,
+} from "./queries";
 import type { PaymentMethod, Sale } from "./schema";
 
 export type RecordSaleResult =
@@ -122,4 +128,49 @@ export async function listTodaysSalesForStaff(
 
   const sales = await findSalesForStaffToday(db, requester.staff.id, locationId, dayStart, dayEnd);
   return { ok: true, sales };
+}
+
+export type VoidSaleResult =
+  | { ok: true; sale: Sale }
+  | { ok: false; reason: "forbidden" | "not_found" | "already_voided" | "not_same_day" };
+
+// architecture.md: "any role," same day, before close — not "only the
+// recorder." Post-close/owner-only isn't implemented since no closed-day
+// state exists yet (ticket scope).
+export async function voidSale(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  saleId: string,
+): Promise<VoidSaleResult> {
+  const sale = await findSaleById(db, saleId);
+  if (!sale) return { ok: false, reason: "not_found" };
+
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, sale.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (sale.voided) return { ok: false, reason: "already_voided" };
+
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  if (sale.occurredAt < dayStart) return { ok: false, reason: "not_same_day" };
+
+  const products = await findProductsByIds(
+    db,
+    sale.lines.map((line) => line.productId),
+  );
+  const productById = new Map(products.map((p) => [p.id, p]));
+
+  for (const line of sale.lines) {
+    if (productById.get(line.productId)?.kind === "service") continue;
+    await recordStockMovement(db, requester, {
+      productId: line.productId,
+      locationId: sale.locationId,
+      quantity: line.quantity,
+      reason: "corrected",
+    });
+  }
+
+  const voided = await markSaleVoided(db, saleId, requester.staff.id);
+  return { ok: true, sale: voided };
 }

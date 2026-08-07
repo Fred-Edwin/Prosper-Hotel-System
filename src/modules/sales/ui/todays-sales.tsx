@@ -14,9 +14,11 @@
  * one-column list).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/patterns/confirm-dialog";
 import {
   EmptyFirstUse,
   ErrorState,
@@ -68,6 +70,19 @@ async function fetchTodaysSales(): Promise<LoadState> {
   }
 }
 
+async function voidSaleRequest(saleId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const response = await fetch(`/api/sales/${saleId}/void`, { method: "POST" });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      return { ok: false, error: body?.error ?? "unknown" };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "network" };
+  }
+}
+
 export function TodaysSales() {
   const [attempt, setAttempt] = useState(0);
   return <TodaysSalesForAttempt key={attempt} onRetry={() => setAttempt((a) => a + 1)} />;
@@ -75,18 +90,23 @@ export function TodaysSales() {
 
 function TodaysSalesForAttempt({ onRetry }: { onRetry: () => void }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchTodaysSales().then((result) => {
-      if (!cancelled) setState(result);
-    });
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
   }, []);
 
-  return <TodaysSalesView state={state} onRetry={onRetry} />;
+  const load = () => {
+    fetchTodaysSales().then((result) => {
+      if (!cancelledRef.current) setState(result);
+    });
+  };
+
+  useEffect(load, []);
+
+  return <TodaysSalesView state={state} onRetry={onRetry} onVoided={load} />;
 }
 
 function methodLabel(m: PaymentLineView["method"]) {
@@ -104,11 +124,32 @@ function time(iso: string) {
 export function TodaysSalesView({
   state,
   onRetry = () => {},
+  onVoided = () => {},
+  onVoid = voidSaleRequest,
 }: {
   state: LoadState;
   onRetry?: () => void;
+  /** Called after a void succeeds, so the caller can reload the list. */
+  onVoided?: () => void;
+  /** Overridable for Storybook, which has no API route to call. */
+  onVoid?: (saleId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [confirmingVoidId, setConfirmingVoidId] = useState<string | null>(null);
+  const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [voidErrorId, setVoidErrorId] = useState<string | null>(null);
+
+  async function handleConfirmVoid(saleId: string) {
+    setVoidingId(saleId);
+    setVoidErrorId(null);
+    const result = await onVoid(saleId);
+    setVoidingId(null);
+    if (!result.ok) {
+      setVoidErrorId(saleId);
+      return;
+    }
+    onVoided();
+  }
 
   if (state.status === "loading") {
     return (
@@ -222,11 +263,50 @@ export function TodaysSalesView({
                 <p className="mt-2 text-[11px] text-muted-foreground">
                   Recorded by {sale.staffMemberName}
                 </p>
+                {!sale.voided && (
+                  <div className="mt-3 border-t pt-3">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="h-8 text-[12px]"
+                      disabled={voidingId === sale.id}
+                      onClick={() => setConfirmingVoidId(sale.id)}
+                      data-testid="todays-sales-void-button"
+                    >
+                      {voidingId === sale.id ? "Voiding…" : "Void"}
+                    </Button>
+                    {voidErrorId === sale.id && (
+                      <p className="mt-2 text-[12px] text-destructive" data-testid="todays-sales-void-error">
+                        Couldn&apos;t void this sale. Try again.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
         );
       })}
+
+      {confirmingVoidId && (
+        <ConfirmDialog
+          open={true}
+          onOpenChange={(v) => {
+            if (!v) setConfirmingVoidId(null);
+          }}
+          title={`Void this sale (${money(
+            state.sales.find((s) => s.id === confirmingVoidId)?.totalMinor ?? 0,
+          )})?`}
+          description="Stock and payment lines are reversed. The original sale stays visible, marked void. This cannot be undone."
+          confirmLabel="Void sale"
+          destructive
+          onConfirm={() => {
+            const id = confirmingVoidId;
+            setConfirmingVoidId(null);
+            handleConfirmVoid(id);
+          }}
+        />
+      )}
     </div>
   );
 }
