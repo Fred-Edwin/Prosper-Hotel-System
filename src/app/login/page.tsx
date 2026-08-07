@@ -57,8 +57,10 @@ export default function LoginPage() {
 
       // The owner works any position (docs/architecture.md) but her home is
       // the admin shell — everyone else lands on the staff shell's launcher.
+      // Dashboard is the default zoom level per docs/design.md; Catalogue is
+      // reachable via the admin nav like every other destination.
       const body = await response.json();
-      router.push(body.staff?.role === "owner" ? "/catalogue" : "/staff");
+      router.push(body.staff?.role === "owner" ? "/dashboard" : "/staff");
     } catch {
       setFormError("Couldn't reach the server. Check your connection and try again.");
       setSubmitting(false);
