@@ -36,6 +36,13 @@ Aim for **few exports**. Four exports means four ways for other modules to becom
 
 For UI work, identify which existing components and which page template this composes from. **If the ticket needs a screen shape Design never prototyped** — check `docs/design.md` and the Storybook stories under `components/patterns/`, `components/layout/`, and `components/design/` (design-reference branch/worktree) for precedent. No precedent means this checkpoint carries a visual review, not just an interface review — see below.
 
+**State which of two paths you're taking, and why, before building either:**
+
+- **One composition** — when the user already has a settled intuition and this is a course-correction on something close to known-good (e.g. "make the existing pattern feel right for this new data"). Cheaper, and right when three options would just be three ways of saying the same thing.
+- **2–3 structurally different variants** — Design's own default for anything genuinely novel, and for the same reason Design mandates it: *"a single prototype tells you what you don't like, not what you want."* A single build risks anchoring the user to whatever was built first.
+
+**Don't default silently to the cheap path.** Say which you're building and why — "this is a course-correction, going with one" or "no precedent exists for this shape, building three structurally different options" — and let the user override either way. This is the same discipline `<skills>/design/SKILL.md` step 3 already uses when choosing 1 vs 3; it does not lapse just because Foundation is over.
+
 ## 3. Checkpoint — the one involvement point
 
 Present to the user:
@@ -43,7 +50,11 @@ Present to the user:
 1. The interface plan — what's exposed, what's internal
 2. The seam the tests will sit at
 3. Any concerns about the ticket
-4. **For a new screen composition with no Design precedent:** a rendered preview, not a description. Build the composition as a Storybook story first (see step 4a), **run the same pre-checklist scan Design runs before every handover** (`UI-RULES.md`'s cheapest checks: accent count, arbitrary values, table/row density, the primary action not disabled or off-screen) and fix anything it catches before the user ever sees it — don't spend their attention on something the rules already knew was wrong. Populate the story with **real seed data, never lorem ipsum or an empty form with nothing else on the page** — Design's own rule ("never judge a design on an empty page") applies here too, and an empty login form is exactly the empty-page case that rule warns about. Then screenshot it and show the user before writing the route/page that uses it. Get explicit visual approval — "looks right" or a correction — the same way Design got approval by showing built variants, not by describing them. **A screen already covered by Design's locked set skips this** — it was already approved during Design.
+4. **For a new screen composition with no Design precedent:** the rendered result, not a description. Build the composition (one or several — see above) as Storybook stories first (see step 4a), **run the same pre-checklist scan Design runs before every handover** (`UI-RULES.md`'s cheapest checks: accent count, arbitrary values, table/row density, the primary action not disabled or off-screen) and fix anything it catches before the user ever sees it — don't spend their attention on something the rules already knew was wrong. Populate every story with **real seed data, never lorem ipsum or an empty form with nothing else on the page** — Design's own rule ("never judge a design on an empty page") applies here too.
+
+   **Give the user the running Storybook URL and let them browse it themselves** (`pnpm storybook`, default `http://localhost:6006`) — every state, live and interactive, is strictly better than a static frame, and matches how Design itself hands over a round for reaction. **Fall back to a screenshot only when the user genuinely cannot reach a local URL** — a remote or fully headless session — and say explicitly that's why a screenshot is being used instead of the real thing, so it doesn't read as a shortcut.
+
+   Get explicit visual approval — "looks right," a correction, or which variant — the same way Design got approval by showing built variants, not by describing them. **A screen already covered by Design's locked set skips this entirely** — it was already approved during Design.
 
 **Wait for approval or correction.**
 
@@ -77,7 +88,7 @@ This is not optional polish — it's the mechanism that makes both this checkpoi
 
 1. Build the composition as a component taking props/state, not a page tied to routing or a live fetch — same shape as `stock-list.tsx`'s `StockListView` split from `StockList`. A page component wired to `useRouter()` or a real `fetch()` can't be rendered in isolation; split the presentational half out so it can.
 2. Write the story covering the states `docs/design.md`/`UI-RULES.md` require: default, loading, empty, error, and any permission-denied state that applies.
-3. Render it (`pnpm storybook`, or a headless screenshot) and use that for the checkpoint's visual review, not a mental description of the plan.
+3. Start `pnpm storybook` and hand the user the URL to browse themselves — real, interactive, every state — per the checkpoint above. Only fall back to a screenshot if they genuinely can't reach a local URL.
 4. The story stays in the repo afterward — it's the precedent the *next* ticket checks for before assuming a screen shape doesn't exist yet.
 
 **Retrofitting stories after the fact is the failure this exists to prevent** — a screen built without one gets shipped on a plan-only checkpoint, which is exactly how the login page passed every checkable rule in `UI-RULES.md` and still landed visually flat: nobody looked at it before it existed as real code.

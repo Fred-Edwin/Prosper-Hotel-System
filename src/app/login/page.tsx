@@ -6,14 +6,14 @@
  *
  * Staff use their own phones mid-service (docs/architecture.md), so this
  * page has to work as a small, thumb-usable form, not a marketing-style
- * split screen.
+ * split screen. Visual composition lives in login-form.tsx, reviewed and
+ * approved via the Storybook checkpoint in .claude/skills/build/SKILL.md
+ * before this route existed.
  */
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Field } from "@/components/patterns/form";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { LoginForm } from "./login-form";
 
 type FieldErrors = { phone?: string; pin?: string };
 
@@ -63,62 +63,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-xs space-y-4"
-        data-testid="login-form"
-      >
-        <div className="mb-2 text-center">
-          <div className="text-[15px] font-semibold">Prosper Hotel</div>
-          <div className="text-[11px] text-muted-foreground">
-            Sign in with your phone and PIN
-          </div>
-        </div>
-
-        {formError && (
-          <p role="alert" className="text-xs text-danger" data-testid="login-error">
-            {formError}
-          </p>
-        )}
-
-        <Field
-          label="Phone number"
-          error={touched.phone ? errors.phone : undefined}
-        >
-          <Input
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
-            data-testid="login-phone"
-          />
-        </Field>
-
-        <Field label="PIN" error={touched.pin ? errors.pin : undefined}>
-          <Input
-            type="password"
-            inputMode="numeric"
-            autoComplete="current-password"
-            maxLength={4}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-            onBlur={() => setTouched((t) => ({ ...t, pin: true }))}
-            data-testid="login-pin"
-          />
-        </Field>
-
-        <Button
-          type="submit"
-          className="h-9 w-full"
-          disabled={submitting}
-          data-testid="login-submit"
-        >
-          {submitting ? "Signing in…" : "Sign in"}
-        </Button>
-      </form>
-    </div>
+    <LoginForm
+      phone={phone}
+      pin={pin}
+      phoneError={touched.phone ? errors.phone : undefined}
+      pinError={touched.pin ? errors.pin : undefined}
+      formError={formError}
+      submitting={submitting}
+      onPhoneChange={setPhone}
+      onPinChange={setPin}
+      onPhoneBlur={() => setTouched((t) => ({ ...t, phone: true }))}
+      onPinBlur={() => setTouched((t) => ({ ...t, pin: true }))}
+      onSubmit={handleSubmit}
+    />
   );
 }
