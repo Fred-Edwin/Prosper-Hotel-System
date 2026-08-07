@@ -1,0 +1,3 @@
+prosper-hotel.lobstertechnologies.co.ke {
+	reverse_proxy app:3000
+}

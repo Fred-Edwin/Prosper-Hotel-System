@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prosper
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: prosper_hotel
+    volumes:
+      - prosper_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prosper -d prosper_hotel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: ${APP_IMAGE}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://prosper:${POSTGRES_PASSWORD}@postgres:5432/prosper_hotel
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  prosper_pgdata:
+  caddy_data:
+  caddy_config:
