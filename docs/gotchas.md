@@ -19,6 +19,21 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   then fail — a sandbox network limitation, not a real problem. GitHub
   Actions' runners build the same Dockerfile in ~3.5 minutes with no issue.
   Push and let CI build; don't try to reproduce it locally first.
+- **The deploy workflow only ever pulled the app image — it never synced
+  `docker-compose.prod.yml` or `Caddyfile` to the droplet.** Editing either
+  file in the repo (e.g. adding an env var to the `app` service) silently had
+  no effect in production, because the droplet kept running its own
+  original copy indefinitely. Discovered when `SENTRY_DSN` was added to the
+  compose file but never reached the running container. Fixed by adding an
+  `scp` step (`appleboy/scp-action`) ahead of the SSH deploy step that syncs
+  both files on every push to main. If a future compose/Caddyfile edit
+  "does nothing" in prod, check whether the droplet's copy is stale before
+  assuming the app code is wrong.
+- **pnpm's build-script allowlist (`pnpm-workspace.yaml`'s `allowBuilds`)
+  blocks postinstall scripts for new dependencies by default**, including
+  `@sentry/cli`'s (needed for source map upload). `pnpm add` succeeds but
+  the postinstall silently doesn't run — set the package to `true` in
+  `allowBuilds` and re-run `pnpm install`.
 
 ## Droplet / SSH
 

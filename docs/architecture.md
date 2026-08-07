@@ -295,6 +295,17 @@ loss would take out both).
 Error tracking with alerts to the developer. The client should not be the one who discovers
 the system is broken. Cheap, and worth it for a business that trades daily.
 
+**Live**: Sentry, via `@sentry/nextjs`. Wired through Next's native
+`instrumentation.ts` (server + edge) and `instrumentation-client.ts` (browser)
+file conventions — this Next.js version doesn't use the older
+`sentry.server.config.js` pattern. The DSN is a build-time arg for the client
+bundle and a runtime env var for the server, threaded through the Dockerfile,
+`docker-compose.prod.yml`, and the deploy workflow. Source map upload
+(`SENTRY_AUTH_TOKEN`) is optional — its absence just skips the upload rather
+than failing the build. Verified end to end: triggered a real 500 on
+`/api/auth/login` in production and confirmed it appeared in Sentry's Issues
+tab.
+
 ---
 
 ## Non-functionals
