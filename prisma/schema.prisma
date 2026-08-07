@@ -71,6 +71,7 @@ model Product {
   active     Boolean         @default(true)
   createdAt  DateTime        @default(now())
   movements  StockMovement[]
+  recipes    Recipe[]
 
   @@map("products")
 }
@@ -85,8 +86,39 @@ model Ingredient {
   lastKnownCostMinor Int?
   active Boolean @default(true)
   createdAt DateTime @default(now())
+  recipeLines RecipeLine[]
 
   @@map("ingredients")
+}
+
+// docs/architecture.md "Records that must not move silently": a recipe
+// change is a new version, never an edit. effectiveFrom + createdAt lets
+// "the recipe in force on date X" be answered without a separate history
+// table — the current version is simply the latest effectiveFrom <= X.
+model Recipe {
+  id            String       @id @default(cuid())
+  productId     String
+  product       Product      @relation(fields: [productId], references: [id])
+  // Quantity of the output product this recipe is expected to produce.
+  // ADR 0005: this is per-unit-cost and yield-variance input only — it
+  // never feeds cost of goods sold.
+  yieldQuantity Int
+  effectiveFrom DateTime
+  createdAt     DateTime     @default(now())
+  lines         RecipeLine[]
+
+  @@map("recipes")
+}
+
+model RecipeLine {
+  id           String     @id @default(cuid())
+  recipeId     String
+  recipe       Recipe     @relation(fields: [recipeId], references: [id])
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+  quantity     Int
+
+  @@map("recipe_lines")
 }
 
 // Trimmed subset of CONTEXT.md's full reason list (received, issued,

@@ -3,10 +3,14 @@ import type { AuthenticatedStaff } from "@/modules/people";
 import {
   createIngredient,
   createProduct,
+  createRecipe,
   deactivateIngredient,
   deactivateProduct,
+  getCurrentRecipe,
+  getRecipeAt,
   listIngredients,
   listProducts,
+  listRecipeVersions,
   reactivateIngredient,
   reactivateProduct,
   updateIngredient,
@@ -32,12 +36,16 @@ const owner = staffAt("owner");
 const cashier = staffAt("cashier");
 
 afterAll(async () => {
+  await testDb.recipeLine.deleteMany({});
+  await testDb.recipe.deleteMany({});
   await testDb.ingredient.deleteMany({});
   await testDb.product.deleteMany({});
   await testDb.$disconnect();
 });
 
 beforeEach(async () => {
+  await testDb.recipeLine.deleteMany({});
+  await testDb.recipe.deleteMany({});
   await testDb.ingredient.deleteMany({});
   await testDb.product.deleteMany({});
 });
@@ -190,5 +198,164 @@ describe("ingredients", () => {
     const result = await deactivateIngredient(testDb, cashier, created.value.id);
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("recipes", () => {
+  async function chipsAndFlour() {
+    const product = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    if (!product.ok) throw new Error("expected product create to succeed");
+    const flour = await createIngredient(testDb, owner, {
+      name: "Flour",
+      unitOfMeasure: "kg",
+      lastKnownCostMinor: 10000,
+    });
+    if (!flour.ok) throw new Error("expected ingredient create to succeed");
+    return { product: product.value, flour: flour.value };
+  }
+
+  test("owner can create a recipe for a cooked-food product with none", async () => {
+    const { product, flour } = await chipsAndFlour();
+
+    const result = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.productId).toBe(product.id);
+    expect(result.value.yieldQuantity).toBe(10);
+    expect(result.value.lines).toEqual([
+      expect.objectContaining({ ingredientId: flour.id, quantity: 2 }),
+    ]);
+  });
+
+  test("current recipe's per-unit cost is ingredient cost x quantity, divided by yield", async () => {
+    const { product, flour } = await chipsAndFlour();
+    // flour cost 10000/kg, 2kg per batch, yield 10 units -> 20000/10 = 2000/unit
+    await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+
+    const current = await getCurrentRecipe(testDb, product.id);
+
+    expect(current?.perUnitCostMinor).toBe(2000);
+  });
+
+  test("creating a new version leaves the previous version's stored values unchanged", async () => {
+    const { product, flour } = await chipsAndFlour();
+    const v1 = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+      effectiveFrom: new Date("2026-01-01"),
+    });
+    if (!v1.ok) throw new Error("expected v1 create to succeed");
+
+    const v2 = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 8,
+      lines: [{ ingredientId: flour.id, quantity: 3 }],
+      effectiveFrom: new Date("2026-02-01"),
+    });
+    expect(v2.ok).toBe(true);
+
+    const versions = await listRecipeVersions(testDb, product.id);
+    const storedV1 = versions.find((v) => v.id === v1.value.id);
+    expect(storedV1?.yieldQuantity).toBe(10);
+    expect(storedV1?.lines).toEqual([
+      expect.objectContaining({ ingredientId: flour.id, quantity: 2 }),
+    ]);
+    expect(versions).toHaveLength(2);
+  });
+
+  test("the recipe in force on date X is the version covering that date, not the latest", async () => {
+    const { product, flour } = await chipsAndFlour();
+    const v1 = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+      effectiveFrom: new Date("2026-01-01"),
+    });
+    if (!v1.ok) throw new Error("expected v1 create to succeed");
+    const v2 = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 8,
+      lines: [{ ingredientId: flour.id, quantity: 3 }],
+      effectiveFrom: new Date("2026-02-01"),
+    });
+    if (!v2.ok) throw new Error("expected v2 create to succeed");
+
+    const inJanuary = await getRecipeAt(testDb, product.id, new Date("2026-01-15"));
+    const inMarch = await getRecipeAt(testDb, product.id, new Date("2026-03-01"));
+
+    expect(inJanuary?.id).toBe(v1.value.id);
+    expect(inMarch?.id).toBe(v2.value.id);
+  });
+
+  test("a cooked-food product with no recipe has no current recipe", async () => {
+    const product = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    if (!product.ok) throw new Error("expected product create to succeed");
+
+    const current = await getCurrentRecipe(testDb, product.value.id);
+
+    expect(current).toBeNull();
+  });
+
+  test("a non-owner creating or versioning a recipe is denied", async () => {
+    const { product, flour } = await chipsAndFlour();
+
+    const result = await createRecipe(testDb, cashier, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("a recipe cannot reference a deactivated ingredient", async () => {
+    const { product, flour } = await chipsAndFlour();
+    await deactivateIngredient(testDb, owner, flour.id);
+
+    const result = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "invalid_ingredients" });
+  });
+
+  test("a recipe cannot reference a deactivated product", async () => {
+    const { product, flour } = await chipsAndFlour();
+    await deactivateProduct(testDb, owner, product.id);
+
+    const result = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  test("a recipe cannot reference a non-cooked-food product", async () => {
+    const soda = await createProduct(testDb, owner, { name: "Soda", kind: "goods" });
+    if (!soda.ok) throw new Error("expected product create to succeed");
+    const flour = await createIngredient(testDb, owner, { name: "Flour", unitOfMeasure: "kg" });
+    if (!flour.ok) throw new Error("expected ingredient create to succeed");
+
+    const result = await createRecipe(testDb, owner, {
+      productId: soda.value.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.value.id, quantity: 2 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "not_found" });
   });
 });

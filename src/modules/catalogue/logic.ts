@@ -3,20 +3,27 @@ import type { AuthenticatedStaff } from "@/modules/people";
 import {
   createIngredientRecord,
   createProductRecord,
+  createRecipeRecord,
   findIngredientById,
   findIngredientByName,
   findProductById,
   findProductByName,
+  findRecipeInForceAt,
+  listRecipeVersionsByProduct,
   setIngredientActive,
   setProductActive,
   updateIngredientRecord,
   updateProductRecord,
 } from "./queries";
-import type { Ingredient, Product, ProductKind } from "./schema";
+import type { Ingredient, Product, ProductKind, Recipe, RecipeWithCost } from "./schema";
 
 type WriteResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: "forbidden" | "duplicate_name" | "not_found" };
+
+type RecipeWriteResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: "forbidden" | "not_found" | "invalid_ingredients" };
 
 function requireOwner(requester: AuthenticatedStaff): boolean {
   return requester.staff.role === "owner";
@@ -156,4 +163,82 @@ export async function reactivateIngredient(
   if (!current) return { ok: false, reason: "not_found" };
 
   return { ok: true, value: await setIngredientActive(db, id, true) };
+}
+
+export async function createRecipe(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    productId: string;
+    yieldQuantity: number;
+    lines: { ingredientId: string; quantity: number }[];
+    effectiveFrom?: Date;
+  },
+): Promise<RecipeWriteResult<Recipe>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const product = await findProductById(db, input.productId);
+  if (!product || product.kind !== "cooked_food" || !product.active) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const ingredients = await Promise.all(
+    input.lines.map((line) => findIngredientById(db, line.ingredientId)),
+  );
+  const allActive = ingredients.every((ingredient) => ingredient?.active === true);
+  if (!allActive) return { ok: false, reason: "invalid_ingredients" };
+
+  const recipe = await createRecipeRecord(db, {
+    productId: input.productId,
+    yieldQuantity: input.yieldQuantity,
+    effectiveFrom: input.effectiveFrom ?? new Date(),
+    lines: input.lines,
+  });
+  return { ok: true, value: recipe };
+}
+
+// ADR 0005: computed on read, never stored — recipes are a cost/yield
+// source only and must never become a stored COGS figure.
+async function withPerUnitCost(
+  db: PrismaClient,
+  recipe: Recipe,
+): Promise<RecipeWithCost> {
+  const ingredients = await Promise.all(
+    recipe.lines.map((line) => findIngredientById(db, line.ingredientId)),
+  );
+
+  let totalCostMinor = 0;
+  for (let i = 0; i < recipe.lines.length; i++) {
+    const cost = ingredients[i]?.lastKnownCostMinor;
+    if (cost == null) return { ...recipe, perUnitCostMinor: null };
+    totalCostMinor += cost * recipe.lines[i]!.quantity;
+  }
+
+  return { ...recipe, perUnitCostMinor: Math.round(totalCostMinor / recipe.yieldQuantity) };
+}
+
+export async function getCurrentRecipe(
+  db: PrismaClient,
+  productId: string,
+): Promise<RecipeWithCost | null> {
+  const recipe = await findRecipeInForceAt(db, productId, new Date());
+  if (!recipe) return null;
+  return withPerUnitCost(db, recipe);
+}
+
+export async function getRecipeAt(
+  db: PrismaClient,
+  productId: string,
+  at: Date,
+): Promise<RecipeWithCost | null> {
+  const recipe = await findRecipeInForceAt(db, productId, at);
+  if (!recipe) return null;
+  return withPerUnitCost(db, recipe);
+}
+
+export async function listRecipeVersions(
+  db: PrismaClient,
+  productId: string,
+): Promise<Recipe[]> {
+  return listRecipeVersionsByProduct(db, productId);
 }

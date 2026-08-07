@@ -10,5 +10,9 @@ export {
   updateIngredient,
   deactivateIngredient,
   reactivateIngredient,
+  createRecipe,
+  getCurrentRecipe,
+  getRecipeAt,
+  listRecipeVersions,
 } from "./logic";
-export type { Product, ProductKind, Ingredient } from "./schema";
+export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost } from "./schema";

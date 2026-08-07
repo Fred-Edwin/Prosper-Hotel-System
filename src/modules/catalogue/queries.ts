@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { Ingredient, Product, ProductKind } from "./schema";
+import type { Ingredient, Product, ProductKind, Recipe } from "./schema";
 
 export async function listProducts(db: PrismaClient): Promise<Product[]> {
   return db.product.findMany({ orderBy: { name: "asc" } });
@@ -88,4 +88,47 @@ export async function setIngredientActive(
   active: boolean,
 ): Promise<Ingredient> {
   return db.ingredient.update({ where: { id }, data: { active } });
+}
+
+export async function createRecipeRecord(
+  db: PrismaClient,
+  data: {
+    productId: string;
+    yieldQuantity: number;
+    effectiveFrom: Date;
+    lines: { ingredientId: string; quantity: number }[];
+  },
+): Promise<Recipe> {
+  return db.recipe.create({
+    data: {
+      productId: data.productId,
+      yieldQuantity: data.yieldQuantity,
+      effectiveFrom: data.effectiveFrom,
+      lines: { create: data.lines },
+    },
+    include: { lines: true },
+  });
+}
+
+export async function listRecipeVersionsByProduct(
+  db: PrismaClient,
+  productId: string,
+): Promise<Recipe[]> {
+  return db.recipe.findMany({
+    where: { productId },
+    include: { lines: true },
+    orderBy: { effectiveFrom: "desc" },
+  });
+}
+
+export async function findRecipeInForceAt(
+  db: PrismaClient,
+  productId: string,
+  at: Date,
+): Promise<Recipe | null> {
+  return db.recipe.findFirst({
+    where: { productId, effectiveFrom: { lte: at } },
+    include: { lines: true },
+    orderBy: { effectiveFrom: "desc" },
+  });
 }
