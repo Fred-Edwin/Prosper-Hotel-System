@@ -396,6 +396,38 @@ scoping — but not yet exercised against the live URL with a real session.
 placeholder staff for a one-time check, or wait until the owner's first
 real staff member is entered and check then.
 
+## Design-reference prototype locations
+
+`/build`'s checkpoint step says to search the design-reference worktree
+(`../prosper-hotel-design-reference`, find it with `git worktree list` if
+the name drifts) before concluding a screen has no precedent. That search
+costs an agent several minutes of exploration every time — this table is
+the shortcut, found once so future tickets don't re-derive it.
+
+**Snapshot only, not a promise.** Taken at commit `a977bea` (2026-08-06) in
+that worktree. If a path below doesn't resolve, the worktree has moved on
+— fall back to the real search `/build` already describes rather than
+assuming the destination was never designed.
+
+| Destination | Path in the design-reference worktree |
+|---|---|
+| Dashboard | `src/components/design/shell/dashboard-body.tsx` |
+| Ledger | `src/components/design/ledger/ledger-r3.tsx` |
+| Stock (admin valuation) | `src/components/design/shell/stock-body.tsx` |
+| Money out | `src/components/design/money-out/page.tsx` |
+| People | `src/components/design/people/round.tsx` |
+| Activity | `src/components/design/activity/page.tsx` |
+| Catalogue | already built — see `src/modules/catalogue/` in this repo |
+
+All six route through `src/components/design/shell/admin-shell.tsx` and
+share the destination list in `src/components/design/shell/nav.ts`.
+
+**Precedent existing is not the same as buildable now.** Stock's full
+valuation table needs per-unit cost, which `stock/index.ts` doesn't expose
+yet — ticket 04 built a deliberately smaller real view instead of the
+prototype's shape. Check what the current module interface actually
+returns before assuming a prototype can be built as-is.
+
 ## Non-functionals
 
 Five users. Two locations. Roughly 150 sellable lines. A few hundred sales a day at most.
