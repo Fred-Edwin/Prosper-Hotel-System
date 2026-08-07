@@ -418,9 +418,14 @@ assuming the destination was never designed.
 | People | `src/components/design/people/round.tsx` |
 | Activity | `src/components/design/activity/page.tsx` |
 | Catalogue | already built — see `src/modules/catalogue/` in this repo |
+| New sale (till) | `src/components/design/till/till-r2.tsx` |
 
-All six route through `src/components/design/shell/admin-shell.tsx` and
-share the destination list in `src/components/design/shell/nav.ts`.
+All six admin destinations route through
+`src/components/design/shell/admin-shell.tsx` and share the destination list
+in `src/components/design/shell/nav.ts`. The till is filed under its own
+`till/` folder, not `shell/` or `staff/` — worth knowing before concluding a
+staff-shell screen has no precedent just because `staff/` only holds
+`handover-body.tsx`/`round.tsx`/`shell-home.tsx`.
 
 **Precedent existing is not the same as buildable now.** Stock's full
 valuation table needs per-unit cost, which `stock/index.ts` doesn't expose

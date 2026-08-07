@@ -82,6 +82,30 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   session), not the default.
 - **Added:** 2026-08-07
 
+## A leftover `pnpm dev` from an earlier session serves a stale Prisma client
+
+**Symptom:** A new write (e.g. `db.sale.create`) throws `TypeError: Cannot
+read properties of undefined (reading 'create')` in the running dev
+server's log, even though `pnpm exec tsc --noEmit` is clean and the model
+clearly exists in `schema.prisma`.
+
+**Cause:** A `next dev` process left running from a previous session (or
+`ScheduleWakeup`/background shell) has the old generated `@prisma/client`
+loaded in memory. Running `prisma migrate dev` / `prisma generate` in the
+current session regenerates the files on disk, but Turbopack's dev server
+doesn't reload the Prisma client module — it keeps serving the pre-migration
+shape, so any new model or field is `undefined` at runtime while typechecking
+against the fresh generated types passes fine. A second `next dev` attempt
+in the same session doesn't fail loudly either — Next just prints "Another
+next dev server is already running" and points at the stale PID, easy to
+miss in scrollback.
+**Fix:** Before the manual browser check on a ticket that adds a Prisma
+model or field, check for a stale server first: `ps aux | grep "next dev"`.
+Kill any pre-existing PID and start a fresh `pnpm dev` after migrating and
+generating, rather than assuming the currently-running one picked up the
+schema change.
+**Added:** 2026-08-07
+
 ## Login redirect is not role-aware yet
 
 - **`login/page.tsx` originally hardcoded `router.push("/staff")`** after

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { StaffShellHome, StaffHome } from "@/components/layout/staff-shell";
 import { staffNav, type StaffRole } from "@/components/layout/staff-nav";
 import { StockList } from "@/modules/stock/ui/stock-list";
+import { NewSale } from "@/modules/sales/ui/new-sale";
 import { NotBuilt } from "@/components/patterns/states";
 
 export function StaffPageClient({
@@ -33,7 +34,8 @@ export function StaffPageClient({
         <StaffHome role={role} handedOverToday={false} onOpen={setActive} />
       )}
       {active === "stock" && <StockList locationId={locationId} />}
-      {active !== null && active !== "stock" && (
+      {active === "sell" && <NewSale onDone={() => setActive(null)} />}
+      {active !== null && active !== "stock" && active !== "sell" && (
         <NotBuilt destination={activeLink?.label ?? ""} />
       )}
     </StaffShellHome>

@@ -45,6 +45,17 @@ export async function catalogueRoute(): Promise<Response> {
   return Response.json({ products, ingredients, recipes });
 }
 
+// Every staff member needs to pick a product and its price when recording a
+// sale — unlike catalogueRoute above, this is not owner-only. Trimmed to
+// active products only: an inactive product cannot appear on a new sale.
+export async function activeProductsRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const products = await listProducts(db);
+  return Response.json({ products: products.filter((p: Product) => p.active) });
+}
+
 export async function createProductRoute(request: Request): Promise<Response> {
   const session = await getSession();
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });

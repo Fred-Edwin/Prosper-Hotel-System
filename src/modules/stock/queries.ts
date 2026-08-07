@@ -1,4 +1,18 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import type { StockMovement, StockMovementReason } from "./schema";
+
+export async function createStockMovement(
+  db: PrismaClient,
+  data: {
+    productId: string;
+    locationId: string;
+    quantity: number;
+    reason: StockMovementReason;
+    staffMemberId: string;
+  },
+): Promise<StockMovement> {
+  return db.stockMovement.create({ data });
+}
 
 export async function sumMovementsByProductAtLocation(
   db: PrismaClient,

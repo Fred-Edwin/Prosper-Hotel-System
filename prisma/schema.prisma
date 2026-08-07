@@ -27,6 +27,7 @@ model Location {
   name      String
   staff     StaffMember[]
   movements StockMovement[]
+  sales     Sale[]
 
   @@map("locations")
 }
@@ -45,6 +46,7 @@ model StaffMember {
   createdAt  DateTime        @default(now())
   sessions   Session[]
   movements  StockMovement[]
+  sales      Sale[]
 
   @@map("staff_members")
 }
@@ -72,6 +74,7 @@ model Product {
   createdAt  DateTime        @default(now())
   movements  StockMovement[]
   recipes    Recipe[]
+  saleLines  SaleLine[]
 
   @@map("products")
 }
@@ -131,6 +134,71 @@ enum StockMovementReason {
   sold
   wasted
   corrected
+}
+
+// CONTEXT.md: fulfilment and payment are independent facts on a sale.
+// Delivery is deliberately not wired by any ticket yet — the enum carries
+// it because CONTEXT.md says "there is no third case", not because the
+// counter-sale ticket writes it.
+enum SaleFulfilment {
+  counter
+  delivery
+}
+
+// CONTEXT.md: cash and M-Pesa are never pooled; credit is a payment line
+// like any other, settled later. Credit is deferred to ticket 08 — this
+// enum carries it for the same reason SaleFulfilment carries delivery.
+enum PaymentMethod {
+  cash
+  mpesa
+  credit
+}
+
+// CONTEXT.md: "goods or services leaving the business in exchange for
+// value, recorded at a location by a staff member." Restaurant-only in
+// this ticket; the canteen records Takings instead (see docs/architecture.md).
+// Never edited or deleted per architecture.md's reversal-only model — void
+// (ticket 09) adds a reversing entry rather than touching this row.
+model Sale {
+  id            String         @id @default(cuid())
+  locationId    String
+  location      Location       @relation(fields: [locationId], references: [id])
+  staffMemberId String
+  staffMember   StaffMember    @relation(fields: [staffMemberId], references: [id])
+  fulfilment    SaleFulfilment
+  // Minor units, same convention as Product.priceMinor. Sum of line
+  // quantity x product price at the time of sale — stored rather than
+  // recomputed, because a later product price change must not reshape a
+  // past sale's total.
+  totalMinor    Int
+  lines         SaleLine[]
+  paymentLines  PaymentLine[]
+  occurredAt    DateTime       @default(now())
+
+  @@map("sales")
+}
+
+model SaleLine {
+  id          String  @id @default(cuid())
+  saleId      String
+  sale        Sale    @relation(fields: [saleId], references: [id])
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  quantity    Int
+  // The product's priceMinor at the moment of sale — see Sale.totalMinor.
+  priceMinor  Int
+
+  @@map("sale_lines")
+}
+
+model PaymentLine {
+  id            String        @id @default(cuid())
+  saleId        String
+  sale          Sale          @relation(fields: [saleId], references: [id])
+  method        PaymentMethod
+  amountMinor   Int
+
+  @@map("payment_lines")
 }
 
 model StockMovement {

@@ -18,6 +18,7 @@ export {
 export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost } from "./schema";
 export {
   catalogueRoute,
+  activeProductsRoute,
   createProductRoute,
   updateProductRoute,
   setProductActiveRoute,
