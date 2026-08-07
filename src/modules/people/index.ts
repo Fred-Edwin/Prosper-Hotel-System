@@ -1,6 +1,15 @@
 // Staff, days worked, pay, access, customers. See docs/architecture.md.
 
-export { canAccessLocation, hashPin, login, logout } from "./logic";
+export {
+  canAccessLocation,
+  createCustomer,
+  findCustomerById,
+  hashPin,
+  listCustomers,
+  login,
+  logout,
+  updateCustomer,
+} from "./logic";
 export type { LoginResult, AuthenticatedStaff } from "./logic";
 export { loginRoute, logoutRoute, getSession } from "./routes";
 export {
@@ -8,4 +17,4 @@ export {
   findLocationByCode,
   findLocationById,
 } from "./queries";
-export type { StaffMember, Location, StaffRole, LocationCode } from "./schema";
+export type { StaffMember, Location, StaffRole, LocationCode, Customer } from "./schema";

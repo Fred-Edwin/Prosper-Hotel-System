@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { Location, StaffMember } from "./schema";
+import type { Customer, Location, StaffMember } from "./schema";
 
 export async function findLocationByCode(
   db: PrismaClient,
@@ -53,4 +53,30 @@ export async function deleteSession(
   token: string,
 ): Promise<void> {
   await db.session.deleteMany({ where: { token } });
+}
+
+export async function createCustomerRecord(
+  db: PrismaClient,
+  data: { name: string; phone: string | null },
+): Promise<Customer> {
+  return db.customer.create({ data });
+}
+
+export async function updateCustomerRecord(
+  db: PrismaClient,
+  id: string,
+  data: { name: string; phone: string | null },
+): Promise<Customer> {
+  return db.customer.update({ where: { id }, data });
+}
+
+export async function findCustomerById(
+  db: PrismaClient,
+  id: string,
+): Promise<Customer | null> {
+  return db.customer.findUnique({ where: { id } });
+}
+
+export async function listCustomers(db: PrismaClient): Promise<Customer[]> {
+  return db.customer.findMany({ orderBy: { name: "asc" } });
 }

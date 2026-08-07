@@ -16,3 +16,9 @@ export type Location = {
   code: LocationCode;
   name: string;
 };
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string | null;
+};

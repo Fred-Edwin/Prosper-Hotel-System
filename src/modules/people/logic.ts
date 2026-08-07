@@ -2,12 +2,16 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import type { PrismaClient } from "@/generated/prisma/client";
 import {
+  createCustomerRecord,
   createSession,
   deleteSession,
+  findCustomerById as findCustomerByIdQuery,
   findSessionByToken,
   findStaffMemberByName,
+  listCustomers as listCustomersQuery,
+  updateCustomerRecord,
 } from "./queries";
-import type { Location, StaffMember, StaffRole } from "./schema";
+import type { Customer, Location, StaffMember, StaffRole } from "./schema";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
 
@@ -74,4 +78,56 @@ export function canAccessLocation(
 
 export async function hashPin(pin: string): Promise<string> {
   return bcrypt.hash(pin, 10);
+}
+
+type CustomerWriteResult =
+  | { ok: true; value: Customer }
+  | { ok: false; reason: "invalid_name" | "not_found" };
+
+// CONTEXT.md: most trade is anonymous and creates no customer — creating
+// one is a low-stakes, frequent staff action, not an admin setup task, so
+// no owner gate (unlike catalogue's create/update).
+export async function createCustomer(
+  db: PrismaClient,
+  _requester: AuthenticatedStaff,
+  input: { name: string; phone?: string | null },
+): Promise<CustomerWriteResult> {
+  const name = input.name.trim();
+  if (!name) return { ok: false, reason: "invalid_name" };
+
+  const customer = await createCustomerRecord(db, {
+    name,
+    phone: input.phone ?? null,
+  });
+  return { ok: true, value: customer };
+}
+
+export async function updateCustomer(
+  db: PrismaClient,
+  _requester: AuthenticatedStaff,
+  id: string,
+  input: { name: string; phone?: string | null },
+): Promise<CustomerWriteResult> {
+  const name = input.name.trim();
+  if (!name) return { ok: false, reason: "invalid_name" };
+
+  const current = await findCustomerByIdQuery(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  const customer = await updateCustomerRecord(db, id, {
+    name,
+    phone: input.phone ?? null,
+  });
+  return { ok: true, value: customer };
+}
+
+export async function findCustomerById(
+  db: PrismaClient,
+  id: string,
+): Promise<Customer | null> {
+  return findCustomerByIdQuery(db, id);
+}
+
+export async function listCustomers(db: PrismaClient): Promise<Customer[]> {
+  return listCustomersQuery(db);
 }

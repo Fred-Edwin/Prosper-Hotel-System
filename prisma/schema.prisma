@@ -161,3 +161,16 @@ model Session {
 
   @@map("sessions")
 }
+
+// CONTEXT.md: a named person the business deals with by name rather than
+// anonymously. No `active` flag and no delete — a customer with a sale
+// attributed to them must remain resolvable, permanently, and names are
+// not unique (not identifiers in real life).
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  createdAt DateTime @default(now())
+
+  @@map("customers")
+}
