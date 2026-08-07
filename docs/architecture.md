@@ -306,6 +306,12 @@ than failing the build. Verified end to end: triggered a real 500 on
 `/api/auth/login` in production and confirmed it appeared in Sentry's Issues
 tab.
 
+**Uptime monitoring: deliberately skipped.** DigitalOcean's infrastructure
+uptime record was judged sufficient given the single-droplet setup — a
+deliberate call, not an oversight. Revisit if the droplet ever has an
+unexplained outage Sentry didn't catch (Sentry only sees errors the app gets
+a chance to throw; it can't see the app being unreachable).
+
 ---
 
 ## Non-functionals
