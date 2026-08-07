@@ -27,6 +27,8 @@ Before anything else, confirm `CLAUDE.md` exists and `src/modules/` (or the proj
 - `CONTEXT.md` — ticket titles and descriptions use this vocabulary
 - `docs/architecture.md` — module boundaries and the confirmed seam list
 - `docs/scope.md` — what's in and what's explicitly out
+- `docs/proposal.md`, if it exists — the full client-facing feature description. Read this for what the finished system actually does; `scope.md` only tracks the in/out boundary, not the feature set
+- `docs/roadmap.md`, if it exists — the module-by-module build sequence already decided. Cut the next tranche from wherever the roadmap says the frontier is; don't re-derive "what's next" from `proposal.md` on every run
 - `docs/adr/` — decisions in the area you're touching, which you don't re-litigate
 - Existing `.work/` tickets — what's already cut
 
@@ -43,6 +45,8 @@ Cut only enough to reach **the next demoable thing** — typically five to eight
 A tranche is roughly "the next thing you could show someone." Not a fixed count.
 
 Don't cut the whole project. Slicing thirty tickets in week two means writing twenty-five of them at the moment you know least.
+
+**If `docs/roadmap.md` exists, the tranche boundary is already decided** — cut the next unbuilt stage in its sequence, don't pick a new one. If no roadmap exists and `docs/proposal.md` does, this is the first tranche being cut for the project — say so, and recommend writing a roadmap before cutting tickets blind against a full feature spec.
 
 ## 4. Draft vertical slices
 
