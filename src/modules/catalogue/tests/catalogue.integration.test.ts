@@ -358,4 +358,40 @@ describe("recipes", () => {
 
     expect(result).toEqual({ ok: false, reason: "not_found" });
   });
+
+  // Deactivation-time is deliberately permissive, unlike creation-time
+  // validation above: an existing recipe is a past-and-present fact and
+  // must stay readable exactly as it was, per "records that must not
+  // move silently." Blocking deactivation would force the owner into an
+  // artificial recipe-retirement step that ticket 02 explicitly defers.
+  test("deactivating an ingredient already used in a recipe is allowed, and cost derivation still uses its last-known cost", async () => {
+    const { product, flour } = await chipsAndFlour();
+    await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+
+    const deactivated = await deactivateIngredient(testDb, owner, flour.id);
+    expect(deactivated.ok).toBe(true);
+
+    const current = await getCurrentRecipe(testDb, product.id);
+    expect(current?.perUnitCostMinor).toBe(2000);
+  });
+
+  test("deactivating a product with a current recipe is allowed, and the recipe remains readable", async () => {
+    const { product, flour } = await chipsAndFlour();
+    const created = await createRecipe(testDb, owner, {
+      productId: product.id,
+      yieldQuantity: 10,
+      lines: [{ ingredientId: flour.id, quantity: 2 }],
+    });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const deactivated = await deactivateProduct(testDb, owner, product.id);
+    expect(deactivated.ok).toBe(true);
+
+    const current = await getCurrentRecipe(testDb, product.id);
+    expect(current?.id).toBe(created.value.id);
+  });
 });
