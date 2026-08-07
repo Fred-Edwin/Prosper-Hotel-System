@@ -91,3 +91,28 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   actually worked: have the user run
   `gh auth login -h github.com -s workflow -w` directly in their own
   terminal, not proxied through a tool call.
+
+## Prisma migrations, non-interactively
+
+- **`prisma migrate dev` refuses to run at all in a non-interactive shell**
+  (no TTY), even with `--create-only`. There's no flag to force it. Fixed by
+  generating the SQL with `prisma migrate diff --from-config-datasource
+  prisma.config.ts --to-schema prisma/schema.prisma --script`, hand-writing
+  it into a new `prisma/migrations/<timestamp>_<name>/migration.sql` folder
+  (timestamp format `YYYYMMDDHHMMSS`, matching existing folders), then
+  `prisma migrate deploy` to apply it to the dev database.
+- **`prisma.config.ts` hardcodes `datasource.url` to `process.env.DATABASE_URL`
+  via `dotenv/config`**, so `prisma migrate deploy` always targets the dev
+  database — setting `DATABASE_URL=$TEST_DATABASE_URL` in the shell before
+  the command does nothing, because `dotenv/config` reloads `.env` and
+  overwrites it. There's no `--datasource-url` flag on `migrate deploy` in
+  this Prisma version. The test database currently has no scripted way to
+  pick up a new migration; it was applied by hand — a throwaway Node script
+  run from inside the repo (needed for `node_modules` resolution, see the
+  Testing/Playwright section above) that connects via `pg` directly to
+  `TEST_DATABASE_URL`, runs the migration SQL, and inserts a matching row
+  into `_prisma_migrations` so future `prisma migrate deploy` runs against
+  the test DB don't try to reapply it. **Worth fixing properly**: either a
+  `pnpm test:migrate` script, or a `prisma.config.ts` that reads
+  `TEST_DATABASE_URL` when `NODE_ENV=test`.
+- **Added:** 2026-08-07

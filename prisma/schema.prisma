@@ -60,13 +60,33 @@ enum ProductKind {
 }
 
 model Product {
-  id        String          @id @default(cuid())
-  name      String
-  kind      ProductKind
-  createdAt DateTime        @default(now())
-  movements StockMovement[]
+  id         String          @id @default(cuid())
+  name       String          @unique
+  kind       ProductKind
+  // Minor units (e.g. cents), never float — avoids rounding drift in money
+  // figures. Null means no price set, distinct from priced-at-zero.
+  priceMinor Int?
+  // docs/architecture.md: deactivated, never deleted — a sold product must
+  // stay attributed on historical sales even after withdrawal from sale.
+  active     Boolean         @default(true)
+  createdAt  DateTime        @default(now())
+  movements  StockMovement[]
 
   @@map("products")
+}
+
+model Ingredient {
+  id     String @id @default(cuid())
+  name   String @unique
+  // Free text per the ticket — kg, litre, packet, whatever the owner enters.
+  unitOfMeasure String
+  // Convenience figure only, not the authoritative cost history (that's
+  // stock's movement ledger once receiving is built). Null until known.
+  lastKnownCostMinor Int?
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("ingredients")
 }
 
 // Trimmed subset of CONTEXT.md's full reason list (received, issued,
