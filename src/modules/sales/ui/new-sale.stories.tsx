@@ -30,12 +30,41 @@ const products = [
   { id: "p9", name: "Photocopy (per page)", kind: "service" as const, priceMinor: 5, active: true },
 ];
 
+const customers = [
+  { id: "c1", name: "Jane Wanjiru", phone: "0722000111" },
+  { id: "c2", name: "Brian Otieno", phone: null },
+  { id: "c3", name: "Amani", phone: "0733111222" },
+];
+
 const stubSubmit = async () => ({ ok: true as const });
+const stubLoadCustomers = async () => customers;
+const stubCreateCustomer = async (input: { name: string; phone?: string }) => ({
+  ok: true as const,
+  customer: { id: `new-${input.name}`, name: input.name, phone: input.phone ?? null },
+});
 
 export const Default: Story = {
   args: {
     state: { status: "ready", products },
     onSubmit: stubSubmit,
+    onLoadCustomers: stubLoadCustomers,
+    onCreateCustomer: stubCreateCustomer,
+  },
+};
+
+/**
+ * A credit line: pick "Credit" as the method, type an amount, then a
+ * customer picker appears — search the seeded list, or add a new one
+ * inline. Interact within the canvas to reach each state; there is no
+ * static frame for a picker mid-search or mid-create.
+ */
+export const CreditLine: Story = {
+  name: "Credit line — customer required",
+  args: {
+    state: { status: "ready", products },
+    onSubmit: stubSubmit,
+    onLoadCustomers: stubLoadCustomers,
+    onCreateCustomer: stubCreateCustomer,
   },
 };
 

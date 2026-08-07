@@ -10,6 +10,10 @@ const db = new PrismaClient({ adapter });
 const SEED_PIN = "1234";
 
 async function main() {
+  await db.paymentLine.deleteMany({});
+  await db.saleLine.deleteMany({});
+  await db.sale.deleteMany({});
+  await db.customer.deleteMany({});
   await db.recipeLine.deleteMany({});
   await db.recipe.deleteMany({});
   await db.ingredient.deleteMany({});

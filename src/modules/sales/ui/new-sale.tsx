@@ -35,9 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyFirstUse, ErrorState } from "@/components/patterns/states";
-import { Minus, Plus, Search, Trash2, X, ShoppingCart, Check } from "lucide-react";
+import { Minus, Plus, Search, Trash2, X, ShoppingCart, Check, UserPlus } from "lucide-react";
 import { money } from "@/shared/money";
 
 type Product = {
@@ -48,10 +49,18 @@ type Product = {
   active: boolean;
 };
 
-type PaymentMethod = "cash" | "mpesa";
+type Customer = { id: string; name: string; phone: string | null };
+
+type PaymentMethod = "cash" | "mpesa" | "credit";
 
 type Line = { product: Product; qty: number };
-type Pay = { id: number; method: PaymentMethod; amount: string; touched: boolean };
+type Pay = {
+  id: number;
+  method: PaymentMethod;
+  amount: string;
+  touched: boolean;
+  customer: Customer | null;
+};
 
 export type LoadState =
   | { status: "loading" }
@@ -70,9 +79,41 @@ async function fetchProducts(): Promise<LoadState> {
   }
 }
 
+async function fetchCustomers(): Promise<Customer[]> {
+  try {
+    const response = await fetch("/api/people/customers");
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body?.customers) ? body.customers : [];
+  } catch {
+    return [];
+  }
+}
+
+async function createCustomer(input: {
+  name: string;
+  phone?: string;
+}): Promise<{ ok: true; customer: Customer } | { ok: false; error: string }> {
+  try {
+    const response = await fetch("/api/people/customers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      return { ok: false, error: body?.error ?? "unknown" };
+    }
+    const body = await response.json();
+    return { ok: true, customer: body.customer };
+  } catch {
+    return { ok: false, error: "network" };
+  }
+}
+
 async function submitSale(input: {
   lines: { productId: string; quantity: number }[];
-  paymentLines: { method: PaymentMethod; amountMinor: number }[];
+  paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string }[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const response = await fetch("/api/sales", {
@@ -130,11 +171,15 @@ export function NewSaleView({
   onRetry = () => {},
   onDone = () => {},
   onSubmit = submitSale,
+  onLoadCustomers = fetchCustomers,
+  onCreateCustomer = createCustomer,
 }: {
   state: LoadState;
   onRetry?: () => void;
   onDone?: () => void;
   onSubmit?: typeof submitSale;
+  onLoadCustomers?: typeof fetchCustomers;
+  onCreateCustomer?: typeof createCustomer;
 }) {
   if (state.status === "loading") return <TillSkeleton />;
   if (state.status === "error") {
@@ -156,29 +201,55 @@ export function NewSaleView({
     );
   }
 
-  return <Till products={state.products} onDone={onDone} onSubmit={onSubmit} />;
+  return (
+    <Till
+      products={state.products}
+      onDone={onDone}
+      onSubmit={onSubmit}
+      onLoadCustomers={onLoadCustomers}
+      onCreateCustomer={onCreateCustomer}
+    />
+  );
 }
 
 function Till({
   products,
   onDone,
   onSubmit,
+  onLoadCustomers,
+  onCreateCustomer,
 }: {
   products: Product[];
   onDone: () => void;
   onSubmit: typeof submitSale;
+  onLoadCustomers: typeof fetchCustomers;
+  onCreateCustomer: typeof createCustomer;
 }) {
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
+  // Most sales are paid one way. One line by default — pre-filled with the
+  // whole total — keeps that common case friction-free; a second line is
+  // added deliberately, only for the rarer split payment.
   const [pays, setPays] = useState<Pay[]>([
-    { id: 1, method: "cash", amount: "", touched: false },
-    { id: 2, method: "mpesa", amount: "", touched: false },
+    { id: 1, method: "cash", amount: "", touched: false, customer: null },
   ]);
+  const [nextPayId, setNextPayId] = useState(2);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<{ lines: Line[]; total: number; pays: Pay[] } | null>(
     null,
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    onLoadCustomers().then((result) => {
+      if (!cancelled) setCustomers(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoadCustomers]);
 
   const shown = query.trim()
     ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -229,16 +300,38 @@ function Till({
       return fillUntouched(edited, total);
     });
 
-  const canComplete = lines.length > 0 && remaining === 0 && !submitting;
+  // The rare split-payment case: a second (or third) line, added on request
+  // rather than shown by default. A method not already in use, so the
+  // cashier isn't nudged toward duplicating one that's already there.
+  const addPay = () =>
+    setPays((ps) => {
+      const used = new Set(ps.map((p) => p.method));
+      const method = (["cash", "mpesa", "credit"] as PaymentMethod[]).find((m) => !used.has(m)) ?? "cash";
+      const next = [...ps, { id: nextPayId, method, amount: "", touched: false, customer: null }];
+      setNextPayId((n) => n + 1);
+      return fillUntouched(next, total);
+    });
+
+  const removePay = (id: number) =>
+    setPays((ps) => {
+      const next = ps.filter((p) => p.id !== id);
+      return fillUntouched(next, total);
+    });
+
+  const activePays = pays.filter((p) => Number(p.amount) > 0);
+  const creditNeedsCustomer = activePays.some((p) => p.method === "credit" && !p.customer);
+  const canComplete = lines.length > 0 && remaining === 0 && !creditNeedsCustomer && !submitting;
 
   const complete = async () => {
     setSubmitting(true);
     setSubmitError(null);
     const result = await onSubmit({
       lines: lines.map((l) => ({ productId: l.product.id, quantity: l.qty })),
-      paymentLines: pays
-        .filter((p) => Number(p.amount) > 0)
-        .map((p) => ({ method: p.method, amountMinor: Number(p.amount) })),
+      paymentLines: activePays.map((p) => ({
+        method: p.method,
+        amountMinor: Number(p.amount),
+        ...(p.method === "credit" && p.customer ? { customerId: p.customer.id } : {}),
+      })),
     });
     setSubmitting(false);
     if (!result.ok) {
@@ -371,34 +464,81 @@ function Till({
         <div className="space-y-2.5 border-t px-4 py-3">
           <div className="space-y-1.5">
             {pays.map((p) => (
-              <div key={p.id} className="flex items-center gap-2">
-                <Select
-                  value={p.method}
-                  onValueChange={(v) =>
-                    setPays((ps) =>
-                      ps.map((x) => (x.id === p.id ? { ...x, method: v as PaymentMethod } : x)),
-                    )
-                  }
-                >
-                  <SelectTrigger className="h-10 w-28 shrink-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="mpesa">M-Pesa</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={p.amount}
-                  onChange={(e) => setPayAmount(p.id, e.target.value)}
-                  className="h-10 flex-1 text-right tabular-nums"
-                  data-testid={`till-pay-${p.method}`}
-                />
+              <div key={p.id} className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={p.method}
+                    onValueChange={(v) =>
+                      setPays((ps) =>
+                        ps.map((x) =>
+                          x.id === p.id
+                            ? { ...x, method: v as PaymentMethod, customer: null }
+                            : x,
+                        ),
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-10 w-28 shrink-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="mpesa">M-Pesa</SelectItem>
+                      <SelectItem value="credit">Credit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    inputMode="numeric"
+                    placeholder="0"
+                    value={p.amount}
+                    onChange={(e) => setPayAmount(p.id, e.target.value)}
+                    className="h-10 flex-1 text-right tabular-nums"
+                    data-testid={`till-pay-${p.method}`}
+                  />
+                  {pays.length > 1 && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-8 shrink-0 text-muted-foreground"
+                      onClick={() => removePay(p.id)}
+                      aria-label="Remove payment method"
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+                {p.method === "credit" && Number(p.amount) > 0 && (
+                  <CustomerPicker
+                    customers={customers}
+                    selected={p.customer}
+                    onCreateCustomer={onCreateCustomer}
+                    onSelect={(customer) =>
+                      setPays((ps) => ps.map((x) => (x.id === p.id ? { ...x, customer } : x)))
+                    }
+                    onCreated={(customer) => {
+                      setCustomers((cs) =>
+                        [...cs, customer].sort((a, b) => a.name.localeCompare(b.name)),
+                      );
+                      setPays((ps) => ps.map((x) => (x.id === p.id ? { ...x, customer } : x)));
+                    }}
+                  />
+                )}
               </div>
             ))}
           </div>
+
+          {pays.length < 3 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-[12px]"
+              onClick={addPay}
+              data-testid="till-add-payment-method"
+            >
+              <Plus className="size-3.5" />
+              Add payment method
+            </Button>
+          )}
 
           <div className="space-y-1 border-t pt-2">
             <div className="flex items-baseline justify-between">
@@ -433,6 +573,154 @@ function Till({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** A credit line's customer — search the existing list or create one inline,
+ * without leaving the sale. Renders a plain result/query if a customer is
+ * already selected, so it doesn't compete with the payment row above it. */
+function CustomerPicker({
+  customers,
+  selected,
+  onSelect,
+  onCreated,
+  onCreateCustomer,
+}: {
+  customers: Customer[];
+  selected: Customer | null;
+  onSelect: (customer: Customer | null) => void;
+  onCreated: (customer: Customer) => void;
+  onCreateCustomer: typeof createCustomer;
+}) {
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (selected) {
+    return (
+      <div
+        className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2"
+        data-testid="till-credit-customer-selected"
+      >
+        <span className="text-[13px] font-medium">{selected.name}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-[12px] text-muted-foreground"
+          onClick={() => onSelect(null)}
+        >
+          Change
+        </Button>
+      </div>
+    );
+  }
+
+  const matches = customers.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  const startCreate = async () => {
+    setSaving(true);
+    setError(null);
+    const result = await onCreateCustomer({ name: query.trim(), phone: newPhone.trim() || undefined });
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    onCreated(result.customer);
+  };
+
+  return (
+    <div data-testid="till-credit-customer-picker">
+      <label className="text-[11px] font-medium text-muted-foreground">
+        Customer — required for credit
+      </label>
+      <Command className="mt-1 rounded-md border" shouldFilter={false}>
+        <CommandInput
+          placeholder="Search or add a customer"
+          value={query}
+          onValueChange={(v) => {
+            setQuery(v);
+            setCreating(false);
+          }}
+          data-testid="till-credit-customer-search"
+        />
+        <CommandList>
+          {!creating && (
+            <>
+              {matches.length === 0 && query.trim() === "" && (
+                <CommandEmpty>Type a name to search or add a customer.</CommandEmpty>
+              )}
+              {matches.length > 0 && (
+                <CommandGroup>
+                  {matches.map((c) => (
+                    <CommandItem
+                      key={c.id}
+                      value={c.id}
+                      onSelect={() => onSelect(c)}
+                      data-testid="till-credit-customer-option"
+                    >
+                      {c.name}
+                      {c.phone && (
+                        <span className="ml-auto text-xs text-muted-foreground">{c.phone}</span>
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {query.trim() !== "" && (
+                <CommandGroup>
+                  <CommandItem
+                    value={`__create__${query}`}
+                    onSelect={() => setCreating(true)}
+                    data-testid="till-credit-customer-create"
+                  >
+                    <UserPlus className="size-4" />
+                    Add &ldquo;{query.trim()}&rdquo; as a new customer
+                  </CommandItem>
+                </CommandGroup>
+              )}
+            </>
+          )}
+        </CommandList>
+      </Command>
+
+      {creating && (
+        <div className="mt-1.5 space-y-1.5 rounded-md border p-2" data-testid="till-credit-customer-new">
+          <div className="text-[12px] font-medium">New customer</div>
+          <Input value={query.trim()} disabled className="h-8 text-[13px]" />
+          <Input
+            placeholder="Phone (optional)"
+            value={newPhone}
+            onChange={(e) => setNewPhone(e.target.value)}
+            className="h-8 text-[13px]"
+            data-testid="till-credit-customer-phone"
+          />
+          {error && <p className="text-[11px] text-destructive">Couldn&apos;t add customer, try again.</p>}
+          <div className="flex gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 flex-1 text-[12px]"
+              disabled={saving}
+              onClick={startCreate}
+              data-testid="till-credit-customer-save"
+            >
+              {saving ? "Adding…" : "Add customer"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-[12px]"
+              onClick={() => setCreating(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -473,7 +761,12 @@ function SaleConfirmation({
             .filter((p) => Number(p.amount) > 0)
             .map((p) => (
               <div key={p.id} className="flex justify-between gap-3 py-1.5 text-[13px]">
-                <span className="capitalize">{p.method === "mpesa" ? "M-Pesa" : p.method}</span>
+                <span className="capitalize">
+                  {p.method === "mpesa" ? "M-Pesa" : p.method}
+                  {p.method === "credit" && p.customer && (
+                    <span className="text-muted-foreground"> — {p.customer.name}</span>
+                  )}
+                </span>
                 <span className="tabular-nums">{money(Number(p.amount))}</span>
               </div>
             ))}

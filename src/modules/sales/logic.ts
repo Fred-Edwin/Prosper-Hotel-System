@@ -1,15 +1,21 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import { canAccessLocation, type AuthenticatedStaff } from "@/modules/people";
+import { canAccessLocation, findCustomerById, type AuthenticatedStaff } from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
 import { recordStockMovement } from "@/modules/stock";
-import { createSaleRecord } from "./queries";
+import { createSaleRecord, sumCreditForCustomer } from "./queries";
 import type { PaymentMethod, Sale } from "./schema";
 
 export type RecordSaleResult =
   | { ok: true; sale: Sale }
   | {
       ok: false;
-      reason: "forbidden" | "invalid_quantity" | "inactive_product" | "payment_mismatch";
+      reason:
+        | "forbidden"
+        | "invalid_quantity"
+        | "inactive_product"
+        | "payment_mismatch"
+        | "credit_requires_customer"
+        | "customer_not_found";
     };
 
 export async function recordCounterSale(
@@ -17,7 +23,7 @@ export async function recordCounterSale(
   requester: AuthenticatedStaff,
   input: {
     lines: { productId: string; quantity: number }[];
-    paymentLines: { method: PaymentMethod; amountMinor: number }[];
+    paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
   },
 ): Promise<RecordSaleResult> {
   const locationId = requester.staff.locationId;
@@ -27,6 +33,15 @@ export async function recordCounterSale(
 
   if (input.lines.some((line) => line.quantity <= 0)) {
     return { ok: false, reason: "invalid_quantity" };
+  }
+
+  const creditLines = input.paymentLines.filter((p) => p.method === "credit");
+  if (creditLines.some((p) => !p.customerId)) {
+    return { ok: false, reason: "credit_requires_customer" };
+  }
+  for (const creditCustomerId of new Set(creditLines.map((p) => p.customerId!))) {
+    const customer = await findCustomerById(db, creditCustomerId);
+    if (!customer) return { ok: false, reason: "customer_not_found" };
   }
 
   const products = await findProductsByIds(
@@ -75,4 +90,10 @@ export async function recordCounterSale(
   }
 
   return { ok: true, sale };
+}
+
+// CONTEXT.md: a customer's balance is derived from unsettled credit
+// payment lines, never a stored figure.
+export async function getCustomerBalance(db: PrismaClient, customerId: string): Promise<number> {
+  return sumCreditForCustomer(db, customerId);
 }

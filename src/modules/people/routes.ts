@@ -1,10 +1,15 @@
 import { cookies } from "next/headers";
 import { db } from "@/shared/db";
-import { getAuthenticatedStaff, login, logout } from "./logic";
+import { createCustomer, getAuthenticatedStaff, listCustomers, login, logout } from "./logic";
 import type { AuthenticatedStaff } from "./logic";
 
 const SESSION_COOKIE = "prosper_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14 days, matches logic.ts
+
+function writeStatus(reason: string): number {
+  if (reason === "not_found") return 404;
+  return 400;
+}
 
 export async function loginRoute(request: Request): Promise<Response> {
   const body = await request.json();
@@ -42,4 +47,30 @@ export async function getSession(): Promise<AuthenticatedStaff | null> {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   return getAuthenticatedStaff(db, token);
+}
+
+// Any staff member may pick or create a customer, e.g. attaching one to a
+// credit payment line at the till — same "no owner gate" rule as
+// createCustomer itself.
+export async function listCustomersRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const customers = await listCustomers(db);
+  return Response.json({ customers });
+}
+
+export async function createCustomerRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await createCustomer(db, session, {
+    name: body.name,
+    phone: body.phone ?? null,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ customer: result.value });
 }

@@ -9,7 +9,7 @@ export async function createSaleRecord(
     fulfilment: SaleFulfilment;
     totalMinor: number;
     lines: { productId: string; quantity: number; priceMinor: number }[];
-    paymentLines: { method: PaymentMethod; amountMinor: number }[];
+    paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
   },
 ): Promise<Sale> {
   return db.sale.create({
@@ -19,8 +19,22 @@ export async function createSaleRecord(
       fulfilment: data.fulfilment,
       totalMinor: data.totalMinor,
       lines: { create: data.lines },
-      paymentLines: { create: data.paymentLines },
+      paymentLines: {
+        create: data.paymentLines.map((p) => ({
+          method: p.method,
+          amountMinor: p.amountMinor,
+          customerId: p.customerId ?? null,
+        })),
+      },
     },
     include: { lines: true, paymentLines: true },
   });
+}
+
+export async function sumCreditForCustomer(db: PrismaClient, customerId: string): Promise<number> {
+  const result = await db.paymentLine.aggregate({
+    where: { customerId, method: "credit" },
+    _sum: { amountMinor: true },
+  });
+  return result._sum.amountMinor ?? 0;
 }

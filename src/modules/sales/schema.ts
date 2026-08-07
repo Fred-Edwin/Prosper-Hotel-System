@@ -15,6 +15,7 @@ export type PaymentLine = {
   saleId: string;
   method: PaymentMethod;
   amountMinor: number;
+  customerId: string | null;
 };
 
 export type Sale = {

@@ -11,7 +11,13 @@ export {
   updateCustomer,
 } from "./logic";
 export type { LoginResult, AuthenticatedStaff } from "./logic";
-export { loginRoute, logoutRoute, getSession } from "./routes";
+export {
+  loginRoute,
+  logoutRoute,
+  getSession,
+  listCustomersRoute,
+  createCustomerRoute,
+} from "./routes";
 export {
   listActiveStaffAtLocation,
   findLocationByCode,

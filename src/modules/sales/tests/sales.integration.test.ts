@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { getCurrentStockAtLocation } from "@/modules/stock";
-import { recordCounterSale } from "../logic";
+import { getCustomerBalance, recordCounterSale } from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -65,6 +65,7 @@ beforeEach(async () => {
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
   await testDb.stockMovement.deleteMany({});
+  await testDb.customer.deleteMany({});
 });
 
 afterAll(async () => {
@@ -72,6 +73,7 @@ afterAll(async () => {
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
   await testDb.stockMovement.deleteMany({});
+  await testDb.customer.deleteMany({});
   await testDb.product.deleteMany({});
   await testDb.staffMember.deleteMany({});
   await testDb.location.deleteMany({});
@@ -193,5 +195,77 @@ describe("recordCounterSale", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.sale.locationId).toBe(canteenId);
+  });
+});
+
+describe("recordCounterSale — credit", () => {
+  test("rejects a credit payment line with no customer", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "credit_requires_customer" });
+  });
+
+  test("records a credit payment line against a named customer", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Jane Wanjiru" } });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.paymentLines).toEqual([
+      expect.objectContaining({ method: "credit", amountMinor: 80, customerId: customer.id }),
+    ]);
+  });
+
+  test("rejects a credit payment line against an unknown customer", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: "nonexistent" }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "customer_not_found" });
+  });
+
+  test("a sale may split payment across cash and a credit line for a named customer", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Brian Otieno" } });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [
+        { method: "cash", amountMinor: 100 },
+        { method: "credit", amountMinor: 60, customerId: customer.id },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.paymentLines).toHaveLength(2);
+  });
+
+  test("a customer's balance is the sum of their credit payment lines across sales", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Amani" } });
+
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "credit", amountMinor: 160, customerId: customer.id }],
+    });
+
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(240);
+  });
+
+  test("a customer with no credit sales has a zero balance", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Zawadi" } });
+
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(0);
   });
 });

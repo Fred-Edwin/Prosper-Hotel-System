@@ -197,6 +197,10 @@ model PaymentLine {
   sale          Sale          @relation(fields: [saleId], references: [id])
   method        PaymentMethod
   amountMinor   Int
+  // Required for credit lines only — CONTEXT.md: "any staff member may
+  // extend credit provided the customer is named." Null for cash/M-Pesa.
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
 
   @@map("payment_lines")
 }
@@ -235,10 +239,11 @@ model Session {
 // attributed to them must remain resolvable, permanently, and names are
 // not unique (not identifiers in real life).
 model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String?
-  createdAt DateTime @default(now())
+  id           String        @id @default(cuid())
+  name         String
+  phone        String?
+  createdAt    DateTime      @default(now())
+  paymentLines PaymentLine[]
 
   @@map("customers")
 }
