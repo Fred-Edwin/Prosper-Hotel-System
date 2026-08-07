@@ -38,3 +38,21 @@ export async function sumCreditForCustomer(db: PrismaClient, customerId: string)
   });
   return result._sum.amountMinor ?? 0;
 }
+
+export async function findSalesForStaffToday(
+  db: PrismaClient,
+  staffMemberId: string,
+  locationId: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<Sale[]> {
+  return db.sale.findMany({
+    where: {
+      staffMemberId,
+      locationId,
+      occurredAt: { gte: dayStart, lt: dayEnd },
+    },
+    include: { lines: true, paymentLines: true },
+    orderBy: { occurredAt: "desc" },
+  });
+}

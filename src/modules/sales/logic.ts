@@ -2,7 +2,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { canAccessLocation, findCustomerById, type AuthenticatedStaff } from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
 import { recordStockMovement } from "@/modules/stock";
-import { createSaleRecord, sumCreditForCustomer } from "./queries";
+import { createSaleRecord, findSalesForStaffToday, sumCreditForCustomer } from "./queries";
 import type { PaymentMethod, Sale } from "./schema";
 
 export type RecordSaleResult =
@@ -96,4 +96,30 @@ export async function recordCounterSale(
 // payment lines, never a stored figure.
 export async function getCustomerBalance(db: PrismaClient, customerId: string): Promise<number> {
   return sumCreditForCustomer(db, customerId);
+}
+
+export type ListTodaysSalesResult =
+  | { ok: true; sales: Sale[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 09: own sales only, today only, own location only. Never another
+// staff member's sales — that's not a location-access question, so it's
+// enforced by scoping the query to requester.staff.id rather than by a
+// forbidden check.
+export async function listTodaysSalesForStaff(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+): Promise<ListTodaysSalesResult> {
+  const locationId = requester.staff.locationId;
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const sales = await findSalesForStaffToday(db, requester.staff.id, locationId, dayStart, dayEnd);
+  return { ok: true, sales };
 }

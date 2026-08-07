@@ -25,6 +25,9 @@ export type Sale = {
   fulfilment: SaleFulfilment;
   totalMinor: number;
   occurredAt: Date;
+  voided: boolean;
+  voidedAt: Date | null;
+  voidedBy: string | null;
   lines: SaleLine[];
   paymentLines: PaymentLine[];
 };

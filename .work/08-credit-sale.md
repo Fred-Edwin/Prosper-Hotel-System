@@ -33,7 +33,7 @@ this for exactly this reason.
 - **Undo:** settling a credit line (the customer paying it off) is out of
   scope for this ticket — recording repayment is a People-stage concern
   proposal.md hasn't reached yet. This ticket only records the debt; it
-  does not yet record it being paid down. Void (ticket 09) still applies
+  does not yet record it being paid down. Void (ticket 10) still applies
   to a whole sale including its credit line, the same as any other
   payment method.
 

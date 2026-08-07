@@ -5,6 +5,7 @@ import { StaffShellHome, StaffHome } from "@/components/layout/staff-shell";
 import { staffNav, type StaffRole } from "@/components/layout/staff-nav";
 import { StockList } from "@/modules/stock/ui/stock-list";
 import { NewSale } from "@/modules/sales/ui/new-sale";
+import { TodaysSales } from "@/modules/sales/ui/todays-sales";
 import { NotBuilt } from "@/components/patterns/states";
 
 export function StaffPageClient({
@@ -35,7 +36,8 @@ export function StaffPageClient({
       )}
       {active === "stock" && <StockList locationId={locationId} />}
       {active === "sell" && <NewSale onDone={() => setActive(null)} />}
-      {active !== null && active !== "stock" && active !== "sell" && (
+      {active === "sales" && <TodaysSales />}
+      {active !== null && active !== "stock" && active !== "sell" && active !== "sales" && (
         <NotBuilt destination={activeLink?.label ?? ""} />
       )}
     </StaffShellHome>

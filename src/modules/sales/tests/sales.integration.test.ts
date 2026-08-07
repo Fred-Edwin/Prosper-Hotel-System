@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { getCurrentStockAtLocation } from "@/modules/stock";
-import { getCustomerBalance, recordCounterSale } from "../logic";
+import { getCustomerBalance, listTodaysSalesForStaff, recordCounterSale } from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -15,10 +15,20 @@ function staffAt(
   locationId: string,
   locationCode: "restaurant" | "canteen" = "restaurant",
 ): AuthenticatedStaff {
+  return staffMemberAt("staff-1", "Test Staff", role, locationId, locationCode);
+}
+
+function staffMemberAt(
+  id: string,
+  name: string,
+  role: "owner" | "cashier",
+  locationId: string,
+  locationCode: "restaurant" | "canteen" = "restaurant",
+): AuthenticatedStaff {
   return {
     staff: {
-      id: "staff-1",
-      name: "Test Staff",
+      id,
+      name,
       phone: "+254700111333",
       role,
       locationId,
@@ -43,6 +53,17 @@ beforeAll(async () => {
       id: "staff-1",
       name: "Test Cashier",
       phone: "+254700111334",
+      pinHash: await hashPin("1234"),
+      role: "cashier",
+      locationId: restaurant.id,
+    },
+  });
+
+  await testDb.staffMember.create({
+    data: {
+      id: "staff-2",
+      name: "Other Cashier",
+      phone: "+254700111335",
       pinHash: await hashPin("1234"),
       role: "cashier",
       locationId: restaurant.id,
@@ -267,5 +288,97 @@ describe("recordCounterSale — credit", () => {
     const customer = await testDb.customer.create({ data: { name: "Zawadi" } });
 
     expect(await getCustomerBalance(testDb, customer.id)).toBe(0);
+  });
+});
+
+describe("listTodaysSalesForStaff", () => {
+  test("lists sales this staff member recorded today, newest first", async () => {
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "cash", amountMinor: 160 }],
+    });
+
+    const result = await listTodaysSalesForStaff(testDb, staffAt("cashier", restaurantId));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sales).toHaveLength(2);
+    expect(result.sales[0].totalMinor).toBe(160);
+    expect(result.sales[1].totalMinor).toBe(80);
+  });
+
+  test("never includes another staff member's sales", async () => {
+    await recordCounterSale(
+      testDb,
+      staffMemberAt("staff-2", "Other Cashier", "cashier", restaurantId),
+      {
+        lines: [{ productId: sodaId, quantity: 1 }],
+        paymentLines: [{ method: "cash", amountMinor: 80 }],
+      },
+    );
+
+    const result = await listTodaysSalesForStaff(testDb, staffAt("cashier", restaurantId));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sales).toEqual([]);
+  });
+
+  test("never includes another location's sales, even for the same staff id", async () => {
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    const result = await listTodaysSalesForStaff(
+      testDb,
+      staffAt("cashier", canteenId, "canteen"),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sales).toEqual([]);
+  });
+
+  test("an empty day returns an empty list, not an error", async () => {
+    const result = await listTodaysSalesForStaff(testDb, staffAt("cashier", restaurantId));
+
+    expect(result).toEqual({ ok: true, sales: [] });
+  });
+
+  test("a sale carries its lines and payment breakdown, including a credit customer", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Jane Wanjiru" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "credit", amountMinor: 160, customerId: customer.id }],
+    });
+
+    const result = await listTodaysSalesForStaff(testDb, staffAt("cashier", restaurantId));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sales[0].lines).toEqual([
+      expect.objectContaining({ productId: sodaId, quantity: 2, priceMinor: 80 }),
+    ]);
+    expect(result.sales[0].paymentLines).toEqual([
+      expect.objectContaining({ method: "credit", amountMinor: 160, customerId: customer.id }),
+    ]);
+  });
+
+  test("a newly recorded sale is not voided", async () => {
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    const result = await listTodaysSalesForStaff(testDb, staffAt("cashier", restaurantId));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sales[0].voided).toBe(false);
   });
 });

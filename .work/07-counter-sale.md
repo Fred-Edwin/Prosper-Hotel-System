@@ -42,7 +42,7 @@ named customer) is deliberately deferred, see Out of scope.
   architecture.md's "nothing that moved stock or money is ever deleted"
   and its reversal-only correction model).
 - **Delete:** not allowed.
-- **Undo:** out of scope for this ticket — same-day void is ticket 09.
+- **Undo:** out of scope for this ticket — same-day void is ticket 10.
   This ticket's sales are permanent once recorded; void lands as its own
   slice so this one stays focused on getting a sale recorded correctly
   first.
@@ -77,7 +77,7 @@ named customer) is deliberately deferred, see Out of scope.
 
 - Credit as a payment method (ticket 08).
 - Delivery fulfilment (needs a named customer; separate ticket after 08).
-- Same-day void (ticket 09).
+- Same-day void (ticket 10).
 - Any sales list/ledger/history screen.
 - Wastage, internal consumption, complimentary items — these are stock
   concepts, not sales.

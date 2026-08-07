@@ -20,6 +20,7 @@ import {
   Trash2,
   Receipt,
   Boxes,
+  History,
   type LucideIcon,
 } from "lucide-react";
 
@@ -43,6 +44,12 @@ const all: Record<string, StaffLink> = {
     label: "New sale",
     icon: ShoppingCart,
     hint: "Take a sale at the counter",
+  },
+  sales: {
+    key: "sales",
+    label: "Today's sales",
+    icon: History,
+    hint: "Sales you've recorded today",
   },
   takings: {
     key: "takings",
@@ -94,6 +101,7 @@ const all: Record<string, StaffLink> = {
 export const staffNav: Record<StaffRole, StaffLink[]> = {
   "store-manager": [
     all.sell,
+    all.sales,
     all.receive,
     all.issue,
     all.count,
@@ -101,9 +109,10 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     all.stock,
     all.handover,
   ],
-  cashier: [all.sell, all.wastage, all.stock, all.handover],
+  cashier: [all.sell, all.sales, all.wastage, all.stock, all.handover],
   attendant: [
     all.takings,
+    all.sales,
     all.receive,
     all.count,
     all.wastage,
