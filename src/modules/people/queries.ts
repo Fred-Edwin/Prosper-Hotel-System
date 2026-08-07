@@ -8,6 +8,13 @@ export async function findLocationByCode(
   return db.location.findUnique({ where: { code } });
 }
 
+export async function findLocationById(
+  db: PrismaClient,
+  id: string,
+): Promise<Location | null> {
+  return db.location.findUnique({ where: { id } });
+}
+
 export async function findStaffMemberByPhone(
   db: PrismaClient,
   phone: string,

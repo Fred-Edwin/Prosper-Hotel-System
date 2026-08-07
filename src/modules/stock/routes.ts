@@ -12,7 +12,8 @@ export async function stockAtLocationRoute(
   const { locationId } = await params;
   const result = await getCurrentStockAtLocation(db, session, locationId);
   if (!result.ok) {
-    return Response.json({ error: result.reason }, { status: 403 });
+    const status = result.reason === "not_found" ? 404 : 403;
+    return Response.json({ error: result.reason }, { status });
   }
 
   return Response.json({ levels: result.levels });

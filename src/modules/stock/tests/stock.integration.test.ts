@@ -8,7 +8,11 @@ let restaurantId: string;
 let canteenId: string;
 let productId: string;
 
-function staffAt(role: "owner" | "cashier", locationId: string): AuthenticatedStaff {
+function staffAt(
+  role: "owner" | "cashier",
+  locationId: string,
+  locationCode: "restaurant" | "canteen" = "restaurant",
+): AuthenticatedStaff {
   return {
     staff: {
       id: "staff-1",
@@ -18,7 +22,7 @@ function staffAt(role: "owner" | "cashier", locationId: string): AuthenticatedSt
       locationId,
       active: true,
     },
-    location: { id: locationId, code: "restaurant", name: "Test" },
+    location: { id: locationId, code: locationCode, name: "Test" },
   };
 }
 
@@ -118,5 +122,15 @@ describe("getCurrentStockAtLocation", () => {
     );
 
     expect(result).toEqual({ ok: true, levels: [] });
+  });
+
+  test("the owner querying a nonexistent location gets not_found, not an empty list", async () => {
+    const result = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("owner", restaurantId),
+      "does-not-exist",
+    );
+
+    expect(result).toEqual({ ok: false, reason: "not_found" });
   });
 });

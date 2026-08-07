@@ -18,9 +18,13 @@
  * Deleted with the variants at lock.
  */
 
-export type Location = "restaurant" | "canteen";
+// Prefixed Fixture* — these are design-phase placeholder shapes, not the
+// real schema. Do not import the real Location/ProductKind from here; they
+// live in @/modules/people and @/modules/catalogue respectively, and are
+// not identical (e.g. real ProductKind uses "cooked_food", not "cooked").
+export type FixtureLocation = "restaurant" | "canteen";
 
-export type ProductKind = "goods" | "cooked" | "service" | "packaging";
+export type FixtureProductKind = "goods" | "cooked" | "service" | "packaging";
 
 /**
  * Till categories.
@@ -51,12 +55,12 @@ export const categories: { key: Category; label: string }[] = [
 export interface Product {
   id: string;
   name: string;
-  kind: ProductKind;
+  kind: FixtureProductKind;
   category: Category;
   price: number;
   /** Null where no recipe exists — cooked food without a recorded yield. */
   unitCost: number | null;
-  location: Location[];
+  location: FixtureLocation[];
   stock: number | null;
 }
 
@@ -139,7 +143,7 @@ export interface Staff {
   id: string;
   name: string;
   role: "owner" | "store-manager" | "cashier" | "attendant";
-  location: Location | "both";
+  location: FixtureLocation | "both";
   dailyRate: number;
   active: boolean;
 }
@@ -186,7 +190,7 @@ export interface Sale {
   id: string;
   ref: string;
   time: string;
-  location: Location;
+  location: FixtureLocation;
   staffId: string;
   staffName: string;
   fulfilment: "counter" | "delivery";
@@ -310,7 +314,7 @@ export interface Movement {
   time: string;
   itemId: string;
   itemName: string;
-  location: Location;
+  location: FixtureLocation;
   reason: MovementReason;
   qty: number;
   unitCost: number | null;
@@ -346,7 +350,7 @@ export const movements: Movement[] = [
 export interface HandoverCheck {
   staffId: string;
   staffName: string;
-  location: Location;
+  location: FixtureLocation;
   cashExpected: number;
   cashActual: number;
   mpesaExpected: number;
@@ -366,7 +370,7 @@ export interface Asset {
   name: string;
   purchasedOn: string;
   cost: number;
-  location: Location;
+  location: FixtureLocation;
   expenseRef: string;
 }
 
@@ -388,7 +392,7 @@ export interface Expense {
   category: ExpenseCategory;
   description: string;
   amount: number;
-  location: Location | "both";
+  location: FixtureLocation | "both";
   recordedBy: string;
   /** Staff-recorded expenses await the owner's confirmation before they move the cash balance. */
   status: "confirmed" | "pending";
@@ -436,7 +440,7 @@ export const dashboard = {
 /** Per-location trading figures, for the comparison the dashboard carries. */
 export const locationPerformance = [
   {
-    location: "restaurant" as Location,
+    location: "restaurant" as FixtureLocation,
     revenue: 18600,
     costOfGoods: 9600,
     grossProfit: 9000,
@@ -447,7 +451,7 @@ export const locationPerformance = [
     provisional: false,
   },
   {
-    location: "canteen" as Location,
+    location: "canteen" as FixtureLocation,
     revenue: 5400,
     costOfGoods: 5280,
     grossProfit: 120,
@@ -545,7 +549,7 @@ export interface LedgerDay {
 export interface ProductLedgerRow {
   id: string;
   item: string;
-  location: Location;
+  location: FixtureLocation;
   category: Category;
   openingQty: number;
   openingValue: number;
@@ -712,7 +716,7 @@ export interface NonSalesRow {
   id: string;
   date: string;
   item: string;
-  location: Location;
+  location: FixtureLocation;
   reason: NonSalesReason;
   qty: number;
   sellingPrice: number;
@@ -761,7 +765,7 @@ export interface CashTransaction {
   in: number;
   out: number;
   recordedBy: string;
-  location: Location | "both";
+  location: FixtureLocation | "both";
 }
 
 /**
@@ -902,7 +906,7 @@ export const reasonLabel: Record<MovementReason, string> = {
  */
 export interface WorkedDay {
   date: string;
-  location: Location;
+  location: FixtureLocation;
   /** Absent days are recorded, not omitted — a gap is not the same as a zero. */
   worked: boolean;
   note?: string;
@@ -1184,7 +1188,7 @@ export interface ActivityEntry {
   kind: ActivityKind;
   who: string;
   what: string;
-  location: Location | null;
+  location: FixtureLocation | null;
   amount: number | null;
   /** Why, where a correction or void requires one. */
   reason?: string;

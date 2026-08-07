@@ -4,11 +4,12 @@
  * Staff-shell stock list — "what's on hand at my location", read-only.
  *
  * No design-phase screen covered this (only the admin valuation table,
- * stock-body.tsx, existed) — this is a new composition built strictly from
- * existing primitives, confirmed with the user rather than invented. It
- * differs from the admin table on purpose: no table-toolbar chrome, no
- * cost/value columns (owner-only concerns), large tap-target rows per
- * docs/design.md's mobile rules rather than a dense record-table.
+ * stock-body.tsx — in the prosper-hotel-design-reference worktree, not this
+ * repo — existed) — this is a new composition built strictly from existing
+ * primitives, confirmed with the user rather than invented. It differs from
+ * the admin table on purpose: no table-toolbar chrome, no cost/value
+ * columns (owner-only concerns), large tap-target rows per docs/design.md's
+ * mobile rules rather than a dense record-table.
  */
 
 import { useEffect, useState } from "react";
@@ -32,8 +33,9 @@ async function fetchStock(locationId: string): Promise<LoadState> {
     const response = await fetch(`/api/stock/${locationId}`);
     if (response.status === 403) return { status: "denied" };
     if (!response.ok) return { status: "error" };
-    const { levels } = await response.json();
-    return { status: "ready", levels };
+    const body = await response.json();
+    if (!Array.isArray(body?.levels)) return { status: "error" };
+    return { status: "ready", levels: body.levels };
   } catch {
     return { status: "error" };
   }

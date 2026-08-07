@@ -29,7 +29,7 @@
  */
 
 import { Fragment, type ReactNode } from "react";
-import { money as fmtMoney } from "@/lib/fixtures";
+import { money as fmtMoney } from "@/shared/money";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, ArrowDownUp } from "lucide-react";
 
