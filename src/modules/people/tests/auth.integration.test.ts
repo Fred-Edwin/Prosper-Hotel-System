@@ -3,6 +3,7 @@ import { hashPin, login, logout } from "@/modules/people";
 import { getAuthenticatedStaff } from "../logic";
 import { testDb } from "@/shared/test-db";
 
+const NAME = "Test Cashier";
 const PHONE = "+254700111222";
 const PIN = "4821";
 
@@ -28,7 +29,7 @@ beforeEach(async () => {
   await testDb.staffMember.deleteMany({});
   const staff = await testDb.staffMember.create({
     data: {
-      name: "Test Cashier",
+      name: NAME,
       phone: PHONE,
       pinHash: await hashPin(PIN),
       role: "cashier",
@@ -39,8 +40,8 @@ beforeEach(async () => {
 });
 
 describe("login/logout", () => {
-  test("logs in with the correct phone and PIN", async () => {
-    const result = await login(testDb, PHONE, PIN);
+  test("logs in with the correct name and PIN", async () => {
+    const result = await login(testDb, NAME, PIN);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -49,19 +50,19 @@ describe("login/logout", () => {
   });
 
   test("rejects a wrong PIN", async () => {
-    const result = await login(testDb, PHONE, "0000");
+    const result = await login(testDb, NAME, "0000");
 
     expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
   });
 
-  test("rejects an unknown phone with the same reason as a wrong PIN", async () => {
-    const result = await login(testDb, "+254799999999", PIN);
+  test("rejects an unknown name with the same reason as a wrong PIN", async () => {
+    const result = await login(testDb, "Nobody Here", PIN);
 
     expect(result).toEqual({ ok: false, reason: "invalid_credentials" });
   });
 
   test("logout invalidates the session", async () => {
-    const loggedIn = await login(testDb, PHONE, PIN);
+    const loggedIn = await login(testDb, NAME, PIN);
     if (!loggedIn.ok) throw new Error("expected login to succeed");
 
     expect(await getAuthenticatedStaff(testDb, loggedIn.token)).not.toBeNull();

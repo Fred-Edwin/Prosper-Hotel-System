@@ -8,10 +8,10 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14 days, matches logic.ts
 
 export async function loginRoute(request: Request): Promise<Response> {
   const body = await request.json();
-  const phone = typeof body.phone === "string" ? body.phone : "";
+  const name = typeof body.name === "string" ? body.name : "";
   const pin = typeof body.pin === "string" ? body.pin : "";
 
-  const result = await login(db, phone, pin);
+  const result = await login(db, name, pin);
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: 401 });
   }

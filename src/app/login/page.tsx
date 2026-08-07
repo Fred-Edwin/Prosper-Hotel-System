@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Login — phone + PIN, per docs/design.md's form rules: single column,
+ * Login — name + PIN, per docs/design.md's form rules: single column,
  * labels above, validation on blur, input preserved on failure.
  *
  * Staff use their own phones mid-service (docs/architecture.md), so this
@@ -15,29 +15,29 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LoginForm } from "./login-form";
 
-type FieldErrors = { phone?: string; pin?: string };
+type FieldErrors = { name?: string; pin?: string };
 
-function validate(phone: string, pin: string): FieldErrors {
+function validate(name: string, pin: string): FieldErrors {
   const errors: FieldErrors = {};
-  if (!phone.trim()) errors.phone = "Enter your phone number";
+  if (!name.trim()) errors.name = "Enter your name";
   if (!/^\d{4}$/.test(pin)) errors.pin = "PIN is 4 digits";
   return errors;
 }
 
 export default function LoginPage() {
   const router = useRouter();
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState("");
   const [pin, setPin] = useState("");
-  const [touched, setTouched] = useState<{ phone?: boolean; pin?: boolean }>({});
+  const [touched, setTouched] = useState<{ name?: boolean; pin?: boolean }>({});
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const errors = validate(phone, pin);
+  const errors = validate(name, pin);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setTouched({ phone: true, pin: true });
-    if (errors.phone || errors.pin) return;
+    setTouched({ name: true, pin: true });
+    if (errors.name || errors.pin) return;
 
     setSubmitting(true);
     setFormError(null);
@@ -45,12 +45,12 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, pin }),
+        body: JSON.stringify({ name, pin }),
       });
 
       if (!response.ok) {
-        // Same message for a wrong PIN and an unknown phone — no enumeration leak.
-        setFormError("Wrong phone number or PIN.");
+        // Same message for a wrong PIN and an unknown name — no enumeration leak.
+        setFormError("Wrong name or PIN.");
         setSubmitting(false);
         return;
       }
@@ -64,15 +64,15 @@ export default function LoginPage() {
 
   return (
     <LoginForm
-      phone={phone}
+      name={name}
       pin={pin}
-      phoneError={touched.phone ? errors.phone : undefined}
+      nameError={touched.name ? errors.name : undefined}
       pinError={touched.pin ? errors.pin : undefined}
       formError={formError}
       submitting={submitting}
-      onPhoneChange={setPhone}
+      onNameChange={setName}
       onPinChange={setPin}
-      onPhoneBlur={() => setTouched((t) => ({ ...t, phone: true }))}
+      onNameBlur={() => setTouched((t) => ({ ...t, name: true }))}
       onPinBlur={() => setTouched((t) => ({ ...t, pin: true }))}
       onSubmit={handleSubmit}
     />

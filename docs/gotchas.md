@@ -49,6 +49,39 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   fresh dedicated droplet was provisioned for Prosper Hotel instead, to avoid
   cross-client resource contention on someone else's production box.
 
+## Testing / Playwright
+
+- **Real E2E specs (`e2e/*.spec.ts`) use `@playwright/test` as configured
+  in `playwright.config.ts`** — the `webServer` block auto-starts the app,
+  the `setup` project logs in once and saves `e2e/.auth/staff.json`, every
+  other spec reuses it via `storageState`. Don't hand-roll a browser launch
+  inside a spec file; extend the existing config instead.
+- **Ad hoc visual checks (screenshots, manually driving a page, verifying
+  something live) are a different use of the same library** — not a
+  `test()` block. Import `chromium` from `playwright` directly
+  (`import { chromium } from "playwright"`), launch with
+  `chromium.launch({ args: ["--no-sandbox"] })`, and drive it with
+  `page.goto()` / `page.fill()` / `page.click()` / `page.screenshot()` in a
+  plain throwaway script — no Playwright test runner needed for this.
+  This is what backs the visual checkpoint in
+  `.claude/skills/build/SKILL.md`.
+- **The single most common failure running such a script: launching it
+  from outside the project directory.** `playwright` is a project
+  dependency in `node_modules`, resolved the same way any other npm
+  package is — `node /tmp/scratch/my-script.mjs` fails with
+  `ERR_MODULE_NOT_FOUND` even though the exact same script works when run
+  as `node my-script.mjs` from the repo root (or an absolute path *into*
+  the repo). If a script needs to live outside the repo (e.g. a session
+  scratchpad), either run it via `cd` into the repo first, or copy it into
+  the repo temporarily and delete it after.
+- **Prefer handing the user a live URL over a screenshot when they can
+  reach one.** A screenshot is one frame of one state; a running
+  `pnpm storybook` (or `pnpm dev`) URL is every state, interactive, at
+  whatever size they resize the window to. Screenshots are the fallback
+  for when a local URL genuinely isn't reachable (a remote/headless
+  session), not the default.
+- **Added:** 2026-08-07
+
 ## GitHub Actions auth
 
 - **Pushing changes to `.github/workflows/*` requires the `workflow` OAuth
