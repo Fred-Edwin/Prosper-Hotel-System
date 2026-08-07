@@ -51,7 +51,7 @@ type Product = {
 type PaymentMethod = "cash" | "mpesa";
 
 type Line = { product: Product; qty: number };
-type Pay = { id: number; method: PaymentMethod; amount: string };
+type Pay = { id: number; method: PaymentMethod; amount: string; touched: boolean };
 
 export type LoadState =
   | { status: "loading" }
@@ -171,8 +171,8 @@ function Till({
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [pays, setPays] = useState<Pay[]>([
-    { id: 1, method: "cash", amount: "" },
-    { id: 2, method: "mpesa", amount: "" },
+    { id: 1, method: "cash", amount: "", touched: false },
+    { id: 2, method: "mpesa", amount: "", touched: false },
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -188,20 +188,46 @@ function Till({
   const paid = pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const remaining = total - paid;
 
+  // Splitting a payment is typing the second box, not a "split" step — so
+  // an untouched line always holds what's left to pay. Recomputed against
+  // whatever the total is at the moment, so it stays right whether the
+  // trigger was editing a payment line or changing the basket.
+  const fillUntouched = (ps: Pay[], nextTotal: number): Pay[] => {
+    const touchedTotal = ps
+      .filter((p) => p.touched)
+      .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const balance = nextTotal - touchedTotal;
+    const amount = balance > 0 ? String(balance) : "";
+    return ps.map((p) => (p.touched ? p : { ...p, amount }));
+  };
+
+  const totalFor = (ls: Line[]) =>
+    ls.reduce((s, l) => s + (l.product.priceMinor ?? 0) * l.qty, 0);
+
   const add = (p: Product) =>
     setLines((ls) => {
       const hit = ls.find((l) => l.product.id === p.id);
-      return hit
+      const next = hit
         ? ls.map((l) => (l.product.id === p.id ? { ...l, qty: l.qty + 1 } : l))
         : [...ls, { product: p, qty: 1 }];
+      setPays((ps) => fillUntouched(ps, totalFor(next)));
+      return next;
     });
 
   const bump = (id: string, d: number) =>
-    setLines((ls) =>
-      ls
+    setLines((ls) => {
+      const next = ls
         .map((l) => (l.product.id === id ? { ...l, qty: l.qty + d } : l))
-        .filter((l) => l.qty > 0),
-    );
+        .filter((l) => l.qty > 0);
+      setPays((ps) => fillUntouched(ps, totalFor(next)));
+      return next;
+    });
+
+  const setPayAmount = (id: number, amount: string) =>
+    setPays((ps) => {
+      const edited = ps.map((x) => (x.id === id ? { ...x, amount, touched: true } : x));
+      return fillUntouched(edited, total);
+    });
 
   const canComplete = lines.length > 0 && remaining === 0 && !submitting;
 
@@ -366,11 +392,7 @@ function Till({
                   inputMode="numeric"
                   placeholder="0"
                   value={p.amount}
-                  onChange={(e) =>
-                    setPays((ps) =>
-                      ps.map((x) => (x.id === p.id ? { ...x, amount: e.target.value } : x)),
-                    )
-                  }
+                  onChange={(e) => setPayAmount(p.id, e.target.value)}
                   className="h-10 flex-1 text-right tabular-nums"
                   data-testid={`till-pay-${p.method}`}
                 />
