@@ -20,6 +20,7 @@ services:
     environment:
       DATABASE_URL: postgresql://prosper:${POSTGRES_PASSWORD}@postgres:5432/prosper_hotel
       NODE_ENV: production
+      SENTRY_DSN: ${SENTRY_DSN}
     depends_on:
       postgres:
         condition: service_healthy

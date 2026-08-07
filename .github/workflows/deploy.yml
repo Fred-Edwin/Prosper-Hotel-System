@@ -39,6 +39,10 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
+          build-args: |
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+          secrets: |
+            sentry_auth_token=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -49,6 +53,10 @@ jobs:
           target: builder
           push: true
           tags: ${{ env.IMAGE }}-migrate:${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+          secrets: |
+            sentry_auth_token=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -58,17 +66,22 @@ jobs:
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: deploy
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: IMAGE,GITHUB_SHA
+          envs: IMAGE,GITHUB_SHA,SENTRY_DSN
           script: |
             set -euo pipefail
             cd /home/deploy/prosper-hotel
 
             export APP_IMAGE="${IMAGE}:${GITHUB_SHA}"
-            echo "APP_IMAGE=${APP_IMAGE}" > .env.deploy
+            {
+              echo "APP_IMAGE=${APP_IMAGE}"
+              echo "SENTRY_DSN=${SENTRY_DSN}"
+            } > .env.deploy
 
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
