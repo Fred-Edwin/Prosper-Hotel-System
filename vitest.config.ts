@@ -12,6 +12,9 @@ const dirname =
 
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+  },
   test: {
     projects: [
       {
@@ -29,6 +32,15 @@ export default defineConfig({
             provider: playwright({}),
             instances: [{ browser: 'chromium' }],
           },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'integration',
+          environment: 'node',
+          include: ['src/modules/**/tests/**/*.integration.test.ts'],
+          setupFiles: ['./vitest.setup.integration.ts'],
         },
       },
     ],

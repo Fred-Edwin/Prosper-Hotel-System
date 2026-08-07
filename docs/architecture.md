@@ -102,6 +102,29 @@ module is the wrong shape.
 
 ---
 
+## Testing
+
+**Integration tests** run against `prosper_hotel_test` (a real, separately migrated
+database — never mocked) via `pnpm test`, in `src/modules/<x>/tests/*.integration.test.ts`.
+They call a module's `index.ts` exports directly. `src/modules/people/tests/auth.integration.test.ts`
+is the exemplar: log in, wrong PIN, unknown phone (same error — no enumeration leak), logout
+invalidates the session.
+
+Auth's cookie-setting route handlers (`loginRoute`, `logoutRoute`) depend on Next's
+per-request `cookies()` context and cannot be called directly outside a running server —
+that boundary is what E2E exists to cover. `login`/`logout`/`getAuthenticatedStaff` sit one
+layer below the HTTP routes and accept the Prisma client as a parameter, so they're
+integration-tested directly; both are exported from `people/index.ts` for that reason.
+
+**E2E tests** run via Playwright (`e2e/`, `pnpm test:e2e`), through a real running app,
+critical paths only. `e2e/auth.setup.ts` logs in once and saves browser state to
+`e2e/.auth/staff.json` (gitignored) — every other spec reuses it, so a broken login produces
+one failing setup, not forty failing specs. Selectors target `data-testid` only, never CSS
+classes or visible text, which is what survives a cosmetic restyle. No fixed waits — assert
+on the condition (a locator, a URL, a network response), never `page.waitForTimeout`.
+
+---
+
 ## Stack
 
 | Concern | Choice | Why |
