@@ -41,6 +41,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { type Destination } from "./admin-nav";
 import { money } from "@/shared/money";
 import {
@@ -131,6 +132,12 @@ export function Sidebar({
   cashExpected?: number;
 }) {
   const inDrawer = !toggle;
+  const router = useRouter();
+
+  async function handleSignOut() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+  }
 
   return (
     <aside
@@ -267,7 +274,7 @@ export function Sidebar({
               <Settings className="size-3.5" /> Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleSignOut}>
               <LogOut className="size-3.5" /> Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>

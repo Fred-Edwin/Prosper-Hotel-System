@@ -26,7 +26,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Lock, RotateCw, SearchX } from "lucide-react";
+import { Lock, RotateCw, SearchX, Hammer } from "lucide-react";
 
 function Frame({
   icon,
@@ -65,6 +65,22 @@ export function EmptyFirstUse({
   action?: React.ReactNode;
 }) {
   return <Frame icon={icon} title={title} body={body} action={action} />;
+}
+
+/**
+ * A destination whose module has no real functionality yet — a roadmap
+ * stage away, not an empty record set. Distinct from `EmptyFirstUse` (a
+ * different icon, no call to action) so a genuinely empty built screen is
+ * never confused with one that isn't built.
+ */
+export function NotBuilt({ destination }: { destination: string }) {
+  return (
+    <Frame
+      icon={<Hammer className="size-4" />}
+      title={`${destination} isn't built yet`}
+      body="This part of the system is planned but not live. Check back once it's built."
+    />
+  );
 }
 
 /** No results from a filter. A different message, and a way back. */

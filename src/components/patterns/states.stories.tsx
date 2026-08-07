@@ -6,6 +6,7 @@ import {
   PermissionDenied,
   LoadingTable,
   LoadingDetail,
+  NotBuilt,
 } from "./states";
 import { Button } from "@/components/ui/button";
 import { PackageOpen, Plus } from "lucide-react";
@@ -44,6 +45,15 @@ export const FirstUse: Story = {
       }
     />
   ),
+};
+
+/**
+ * A destination whose module isn't built yet — distinct from FirstUse, which
+ * is a built screen with no records. No call to action: there is nothing the
+ * user can do here to make it appear sooner.
+ */
+export const NotBuiltYet: Story = {
+  render: () => <NotBuilt destination="Dashboard" />,
 };
 
 /**
