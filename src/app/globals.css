@@ -101,20 +101,30 @@
   shadcn component variables, mapped onto the ramps above.
   Radius base is 0.375rem — enterprise software, not a consumer app.
 */
-/* Violet is the chosen accent and the default. Indigo and blue remain
-   switchable while the choice is still being checked on real screens. */
+/* Brand purple — locked to the client's palette (extracted from their
+   reference codebase's globals.css), not derived from the dataviz
+   validator like the earlier violet/indigo/blue candidates were. 600/700/800
+   are the client's primary/hover/active hexes directly; the rest of the ramp
+   is interpolated from those three anchor points to keep every other screen
+   (buttons, focus rings, charts) on the same hue. */
 :root,
 :root[data-accent="violet"] {
-  --brand-50: oklch(0.970 0.016 292);
-  --brand-100: oklch(0.936 0.036 292);
-  --brand-200: oklch(0.888 0.070 292);
-  --brand-300: oklch(0.820 0.120 292);
-  --brand-400: oklch(0.714 0.180 292);
-  --brand-500: oklch(0.606 0.212 292);
-  --brand-600: oklch(0.511 0.222 292);
-  --brand-700: oklch(0.446 0.204 292);
-  --brand-800: oklch(0.388 0.170 292);
-  --brand-900: oklch(0.343 0.132 292);
+  --brand-50: oklch(0.960 0.020 292);
+  --brand-100: oklch(0.910 0.045 292);
+  --brand-200: oklch(0.840 0.085 292);
+  --brand-300: oklch(0.740 0.140 292);
+  --brand-400: oklch(0.620 0.190 292);
+  --brand-500: oklch(0.420 0.190 292);
+  --brand-600: #1b002b; /* --color-brand-primary */
+  --brand-700: #12001c; /* --color-brand-primary-hover */
+  --brand-800: #0b0012; /* --color-brand-primary-active */
+  --brand-900: #331642; /* --color-brand-primary-container */
+
+  /* Gold — the one companion accent, used only on dark brand surfaces
+     (login footer/header) for links and small marks. Never appears on a
+     light page; that would make two accents compete. */
+  --color-brand-accent: #eabf63;
+  --color-surface-dark: #1b002b;
 }
 
 :root[data-accent="indigo"] {

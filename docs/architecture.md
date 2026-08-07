@@ -168,11 +168,18 @@ expected-cash balance, which depends on only one person paying money out.
 **The owner works any position when present.** Capability is therefore not "owner sees
 reports" — she must be able to do everything her staff can do, plus what only she can do.
 
-**Login is a phone number and a four-digit PIN.** Staff use their own phones and log in
-mid-service with customers waiting; an email and password is friction that gets worked
-around. The accepted risk: a shared or observed PIN weakens attribution, and attribution is
-the basis of the handover control. Mitigated by making activity visible per person rather
-than by hardening the login.
+**Login is a name and a four-digit PIN.** Staff use their own phones and log in mid-service
+with customers waiting; an email and password is friction that gets worked around. Name
+rather than phone number: it is what a staff member already knows without looking anything
+up, where a phone number is one more thing to recall or mistype under pressure. `StaffMember.name`
+is unique for this reason — see [ADR 0007](adr/0007-name-based-login.md) if a name collision
+between two staff members is ever hit; the accepted answer today is that the owner picks a
+distinguishing name (a surname, a nickname) at the point a duplicate would occur, same as she
+already would for two people who happen to share a first name.
+
+The accepted risk, unchanged from the earlier phone-based decision: a shared or observed PIN
+weakens attribution, and attribution is the basis of the handover control. Mitigated by
+making activity visible per person rather than by hardening the login.
 
 **Staff are managed by the owner** — added, deactivated, rates and roles set. **Deactivated,
 never deleted:** a former employee's sales must stay attributed to them.

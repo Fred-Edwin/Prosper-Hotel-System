@@ -5,7 +5,7 @@ import {
   createSession,
   deleteSession,
   findSessionByToken,
-  findStaffMemberByPhone,
+  findStaffMemberByName,
 } from "./queries";
 import type { Location, StaffMember, StaffRole } from "./schema";
 
@@ -22,10 +22,10 @@ export type LoginResult =
 
 export async function login(
   db: PrismaClient,
-  phone: string,
+  name: string,
   pin: string,
 ): Promise<LoginResult> {
-  const staffMember = await findStaffMemberByPhone(db, phone);
+  const staffMember = await findStaffMemberByName(db, name);
   if (!staffMember) return { ok: false, reason: "invalid_credentials" };
 
   const pinMatches = await bcrypt.compare(pin, staffMember.pinHash);

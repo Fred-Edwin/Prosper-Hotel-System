@@ -15,11 +15,11 @@ export async function findLocationById(
   return db.location.findUnique({ where: { id } });
 }
 
-export async function findStaffMemberByPhone(
+export async function findStaffMemberByName(
   db: PrismaClient,
-  phone: string,
+  name: string,
 ): Promise<(StaffMember & { pinHash: string }) | null> {
-  return db.staffMember.findUnique({ where: { phone } });
+  return db.staffMember.findUnique({ where: { name } });
 }
 
 export async function listActiveStaffAtLocation(

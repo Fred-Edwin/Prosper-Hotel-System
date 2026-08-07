@@ -14,11 +14,11 @@ const noop = () => {};
 
 export const Default: Story = {
   args: {
-    phone: "",
+    name: "",
     pin: "",
-    onPhoneChange: noop,
+    onNameChange: noop,
     onPinChange: noop,
-    onPhoneBlur: noop,
+    onNameBlur: noop,
     onPinBlur: noop,
     onSubmit: (e) => e.preventDefault(),
   },
@@ -27,7 +27,7 @@ export const Default: Story = {
 export const FilledIn: Story = {
   args: {
     ...Default.args,
-    phone: "+254700000003",
+    name: "Sarah Njeri",
     pin: "1234",
   },
 };
@@ -36,7 +36,7 @@ export const ValidationError: Story = {
   name: "Validation error — on blur",
   args: {
     ...Default.args,
-    phone: "",
+    name: "",
     pinError: "PIN is 4 digits",
     pin: "12",
   },
@@ -45,16 +45,16 @@ export const ValidationError: Story = {
 export const WrongCredentials: Story = {
   args: {
     ...Default.args,
-    phone: "+254700000999",
+    name: "Someone Unknown",
     pin: "0000",
-    formError: "Wrong phone number or PIN.",
+    formError: "Wrong name or PIN.",
   },
 };
 
 export const Submitting: Story = {
   args: {
     ...Default.args,
-    phone: "+254700000003",
+    name: "Sarah Njeri",
     pin: "1234",
     submitting: true,
   },

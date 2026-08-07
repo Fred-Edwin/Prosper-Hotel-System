@@ -139,41 +139,31 @@ weight solves for free.
 
 ## Colour
 
-**The accent is violet.** Chosen from a shortlist that ruled out teal, deep green
-and amber *before* any visual comparison: three semantic colours are already
-spoken for — red danger, green success, amber warning — and an accent that sits
-near any of them produces a primary button mistakable for a state. That
-constraint leaves the blue-to-violet arc and essentially nothing else.
-
-Violet keeps blue's structural advantages — maximum hue distance from red and
-green, strongest colour-blind safety — while being distinctive enough that the
-software has an identity. Validated with the `dataviz` script rather than by eye.
+**The accent is the client's brand purple**, locked from their palette
+(`--color-brand-primary` and its ramp in `globals.css`) rather than chosen from
+the earlier dataviz-validated shortlist. It sits far enough from all three
+semantic colours — red danger, green success, amber warning — that a primary
+button is never mistakable for a state.
 
 **The brand colour and the accent are allowed to differ.** A logo lives on white
 at large size; an accent must clear 4.5:1 at 14px and survive hover and disabled
 states. Derive a ramp from the brand hue rather than using the brand hex.
-
-**One accent element per screen: the primary action.** Nothing else.
-
-This was got wrong once and is worth recording. An early till used the accent for
-the active mode, the active category, basket badges, card borders, an avatar and
-a per-location rail — eleven accent elements. The effect was the reverse of the
-intent: "Complete sale" scrolled off-screen while already-tapped cards shouted for
-attention. **Selection states use neutral fills**, which read as *chosen* without
-competing with *do this next*.
 
 **Never two filled primaries on one screen.** That means the primary action was
 never decided. Where a page has a figure and an action that settles it, the
 action belongs beside the figure, not in the header.
 
 **A row action is outline, never filled.** A filled button repeated down forty
-rows is forty accent elements.
+rows reads as forty things to do, not one.
 
-**The rail is the exception, and the reason it is worth having.** It is the one
-surface visible on every admin screen, which makes it the cheapest place to give
-the software an identity — and the only place a strong colour sits without
-spending the page's accent budget. Inside it the accent appears twice: the logo
-mark, and a rule marking the current position. Both mark rather than invite.
+**The rail carries the brand identity.** It is the one surface visible on every
+admin screen, which makes it the cheapest place to give the software an
+identity. Inside it the accent appears twice: the logo mark, and a rule marking
+the current position. Both mark rather than invite.
+
+**Gold is a companion accent, dark surfaces only.** `--color-brand-accent`
+(`#eabf63`) appears only on brand-purple grounds — the login header/footer —
+for links and small marks. It never appears on a light page.
 
 **Dark grounds get contrast-checked, never eyeballed.** Muted 13px labels on the
 rail clear AA at 7.29:1; that headroom is what makes them legible at all.

@@ -3,7 +3,7 @@ import { test as setup, expect } from "@playwright/test";
 const STORAGE_STATE = "e2e/.auth/staff.json";
 
 // Seeded by prisma/seed.ts — see prisma/seed.ts for the full roster.
-const SEED_PHONE = "+254700000003"; // Sarah Njeri, cashier, restaurant
+const SEED_NAME = "Sarah Njeri"; // cashier, restaurant
 const SEED_PIN = "1234";
 
 // Through the real login page rather than a direct API call — this is what
@@ -12,7 +12,7 @@ const SEED_PIN = "1234";
 // every other spec reuses the saved storage state below.
 setup("authenticate as a seeded cashier", async ({ page }) => {
   await page.goto("/login");
-  await page.getByTestId("login-phone").fill(SEED_PHONE);
+  await page.getByTestId("login-name").fill(SEED_NAME);
   await page.getByTestId("login-pin").fill(SEED_PIN);
   await page.getByTestId("login-submit").click();
 

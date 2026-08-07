@@ -3,15 +3,20 @@
 # Prosper Hotel
 
 A stock, sales and cash system for a restaurant and canteen trading as one
-business across two locations. Staff use their own phones mid-shift; the
-owner reviews from a laptop. Replaces spreadsheets that already work — see
-`docs/design.md`'s philosophy before touching UI.
+business across two locations. Staff use their own phones mid-shift and log
+in with their name and a 4-digit PIN (ADR 0007 — not phone number, despite
+what older text may suggest); the owner reviews from a laptop. Replaces
+spreadsheets that already work — see `docs/design.md`'s philosophy before
+touching UI.
 
 ## Where things are
 - Domain vocabulary → `CONTEXT.md` (read before naming anything)
 - Architecture and seams → `docs/architecture.md`
 - Scope and out-of-scope → `docs/scope.md`
+- The full feature spec → `docs/proposal.md`; **the build order** →
+  `docs/roadmap.md` — read both before assuming what's next
 - Design intent → `docs/design.md`
+- Every secret/credential and how to rotate it → `docs/infrastructure.md`
 - Hit something strange? → `docs/gotchas.md`
 - Infra learnings (deploy, backups, rollback, Sentry) → `docs/architecture.md`
   under Environments/Observability
@@ -65,7 +70,9 @@ components/layout/       the two shells (admin, staff) — nav, header, frame.
 - E2E (Playwright, `e2e/`): critical paths only. `e2e/auth.setup.ts` logs in
   through the real `/login` page once and saves storage state — every other
   spec reuses it. Selectors use `data-testid` only, never text or CSS
-  classes. No fixed waits.
+  classes. No fixed waits. For ad hoc visual checks (not a `test()` spec)
+  see `docs/gotchas.md`'s Playwright section — a different, lighter use of
+  the same library.
 
 ## UI rules
 - Compose from `components/ui/` and `components/patterns/`. Never add to
@@ -75,6 +82,12 @@ components/layout/       the two shells (admin, staff) — nav, header, frame.
 - If a needed pattern doesn't exist, STOP and ask. Don't invent one — see
   `docs/architecture.md`'s note on the stock-list screen for how that
   played out once.
+- **New screen, no Design precedent?** `.claude/skills/build/SKILL.md`'s
+  checkpoint applies: state whether you're building one composition or
+  2-3 structurally different variants (and why) before building either,
+  build it as a Storybook story with real seed data first, and hand the
+  user the live `pnpm storybook` URL to browse — a screenshot only when
+  they genuinely can't reach a local URL.
 - All values from theme tokens. No arbitrary values, no raw hex.
 - One accent element per screen — the primary action. See
   `docs/design.md`'s Colour section before adding a second one.
