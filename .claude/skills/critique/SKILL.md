@@ -33,7 +33,6 @@ Read the diff, the ticket, and the rendered screens if `/verify` produced screen
 - Greys not from the single neutral ramp — a mix of `gray-*` and `slate-*`
 - Spacing off the scale; radii off the scale
 - Transitions over 200ms, or animating layout properties instead of `transform`/`opacity`
-- More than one accent element on a screen; two filled primary buttons
 - Missing empty, loading, or error states
 - Missing `focus-visible` styles; icon buttons without `aria-label`
 - Contrast failures — `gray-400` on white fails

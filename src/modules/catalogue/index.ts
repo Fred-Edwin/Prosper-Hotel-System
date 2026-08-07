@@ -16,3 +16,14 @@ export {
   listRecipeVersions,
 } from "./logic";
 export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost } from "./schema";
+export {
+  catalogueRoute,
+  createProductRoute,
+  updateProductRoute,
+  setProductActiveRoute,
+  createIngredientRoute,
+  updateIngredientRoute,
+  setIngredientActiveRoute,
+  createRecipeRoute,
+  recipeVersionsRoute,
+} from "./routes";

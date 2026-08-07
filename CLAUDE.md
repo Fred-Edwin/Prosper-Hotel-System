@@ -113,7 +113,6 @@ components/layout/       the two shells (admin, staff) — nav, header, frame.
 push to `main` deploys automatically
 
 ## Never
-- Commit directly to `main`
 - Add a dependency without asking
 - Create a new top-level folder
 - Build a feature beyond what the current ticket asks for

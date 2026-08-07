@@ -34,7 +34,7 @@ Read `docs/gotchas.md` **only if something looks strange** — it's a conditiona
 
 Aim for **few exports**. Four exports means four ways for other modules to become entangled. A lot of behaviour behind a small interface.
 
-For UI work, identify which existing components and which page template this composes from. **If the ticket needs a screen shape Design never prototyped** — check `docs/design.md` and the Storybook stories under `components/patterns/`, `components/layout/`, and `components/design/` (design-reference branch/worktree) for precedent. No precedent means this checkpoint carries a visual review, not just an interface review — see below.
+For UI work, identify which existing components and which page template this composes from. **If the ticket needs a screen shape Design never prototyped** — check `docs/design.md` and the Storybook stories under `components/patterns/` and `components/layout/` for precedent, **and separately, explicitly, run a search of the design-reference worktree** (a sibling checkout, typically `../<project>-design-reference` — find it with `git worktree list` if the name isn't obvious) for the destination or component name before concluding no precedent exists. This repo does not keep `components/design/` after Foundation — Design's raw output stays behind in that worktree, so "not in this repo" is not the same as "never designed." Only after that search comes up empty does "no precedent" hold, and only then does this checkpoint carry a visual review instead of an interface review — see below.
 
 **State which of two paths you're taking, and why, before building either:**
 
@@ -108,7 +108,8 @@ For any ticket with a **user-facing change**, do the setup so the user only has 
 
 1. Start the dev server
 2. Ensure the data exists — run the seed command if needed
-3. Hand over: the **exact URL**, the **login to use**, and a **numbered list** of what to click and what should happen
+3. **Load every new or changed page yourself, in an actual browser, before handing anything to the user.** Typecheck and `curl` prove a route responds; neither executes client-side rendering, so a server/client boundary violation, a runtime type mismatch (e.g. a `Date` that arrived as a JSON string), or a hydration error will pass both and still crash the first time a human opens the page. This is not optional for pages doing anything beyond a static render — it is the check step, not a nice-to-have on top of it.
+4. Hand over: the **exact URL**, the **login to use**, and a **numbered list** of what to click and what should happen
 
 ```
 Ready at http://localhost:3000/invoices

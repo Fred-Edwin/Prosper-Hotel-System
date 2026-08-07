@@ -55,7 +55,10 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/staff");
+      // The owner works any position (docs/architecture.md) but her home is
+      // the admin shell — everyone else lands on the staff shell's launcher.
+      const body = await response.json();
+      router.push(body.staff?.role === "owner" ? "/catalogue" : "/staff");
     } catch {
       setFormError("Couldn't reach the server. Check your connection and try again.");
       setSubmitting(false);

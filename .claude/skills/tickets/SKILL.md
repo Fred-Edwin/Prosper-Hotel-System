@@ -54,7 +54,7 @@ Each ticket:
 
 - Cuts a narrow but **complete** path through every layer — schema, logic, API, UI, tests
 - Leaves the system **working and demoable** on its own
-- Fits comfortably in one fresh session — **target ~150k tokens; ~250k means cut too coarsely**
+- Fits comfortably in one fresh session — **target ~250k tokens; ~350k means cut too coarsely**
 - Declares what blocks it
 - Declares **logic** (test-first) or **plumbing** (test-after or none)
 

@@ -10,6 +10,9 @@ const db = new PrismaClient({ adapter });
 const SEED_PIN = "1234";
 
 async function main() {
+  await db.recipeLine.deleteMany({});
+  await db.recipe.deleteMany({});
+  await db.ingredient.deleteMany({});
   await db.stockMovement.deleteMany({});
   await db.product.deleteMany({});
   await db.session.deleteMany({});
@@ -28,7 +31,7 @@ async function main() {
   await db.staffMember.createMany({
     data: [
       {
-        name: "Grace Wanjiru",
+        name: "Admin Owner",
         phone: "+254700000001",
         pinHash,
         role: "owner",
@@ -36,7 +39,7 @@ async function main() {
         active: true,
       },
       {
-        name: "Janiffer Achieng",
+        name: "Store Manager",
         phone: "+254700000002",
         pinHash,
         role: "store_manager",
@@ -44,7 +47,7 @@ async function main() {
         active: true,
       },
       {
-        name: "Sarah Njeri",
+        name: "Restaurant Cashier",
         phone: "+254700000003",
         pinHash,
         role: "cashier",
@@ -60,7 +63,7 @@ async function main() {
         active: true,
       },
       {
-        name: "Anne Wambui",
+        name: "Canteen Attendant",
         phone: "+254700000005",
         pinHash,
         role: "attendant",
@@ -105,12 +108,36 @@ async function main() {
   });
 
   const [sodas, mukimo, chips, paper, biscuits] = await Promise.all([
-    db.product.create({ data: { name: "Sodas (500ml)", kind: "goods" } }),
-    db.product.create({ data: { name: "Mukimo", kind: "cooked_food" } }),
-    db.product.create({ data: { name: "Chips", kind: "cooked_food" } }),
-    db.product.create({ data: { name: "Printing paper (ream)", kind: "goods" } }),
-    db.product.create({ data: { name: "Biscuits (packet)", kind: "goods" } }),
+    db.product.create({ data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 80 } }),
+    db.product.create({ data: { name: "Mukimo", kind: "cooked_food", priceMinor: 150 } }),
+    db.product.create({ data: { name: "Chips", kind: "cooked_food", priceMinor: 100 } }),
+    db.product.create({ data: { name: "Printing paper (ream)", kind: "goods", priceMinor: 550 } }),
+    db.product.create({ data: { name: "Biscuits (packet)", kind: "goods", priceMinor: 50 } }),
   ]);
+
+  const [maizeFlour, cookingOil, potatoes] = await Promise.all([
+    db.ingredient.create({ data: { name: "Maize flour", unitOfMeasure: "kg", lastKnownCostMinor: 120 } }),
+    db.ingredient.create({ data: { name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 280 } }),
+    db.ingredient.create({ data: { name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 80 } }),
+  ]);
+
+  // Mukimo has a recipe (so the Recipes tab shows a real cost); Chips does
+  // not — the absence is deliberate, per design.md: "a list of fifteen with
+  // twelve blank states it" — the Recipes tab must show both cases.
+  await db.recipe.create({
+    data: {
+      productId: mukimo.id,
+      yieldQuantity: 10,
+      effectiveFrom: new Date(),
+      lines: {
+        create: [
+          { ingredientId: maizeFlour.id, quantity: 3 },
+          { ingredientId: potatoes.id, quantity: 4 },
+          { ingredientId: cookingOil.id, quantity: 0.5 },
+        ],
+      },
+    },
+  });
 
   await db.stockMovement.createMany({
     data: [
@@ -134,7 +161,9 @@ async function main() {
     ],
   });
 
-  console.log("Seeded 2 locations, 8 staff members, 5 products and stock movements.");
+  console.log(
+    "Seeded 2 locations, 8 staff members, 5 products, 3 ingredients, 1 recipe and stock movements.",
+  );
   console.log(`Every seeded staff member's PIN is ${SEED_PIN}.`);
 }
 

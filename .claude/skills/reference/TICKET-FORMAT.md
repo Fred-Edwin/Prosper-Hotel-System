@@ -8,7 +8,7 @@ A **vertical slice** — a narrow but complete path through every layer.
 
 - Cuts through schema, logic, API, UI, and tests — **not one layer**
 - Leaves the system **working and demoable** on its own
-- Fits comfortably in one fresh session — **target ~150k tokens; ~250k means it was cut too coarsely**
+- Fits comfortably in one fresh session — **target ~250k tokens; ~350k means it was cut too coarsely**
 - Declares what blocks it
 - Declares **logic** (test-first) or **plumbing** (test-after or none)
 

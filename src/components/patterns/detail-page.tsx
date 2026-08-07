@@ -139,6 +139,10 @@ export function EditSheet({
   description,
   saveLabel = "Save changes",
   saving,
+  /** Id of a <form> among children — wires the footer's Save button to it
+   * via HTML's `form` attribute, since the button sits outside that form
+   * in the DOM. Omit for sheets with nothing to submit. */
+  formId,
   children,
 }: {
   open: boolean;
@@ -148,6 +152,7 @@ export function EditSheet({
   saveLabel?: string;
   /** Disables the submit and says what is happening, rather than going quiet. */
   saving?: boolean;
+  formId?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -159,7 +164,13 @@ export function EditSheet({
         </SheetHeader>
         <div className="flex-1 overflow-y-auto p-4">{children}</div>
         <SheetFooter className="flex-row border-t">
-          <Button size="sm" className="h-8" disabled={saving}>
+          <Button
+            size="sm"
+            className="h-8"
+            type={formId ? "submit" : "button"}
+            form={formId}
+            disabled={saving}
+          >
             {saving ? "Saving…" : saveLabel}
           </Button>
           <Button

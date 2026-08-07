@@ -82,6 +82,19 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   session), not the default.
 - **Added:** 2026-08-07
 
+## Login redirect is not role-aware yet
+
+- **`login/page.tsx` originally hardcoded `router.push("/staff")`** after
+  every successful login, a leftover from the tracer slice when `/staff`
+  was the only page that existed. Owners logging in had no way to reach an
+  admin destination without typing the URL by hand. Fixed on ticket 03
+  (Catalogue) to route by `staff.role` from the login response — owner to
+  `/catalogue`, everyone else to `/staff` — but `/catalogue` is a stopgap
+  target, the same shape as the tracer slice's `toShellRole` "broadest
+  existing list" stopgap (architecture.md's tracer-slice section): it's
+  simply the only admin-shell page that exists yet. **When `/dashboard`
+  is built, update this redirect to point there instead.**
+
 ## GitHub Actions auth
 
 - **Pushing changes to `.github/workflows/*` requires the `workflow` OAuth
