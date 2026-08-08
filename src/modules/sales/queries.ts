@@ -26,7 +26,9 @@ export async function createSaleRecord(
     locationId: string;
     staffMemberId: string;
     fulfilment: SaleFulfilment;
+    customerId?: string | null;
     totalMinor: number;
+    deliveryFeeMinor?: number | null;
     lines: { productId: string; quantity: number; priceMinor: number }[];
     paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
   },
@@ -36,7 +38,9 @@ export async function createSaleRecord(
       locationId: data.locationId,
       staffMemberId: data.staffMemberId,
       fulfilment: data.fulfilment,
+      customerId: data.customerId ?? null,
       totalMinor: data.totalMinor,
+      deliveryFeeMinor: data.deliveryFeeMinor ?? null,
       lines: { create: data.lines },
       paymentLines: {
         create: data.paymentLines.map((p) => ({

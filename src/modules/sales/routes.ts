@@ -15,6 +15,9 @@ export async function recordCounterSaleRoute(request: Request): Promise<Response
 
   const body = await request.json();
   const result = await recordCounterSale(db, session, {
+    fulfilment: body.fulfilment,
+    customerId: body.customerId,
+    deliveryFeeMinor: body.deliveryFeeMinor,
     lines: body.lines,
     paymentLines: body.paymentLines,
   });
@@ -45,7 +48,10 @@ export async function todaysSalesRoute(): Promise<Response> {
 
   const sales = result.sales.map((sale) => ({
     id: sale.id,
+    fulfilment: sale.fulfilment,
+    customerName: sale.customerId ? (customerNameById.get(sale.customerId) ?? null) : null,
     totalMinor: sale.totalMinor,
+    deliveryFeeMinor: sale.deliveryFeeMinor,
     occurredAt: sale.occurredAt,
     voided: sale.voided,
     staffMemberName: session.staff.name,

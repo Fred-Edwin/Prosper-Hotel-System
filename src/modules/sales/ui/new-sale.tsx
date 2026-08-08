@@ -6,14 +6,17 @@
  * Adapted from the design-reference worktree's locked round-two prototype
  * (`components/design/till/till-r2.tsx`, commit a977bea) rather than
  * invented — see docs/architecture.md's precedent table. Trimmed to what
- * this ticket builds:
+ * ticket 07 built, then extended by ticket 11:
  *
- *   - Counter fulfilment only. The prototype's mode switch (counter/
- *     delivery/credit) is dropped; delivery and credit are separate
- *     tickets and this screen never offers them.
- *   - Cash and M-Pesa payment lines only, no credit line and therefore no
- *     customer selector — the prototype's "no customer field in the
- *     counter flow" correction holds by construction here.
+ *   - Ticket 07 dropped the prototype's three-way mode switch (counter/
+ *     delivery/credit) entirely — no customer selector, cash/M-Pesa only.
+ *   - Ticket 11 (this one) brings back a two-way Counter/Delivery toggle,
+ *     same pill-group styling and "customer required" copy as the
+ *     prototype's mode switch, but only two options — credit stays a
+ *     payment-line concern (ticket 08), not a fulfilment mode, so it isn't
+ *     part of this toggle. Selecting Delivery requires a customer (reusing
+ *     the same CustomerPicker credit already uses) and reveals an optional
+ *     delivery fee input — new ground, no prototype precedent for the fee.
  *   - Category pills are dropped. The prototype's Category was fixture-only
  *     (food/drinks/snacks/...); the real Product has no such field, only
  *     `kind` (goods/cooked_food/service/packaging), which is not what a
@@ -38,7 +41,7 @@ import {
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyFirstUse, ErrorState } from "@/components/patterns/states";
-import { Minus, Plus, Search, Trash2, X, ShoppingCart, Check, UserPlus } from "lucide-react";
+import { Minus, Plus, Search, Trash2, X, ShoppingCart, Check, UserPlus, Store, Truck } from "lucide-react";
 import { money } from "@/shared/money";
 
 type Product = {
@@ -52,6 +55,8 @@ type Product = {
 type Customer = { id: string; name: string; phone: string | null };
 
 type PaymentMethod = "cash" | "mpesa" | "credit";
+
+type Fulfilment = "counter" | "delivery";
 
 type Line = { product: Product; qty: number };
 type Pay = {
@@ -112,6 +117,9 @@ async function createCustomer(input: {
 }
 
 async function submitSale(input: {
+  fulfilment: Fulfilment;
+  customerId?: string;
+  deliveryFeeMinor?: number;
   lines: { productId: string; quantity: number }[];
   paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string }[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -227,6 +235,9 @@ function Till({
 }) {
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
+  const [fulfilment, setFulfilment] = useState<Fulfilment>("counter");
+  const [deliveryCustomer, setDeliveryCustomer] = useState<Customer | null>(null);
+  const [deliveryFee, setDeliveryFee] = useState("");
   // Most sales are paid one way. One line by default — pre-filled with the
   // whole total — keeps that common case friction-free; a second line is
   // added deliberately, only for the rarer split payment.
@@ -237,9 +248,14 @@ function Till({
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState<{ lines: Line[]; total: number; pays: Pay[] } | null>(
-    null,
-  );
+  const [confirmed, setConfirmed] = useState<{
+    lines: Line[];
+    total: number;
+    pays: Pay[];
+    fulfilment: Fulfilment;
+    deliveryCustomer: Customer | null;
+    deliveryFeeMinor: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +271,9 @@ function Till({
     ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
     : products;
 
-  const total = lines.reduce((s, l) => s + (l.product.priceMinor ?? 0) * l.qty, 0);
+  const deliveryFeeMinor = fulfilment === "delivery" ? Number(deliveryFee) || 0 : 0;
+  const productTotal = lines.reduce((s, l) => s + (l.product.priceMinor ?? 0) * l.qty, 0);
+  const total = productTotal + deliveryFeeMinor;
   const paid = pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const remaining = total - paid;
 
@@ -273,7 +291,7 @@ function Till({
   };
 
   const totalFor = (ls: Line[]) =>
-    ls.reduce((s, l) => s + (l.product.priceMinor ?? 0) * l.qty, 0);
+    ls.reduce((s, l) => s + (l.product.priceMinor ?? 0) * l.qty, 0) + deliveryFeeMinor;
 
   const add = (p: Product) =>
     setLines((ls) => {
@@ -293,6 +311,21 @@ function Till({
       setPays((ps) => fillUntouched(ps, totalFor(next)));
       return next;
     });
+
+  const setDeliveryFeeAmount = (amount: string) => {
+    setDeliveryFee(amount);
+    const fee = Number(amount) || 0;
+    setPays((ps) => fillUntouched(ps, productTotal + fee));
+  };
+
+  const setFulfilmentMode = (mode: Fulfilment) => {
+    setFulfilment(mode);
+    if (mode === "counter") {
+      setDeliveryCustomer(null);
+      setDeliveryFee("");
+      setPays((ps) => fillUntouched(ps, productTotal));
+    }
+  };
 
   const setPayAmount = (id: number, amount: string) =>
     setPays((ps) => {
@@ -320,12 +353,21 @@ function Till({
 
   const activePays = pays.filter((p) => Number(p.amount) > 0);
   const creditNeedsCustomer = activePays.some((p) => p.method === "credit" && !p.customer);
-  const canComplete = lines.length > 0 && remaining === 0 && !creditNeedsCustomer && !submitting;
+  const deliveryNeedsCustomer = fulfilment === "delivery" && !deliveryCustomer;
+  const canComplete =
+    lines.length > 0 &&
+    remaining === 0 &&
+    !creditNeedsCustomer &&
+    !deliveryNeedsCustomer &&
+    !submitting;
 
   const complete = async () => {
     setSubmitting(true);
     setSubmitError(null);
     const result = await onSubmit({
+      fulfilment,
+      ...(fulfilment === "delivery" && deliveryCustomer ? { customerId: deliveryCustomer.id } : {}),
+      ...(fulfilment === "delivery" && deliveryFeeMinor > 0 ? { deliveryFeeMinor } : {}),
       lines: lines.map((l) => ({ productId: l.product.id, quantity: l.qty })),
       paymentLines: activePays.map((p) => ({
         method: p.method,
@@ -338,7 +380,7 @@ function Till({
       setSubmitError(result.error);
       return;
     }
-    setConfirmed({ lines, total, pays });
+    setConfirmed({ lines, total, pays, fulfilment, deliveryCustomer, deliveryFeeMinor });
   };
 
   if (confirmed) {
@@ -347,6 +389,37 @@ function Till({
 
   return (
     <div className="flex min-h-full flex-col">
+      {/* Fulfilment. Selection is a neutral fill — "chosen", not "do this
+          next" — same discipline as the design-reference prototype's mode
+          switch, per docs/design.md's one-accent-per-screen rule. */}
+      <div className="border-b bg-card px-3 py-2">
+        <div className="flex gap-1 rounded-lg bg-muted p-1">
+          {(
+            [
+              { key: "counter" as const, label: "Counter", icon: Store },
+              { key: "delivery" as const, label: "Delivery", icon: Truck },
+            ]
+          ).map((m) => {
+            const Icon = m.icon;
+            const on = fulfilment === m.key;
+            return (
+              <button
+                key={m.key}
+                onClick={() => setFulfilmentMode(m.key)}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-[13px] font-medium transition-colors duration-100 ${
+                  on ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                }`}
+                aria-pressed={on}
+                data-testid={`till-fulfilment-${m.key}`}
+              >
+                <Icon className="size-3.5" />
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="border-b bg-card px-3 pt-2 pb-2">
         <div className="relative">
           <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -462,6 +535,38 @@ function Till({
         )}
 
         <div className="space-y-2.5 border-t px-4 py-3">
+          {fulfilment === "delivery" && (
+            <div className="space-y-2.5">
+              <CustomerPicker
+                customers={customers}
+                selected={deliveryCustomer}
+                onCreateCustomer={onCreateCustomer}
+                onSelect={setDeliveryCustomer}
+                onCreated={(customer) => {
+                  setCustomers((cs) =>
+                    [...cs, customer].sort((a, b) => a.name.localeCompare(b.name)),
+                  );
+                  setDeliveryCustomer(customer);
+                }}
+                label="Customer — required for delivery"
+                testIdPrefix="till-delivery-customer"
+              />
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground">
+                  Delivery fee (optional)
+                </label>
+                <Input
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFeeAmount(e.target.value)}
+                  className="mt-1 h-10 text-right tabular-nums"
+                  data-testid="till-delivery-fee"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             {pays.map((p) => (
               <div key={p.id} className="space-y-1.5">
@@ -577,21 +682,27 @@ function Till({
   );
 }
 
-/** A credit line's customer — search the existing list or create one inline,
- * without leaving the sale. Renders a plain result/query if a customer is
- * already selected, so it doesn't compete with the payment row above it. */
+/** A credit line's or a delivery sale's customer — search the existing list
+ * or create one inline, without leaving the sale. Renders a plain
+ * result/query if a customer is already selected, so it doesn't compete
+ * with the row above it. `label`/`testIdPrefix` distinguish the credit and
+ * delivery call sites without duplicating this component. */
 function CustomerPicker({
   customers,
   selected,
   onSelect,
   onCreated,
   onCreateCustomer,
+  label = "Customer — required for credit",
+  testIdPrefix = "till-credit-customer",
 }: {
   customers: Customer[];
   selected: Customer | null;
   onSelect: (customer: Customer | null) => void;
   onCreated: (customer: Customer) => void;
   onCreateCustomer: typeof createCustomer;
+  label?: string;
+  testIdPrefix?: string;
 }) {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -603,7 +714,7 @@ function CustomerPicker({
     return (
       <div
         className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2"
-        data-testid="till-credit-customer-selected"
+        data-testid={`${testIdPrefix}-selected`}
       >
         <span className="text-[13px] font-medium">{selected.name}</span>
         <Button
@@ -633,10 +744,8 @@ function CustomerPicker({
   };
 
   return (
-    <div data-testid="till-credit-customer-picker">
-      <label className="text-[11px] font-medium text-muted-foreground">
-        Customer — required for credit
-      </label>
+    <div data-testid={`${testIdPrefix}-picker`}>
+      <label className="text-[11px] font-medium text-muted-foreground">{label}</label>
       <Command className="mt-1 rounded-md border" shouldFilter={false}>
         <CommandInput
           placeholder="Search or add a customer"
@@ -645,7 +754,7 @@ function CustomerPicker({
             setQuery(v);
             setCreating(false);
           }}
-          data-testid="till-credit-customer-search"
+          data-testid={`${testIdPrefix}-search`}
         />
         <CommandList>
           {!creating && (
@@ -660,7 +769,7 @@ function CustomerPicker({
                       key={c.id}
                       value={c.id}
                       onSelect={() => onSelect(c)}
-                      data-testid="till-credit-customer-option"
+                      data-testid={`${testIdPrefix}-option`}
                     >
                       {c.name}
                       {c.phone && (
@@ -675,7 +784,7 @@ function CustomerPicker({
                   <CommandItem
                     value={`__create__${query}`}
                     onSelect={() => setCreating(true)}
-                    data-testid="till-credit-customer-create"
+                    data-testid={`${testIdPrefix}-create`}
                   >
                     <UserPlus className="size-4" />
                     Add &ldquo;{query.trim()}&rdquo; as a new customer
@@ -688,7 +797,7 @@ function CustomerPicker({
       </Command>
 
       {creating && (
-        <div className="mt-1.5 space-y-1.5 rounded-md border p-2" data-testid="till-credit-customer-new">
+        <div className="mt-1.5 space-y-1.5 rounded-md border p-2" data-testid={`${testIdPrefix}-new`}>
           <div className="text-[12px] font-medium">New customer</div>
           <Input value={query.trim()} disabled className="h-8 text-[13px]" />
           <Input
@@ -696,7 +805,7 @@ function CustomerPicker({
             value={newPhone}
             onChange={(e) => setNewPhone(e.target.value)}
             className="h-8 text-[13px]"
-            data-testid="till-credit-customer-phone"
+            data-testid={`${testIdPrefix}-phone`}
           />
           {error && <p className="text-[11px] text-destructive">Couldn&apos;t add customer, try again.</p>}
           <div className="flex gap-1.5">
@@ -706,7 +815,7 @@ function CustomerPicker({
               className="h-8 flex-1 text-[12px]"
               disabled={saving}
               onClick={startCreate}
-              data-testid="till-credit-customer-save"
+              data-testid={`${testIdPrefix}-save`}
             >
               {saving ? "Adding…" : "Add customer"}
             </Button>
@@ -729,7 +838,14 @@ function SaleConfirmation({
   sale,
   onDone,
 }: {
-  sale: { lines: Line[]; total: number; pays: Pay[] };
+  sale: {
+    lines: Line[];
+    total: number;
+    pays: Pay[];
+    fulfilment: Fulfilment;
+    deliveryCustomer: Customer | null;
+    deliveryFeeMinor: number;
+  };
   onDone: () => void;
 }) {
   return (
@@ -741,6 +857,12 @@ function SaleConfirmation({
           </div>
           <p className="text-sm font-medium">Sale recorded</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">{money(sale.total)}</p>
+          <Badge variant="secondary" className="mt-2" data-testid="till-confirmation-fulfilment">
+            {sale.fulfilment === "delivery" ? "Delivery" : "Counter"}
+            {sale.fulfilment === "delivery" && sale.deliveryCustomer && (
+              <span> — {sale.deliveryCustomer.name}</span>
+            )}
+          </Badge>
         </div>
 
         <div className="rounded-lg border bg-card p-3">
@@ -754,6 +876,15 @@ function SaleConfirmation({
               </span>
             </div>
           ))}
+          {sale.fulfilment === "delivery" && sale.deliveryFeeMinor > 0 && (
+            <div
+              className="flex justify-between gap-3 border-t py-1.5 text-[13px]"
+              data-testid="till-confirmation-delivery-fee"
+            >
+              <span className="min-w-0 truncate text-muted-foreground">Delivery fee</span>
+              <span className="shrink-0 tabular-nums">{money(sale.deliveryFeeMinor)}</span>
+            </div>
+          )}
         </div>
 
         <div className="rounded-lg border bg-card p-3">

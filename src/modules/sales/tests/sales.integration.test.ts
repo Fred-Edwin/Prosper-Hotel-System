@@ -291,6 +291,132 @@ describe("recordCounterSale — credit", () => {
   });
 });
 
+describe("recordCounterSale — delivery", () => {
+  test("rejects a delivery sale with no customer, even paid in cash", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "delivery_requires_customer" });
+  });
+
+  test("records a delivery sale with a customer and no fee", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Wanjiru" } });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      customerId: customer.id,
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.fulfilment).toBe("delivery");
+    expect(result.sale.customerId).toBe(customer.id);
+    expect(result.sale.deliveryFeeMinor).toBeNull();
+    expect(result.sale.totalMinor).toBe(80);
+  });
+
+  test("adds an optional delivery fee on top of the product lines' value", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Otieno" } });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      customerId: customer.id,
+      deliveryFeeMinor: 50,
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 130 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.deliveryFeeMinor).toBe(50);
+    expect(result.sale.totalMinor).toBe(130);
+  });
+
+  test("rejects a delivery sale whose payment lines don't cover the fee", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Achieng" } });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      customerId: customer.id,
+      deliveryFeeMinor: 50,
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "payment_mismatch" });
+  });
+
+  test("rejects a delivery sale against an unknown customer", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      customerId: "nonexistent",
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "customer_not_found" });
+  });
+
+  test("a delivery sale paid by credit needs only one customer, shared by both requirements", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Kimani" } });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      customerId: customer.id,
+      deliveryFeeMinor: 50,
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 130, customerId: customer.id }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.customerId).toBe(customer.id);
+    expect(result.sale.paymentLines).toEqual([
+      expect.objectContaining({ method: "credit", amountMinor: 130, customerId: customer.id }),
+    ]);
+  });
+
+  test("a counter sale is unaffected — no customer requirement, no fee field", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.fulfilment).toBe("counter");
+    expect(result.sale.customerId).toBeNull();
+    expect(result.sale.deliveryFeeMinor).toBeNull();
+  });
+
+  test("a delivery sale decrements stock the same way a counter sale does", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Njeri" } });
+
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      customerId: customer.id,
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "cash", amountMinor: 160 }],
+    });
+
+    const stock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", restaurantId),
+      restaurantId,
+    );
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual([
+      expect.objectContaining({ productId: sodaId, quantityOnHand: -2 }),
+    ]);
+  });
+});
+
 describe("listTodaysSalesForStaff", () => {
   test("lists sales this staff member recorded today, newest first", async () => {
     await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
@@ -430,6 +556,37 @@ describe("voidSale", () => {
     if (!recorded.ok) return;
 
     await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    const stock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", restaurantId),
+      restaurantId,
+    );
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual([
+      expect.objectContaining({ productId: sodaId, quantityOnHand: 0 }),
+    ]);
+  });
+
+  test("voiding a delivery sale reverses stock the same as a counter sale, fee included", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Wambui" } });
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      fulfilment: "delivery",
+      customerId: customer.id,
+      deliveryFeeMinor: 50,
+      lines: [{ productId: sodaId, quantity: 3 }],
+      paymentLines: [{ method: "cash", amountMinor: 290 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.voided).toBe(true);
+    expect(result.sale.totalMinor).toBe(290);
 
     const stock = await getCurrentStockAtLocation(
       testDb,

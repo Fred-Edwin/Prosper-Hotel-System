@@ -68,6 +68,23 @@ export const CreditLine: Story = {
   },
 };
 
+/**
+ * Ticket 11: selecting Delivery in the fulfilment toggle requires a
+ * customer (the same picker credit uses, search or add inline) before
+ * "Complete sale" enables, and reveals an optional delivery fee input.
+ * Interact within the canvas — tap Delivery, add products, pick a
+ * customer, optionally type a fee.
+ */
+export const DeliveryFulfilment: Story = {
+  name: "Delivery — customer required, fee optional",
+  args: {
+    state: { status: "ready", products },
+    onSubmit: stubSubmit,
+    onLoadCustomers: stubLoadCustomers,
+    onCreateCustomer: stubCreateCustomer,
+  },
+};
+
 export const Loading: Story = {
   args: { state: { status: "loading" } },
 };

@@ -43,7 +43,10 @@ export type PaymentLineView = {
 
 export type SaleView = {
   id: string;
+  fulfilment: "counter" | "delivery";
+  customerName: string | null;
   totalMinor: number;
+  deliveryFeeMinor: number | null;
   occurredAt: string;
   voided: boolean;
   staffMemberName: string;
@@ -217,6 +220,11 @@ export function TodaysSalesView({
                   <span className="text-[15px] font-semibold tabular-nums">
                     {money(sale.totalMinor)}
                   </span>
+                  {sale.fulfilment === "delivery" && (
+                    <Badge variant="secondary" className="text-[10px]" data-testid="todays-sales-delivery-badge">
+                      Delivery
+                    </Badge>
+                  )}
                   {sale.voided && (
                     <Badge variant="destructive" className="text-[10px]" data-testid="todays-sales-voided-badge">
                       Voided
@@ -226,7 +234,10 @@ export function TodaysSalesView({
                     {time(sale.occurredAt)}
                   </span>
                 </div>
-                <div className="mt-0.5 truncate text-[12px] text-muted-foreground">{preview}</div>
+                <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
+                  {preview}
+                  {sale.fulfilment === "delivery" && sale.customerName && ` · ${sale.customerName}`}
+                </div>
               </div>
               <ChevronDown
                 className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-100 ${
@@ -246,7 +257,21 @@ export function TodaysSalesView({
                       <span className="shrink-0 tabular-nums">{money(l.quantity * l.priceMinor)}</span>
                     </div>
                   ))}
+                  {sale.fulfilment === "delivery" && sale.deliveryFeeMinor != null && (
+                    <div
+                      className="flex justify-between gap-3 border-t pt-1 text-[13px]"
+                      data-testid="todays-sales-delivery-fee"
+                    >
+                      <span className="min-w-0 truncate text-muted-foreground">Delivery fee</span>
+                      <span className="shrink-0 tabular-nums">{money(sale.deliveryFeeMinor)}</span>
+                    </div>
+                  )}
                 </div>
+                {sale.fulfilment === "delivery" && sale.customerName && (
+                  <p className="mt-2 text-[12px] text-muted-foreground" data-testid="todays-sales-delivery-customer">
+                    Delivered to {sale.customerName}
+                  </p>
+                )}
                 <div className="mt-2 space-y-1 border-t pt-2">
                   {sale.paymentLines.map((p) => (
                     <div key={p.id} className="flex justify-between gap-3 text-[13px]">

@@ -9,7 +9,7 @@ import {
   markSaleVoided,
   sumCreditForCustomer,
 } from "./queries";
-import type { PaymentMethod, Sale } from "./schema";
+import type { PaymentMethod, Sale, SaleFulfilment } from "./schema";
 
 export type RecordSaleResult =
   | { ok: true; sale: Sale }
@@ -21,6 +21,7 @@ export type RecordSaleResult =
         | "inactive_product"
         | "payment_mismatch"
         | "credit_requires_customer"
+        | "delivery_requires_customer"
         | "customer_not_found";
     };
 
@@ -28,6 +29,9 @@ export async function recordCounterSale(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   input: {
+    fulfilment?: SaleFulfilment;
+    customerId?: string | null;
+    deliveryFeeMinor?: number | null;
     lines: { productId: string; quantity: number }[];
     paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
   },
@@ -37,16 +41,25 @@ export async function recordCounterSale(
     return { ok: false, reason: "forbidden" };
   }
 
+  const fulfilment = input.fulfilment ?? "counter";
+
   if (input.lines.some((line) => line.quantity <= 0)) {
     return { ok: false, reason: "invalid_quantity" };
+  }
+
+  if (fulfilment === "delivery" && !input.customerId) {
+    return { ok: false, reason: "delivery_requires_customer" };
   }
 
   const creditLines = input.paymentLines.filter((p) => p.method === "credit");
   if (creditLines.some((p) => !p.customerId)) {
     return { ok: false, reason: "credit_requires_customer" };
   }
-  for (const creditCustomerId of new Set(creditLines.map((p) => p.customerId!))) {
-    const customer = await findCustomerById(db, creditCustomerId);
+
+  const customerIdsToCheck = new Set(creditLines.map((p) => p.customerId!));
+  if (input.customerId) customerIdsToCheck.add(input.customerId);
+  for (const id of customerIdsToCheck) {
+    const customer = await findCustomerById(db, id);
     if (!customer) return { ok: false, reason: "customer_not_found" };
   }
 
@@ -70,7 +83,9 @@ export async function recordCounterSale(
     priceMinor: product!.priceMinor ?? 0,
   }));
 
-  const totalMinor = saleLines.reduce((sum, l) => sum + l.quantity * l.priceMinor, 0);
+  const deliveryFeeMinor = fulfilment === "delivery" ? (input.deliveryFeeMinor ?? null) : null;
+  const totalMinor =
+    saleLines.reduce((sum, l) => sum + l.quantity * l.priceMinor, 0) + (deliveryFeeMinor ?? 0);
   const paidMinor = input.paymentLines.reduce((sum, p) => sum + p.amountMinor, 0);
   if (paidMinor !== totalMinor) {
     return { ok: false, reason: "payment_mismatch" };
@@ -79,8 +94,10 @@ export async function recordCounterSale(
   const sale = await createSaleRecord(db, {
     locationId,
     staffMemberId: requester.staff.id,
-    fulfilment: "counter",
+    fulfilment,
+    customerId: input.customerId ?? null,
     totalMinor,
+    deliveryFeeMinor,
     lines: saleLines,
     paymentLines: input.paymentLines,
   });

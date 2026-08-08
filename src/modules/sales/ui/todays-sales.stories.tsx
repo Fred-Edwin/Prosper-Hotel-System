@@ -16,8 +16,26 @@ export const Default: Story = {
       status: "ready",
       sales: [
         {
+          id: "sale-4",
+          fulfilment: "delivery",
+          customerName: "Brian Otieno",
+          totalMinor: 330,
+          deliveryFeeMinor: 50,
+          occurredAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+          voided: false,
+          staffMemberName: "Restaurant Cashier",
+          lines: [
+            { id: "l0", productName: "Chips", quantity: 2, priceMinor: 100 },
+            { id: "l0b", productName: "Soda 500ml", quantity: 1, priceMinor: 80 },
+          ],
+          paymentLines: [{ id: "p0", method: "mpesa", amountMinor: 330, customerName: null }],
+        },
+        {
           id: "sale-3",
+          fulfilment: "counter",
+          customerName: null,
           totalMinor: 310,
+          deliveryFeeMinor: null,
           occurredAt: new Date().toISOString(),
           voided: false,
           staffMemberName: "Restaurant Cashier",
@@ -30,7 +48,10 @@ export const Default: Story = {
         },
         {
           id: "sale-2",
+          fulfilment: "counter",
+          customerName: null,
           totalMinor: 150,
+          deliveryFeeMinor: null,
           occurredAt: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
           voided: true,
           staffMemberName: "Restaurant Cashier",
@@ -39,7 +60,10 @@ export const Default: Story = {
         },
         {
           id: "sale-1",
+          fulfilment: "counter",
+          customerName: null,
           totalMinor: 230,
+          deliveryFeeMinor: null,
           occurredAt: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
           voided: false,
           staffMemberName: "Restaurant Cashier",

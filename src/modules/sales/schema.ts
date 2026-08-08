@@ -23,7 +23,9 @@ export type Sale = {
   locationId: string;
   staffMemberId: string;
   fulfilment: SaleFulfilment;
+  customerId: string | null;
   totalMinor: number;
+  deliveryFeeMinor: number | null;
   occurredAt: Date;
   voided: boolean;
   voidedAt: Date | null;

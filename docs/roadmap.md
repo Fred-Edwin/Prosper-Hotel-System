@@ -69,6 +69,17 @@ consumption/complimentary recording (proposal.md §3) — related but not
 blocking, folds into stage 3 alongside the rest of stock's operational
 recording.
 
+**Discovered split (tickets 06–10).** `/tickets` cut this stage's first
+tranche narrower than one pass: Customer record → counter sale
+(cash/M-Pesa, split payment lines) → credit sale (adds credit + inline
+customer create) → Today's sales (a new staff-nav list of a day's own
+sales) → same-day void, wired into that list rather than a one-shot
+confirmation-view action. **Delivery fulfilment was pushed out of this
+tranche too** — it needs a named customer (same as credit), so it slots
+in cleanly as the next tranche's opening ticket rather than being forced
+into the first pass. Per this file's own revision rule, discovered
+granularity wins over the one-line stage description above.
+
 ---
 
 ### Stage 3 — Restaurant stock operations: receiving, issuing, production, transfers, wastage
