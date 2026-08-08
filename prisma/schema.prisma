@@ -30,6 +30,7 @@ model Location {
   ingredientMovements IngredientMovement[]
   sales               Sale[]
   handovers           Handover[]
+  expenses            Expense[]
 
   @@map("locations")
 }
@@ -55,6 +56,7 @@ model StaffMember {
   ingredientMovements IngredientMovement[]
   sales               Sale[]
   handovers           Handover[]
+  expenses            Expense[]
 
   @@map("staff_members")
 }
@@ -269,6 +271,12 @@ model IngredientMovement {
   staffMemberId String
   staffMember   StaffMember         @relation(fields: [staffMemberId], references: [id])
   occurredAt    DateTime            @default(now())
+  // Shared by every line recorded in the same recordIngredientReceipt call
+  // — ticket 16's Stock-category Expense references this, not an individual
+  // line, so "the receipt this payment pays for" means the whole delivery.
+  // Added retroactively (ticket 12 shipped without it); not a foreign key
+  // to a separate table because no such table exists — grouping only.
+  receiptId     String
 
   @@map("ingredient_movements")
 }
@@ -326,4 +334,55 @@ model Handover {
   updatedAt          DateTime    @updatedAt
 
   @@map("handovers")
+}
+
+// CONTEXT.md's Expense: money the owner pays out, one of four categories
+// that behave differently in profit — see docs/architecture.md and
+// ticket 16.
+enum ExpenseCategory {
+  stock
+  running
+  asset
+  drawing
+}
+
+// Owner-only, per architecture.md ("only the owner pays money out").
+// Reversal, not deletion — same principle as Sale.voided.
+model Expense {
+  id            String          @id @default(cuid())
+  locationId    String
+  location      Location        @relation(fields: [locationId], references: [id])
+  staffMemberId String
+  staffMember   StaffMember     @relation(fields: [staffMemberId], references: [id])
+  category      ExpenseCategory
+  amountMinor   Int
+  note          String?
+  // Required only for category = stock — the IngredientMovement.receiptId
+  // group this payment pays for. Not a Prisma relation: receiptId is a
+  // grouping value shared by several IngredientMovement rows, not a row's
+  // own id, so there is nothing singular to point a foreign key at.
+  receiptId     String?
+  occurredAt    DateTime        @default(now())
+  reversed      Boolean         @default(false)
+  reversedAt    DateTime?
+  reversedBy    String?
+  drawingDebt   DrawingDebt?
+
+  @@map("expenses")
+}
+
+// CONTEXT.md's Cash Movement: "money the owner takes for personal use is
+// recorded as a cash movement out and a debt owed back to the business."
+// One row per drawing-category Expense; the running total owed is the sum
+// of unreversed rows (ticket 16 — no "settled" concept exists yet, so this
+// is deliberately the simplest honest shape: an ever-growing figure).
+model DrawingDebt {
+  id          String   @id @default(cuid())
+  expenseId   String   @unique
+  expense     Expense  @relation(fields: [expenseId], references: [id])
+  amountMinor Int
+  reversed    Boolean  @default(false)
+  reversedAt  DateTime?
+
+  @@map("drawing_debts")
 }

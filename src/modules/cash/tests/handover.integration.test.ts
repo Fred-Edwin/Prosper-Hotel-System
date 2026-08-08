@@ -31,6 +31,7 @@ function staffMemberAt(
       phone: "+254700111333",
       role,
       locationId,
+      dailyRateMinor: 0,
       active: true,
     },
     location: { id: locationId, code: locationCode, name: "Test" },
@@ -55,6 +56,7 @@ beforeAll(async () => {
       pinHash: await hashPin("1234"),
       role: "cashier",
       locationId: restaurant.id,
+      dailyRateMinor: 0,
     },
   });
 
@@ -66,6 +68,7 @@ beforeAll(async () => {
       pinHash: await hashPin("1234"),
       role: "cashier",
       locationId: restaurant.id,
+      dailyRateMinor: 0,
     },
   });
 
@@ -216,6 +219,7 @@ describe("recordHandover", () => {
         phone: "+254700111334",
         role: "cashier",
         locationId: canteenId,
+        dailyRateMinor: 0,
         active: true,
       },
       location: { id: canteenId, code: "canteen", name: "Test Canteen" },

@@ -8,9 +8,11 @@ import { findIngredientsByIds, findProductsByIds, recordIngredientCost } from "@
 import {
   createIngredientMovement,
   createStockMovement,
+  findReceiptById,
+  findReceiptsAtLocation,
   sumMovementsByProductAtLocation,
 } from "./queries";
-import type { IngredientMovement, StockLevel, StockMovement, StockMovementReason } from "./schema";
+import type { IngredientMovement, Receipt, StockLevel, StockMovement, StockMovementReason } from "./schema";
 
 export type StockAccessResult =
   | { ok: true; levels: StockLevel[] }
@@ -123,6 +125,10 @@ export async function recordIngredientReceipt(
   const allActive = input.lines.every((line) => ingredientById.get(line.ingredientId)?.active);
   if (!allActive) return { ok: false, reason: "inactive_ingredient" };
 
+  // Shared by every line in this call — what a Stock-category Expense
+  // (cash module) references as "the receipt it pays for."
+  const receiptId = crypto.randomUUID();
+
   const movements: IngredientMovement[] = [];
   for (const line of input.lines) {
     const movement = await createIngredientMovement(db, {
@@ -132,10 +138,39 @@ export async function recordIngredientReceipt(
       reason: "received",
       unitCostMinor: line.unitCostMinor,
       staffMemberId: requester.staff.id,
+      receiptId,
     });
     movements.push(movement);
     await recordIngredientCost(db, requester, line.ingredientId, line.unitCostMinor);
   }
 
   return { ok: true, movements };
+}
+
+export type ReceiptsAtLocationResult =
+  | { ok: true; receipts: Receipt[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 16: cash's Stock-category expense form picks from these rather
+// than typing a receipt id.
+export async function listReceiptsAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<ReceiptsAtLocationResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const receipts = await findReceiptsAtLocation(db, locationId);
+  return { ok: true, receipts };
+}
+
+// Ticket 16: cash validates a Stock-category expense references a real
+// receipt at the same location before recording the payment.
+export async function findReceipt(
+  db: PrismaClient,
+  receiptId: string,
+): Promise<{ receiptId: string; locationId: string } | null> {
+  return findReceiptById(db, receiptId);
 }

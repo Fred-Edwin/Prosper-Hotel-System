@@ -28,6 +28,10 @@ export async function findStaffMemberByName(
   return db.staffMember.findUnique({ where: { name } });
 }
 
+export async function findStaffMembersByIds(db: PrismaClient, ids: string[]): Promise<StaffMember[]> {
+  return db.staffMember.findMany({ where: { id: { in: ids } } });
+}
+
 export async function listActiveStaffAtLocation(
   db: PrismaClient,
   locationId: string,

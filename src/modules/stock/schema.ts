@@ -27,4 +27,17 @@ export type IngredientMovement = {
   unitCostMinor: number;
   staffMemberId: string;
   occurredAt: Date;
+  receiptId: string;
+};
+
+// One row per delivery event — every line recorded in the same
+// recordIngredientReceipt call shares a receiptId. This is what a
+// Stock-category Expense (cash module) references as "the receipt it
+// pays for" — see ticket 16.
+export type Receipt = {
+  receiptId: string;
+  locationId: string;
+  occurredAt: Date;
+  totalMinor: number;
+  lineCount: number;
 };

@@ -32,5 +32,6 @@ export {
   findLocationByCode,
   findLocationById,
   listLocations,
+  findStaffMembersByIds,
 } from "./queries";
 export type { StaffMember, Location, StaffRole, LocationCode, Customer } from "./schema";
