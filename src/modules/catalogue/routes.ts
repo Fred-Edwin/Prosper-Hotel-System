@@ -14,7 +14,7 @@ import {
   updateProduct,
 } from "./logic";
 import { listIngredients, listProducts } from "./queries";
-import type { Product } from "./schema";
+import type { Ingredient, Product } from "./schema";
 
 function writeStatus(reason: string): number {
   if (reason === "forbidden") return 403;
@@ -102,6 +102,16 @@ export async function setProductActiveRoute(
     : await deactivateProduct(db, session, id);
   if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   return Response.json({ product: result.value });
+}
+
+// Every store manager/attendant needs to pick an ingredient when recording
+// a receipt — same reasoning as activeProductsRoute above, not owner-only.
+export async function activeIngredientsRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const ingredients = await listIngredients(db);
+  return Response.json({ ingredients: ingredients.filter((i: Ingredient) => i.active) });
 }
 
 export async function createIngredientRoute(request: Request): Promise<Response> {

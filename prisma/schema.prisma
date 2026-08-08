@@ -22,31 +22,33 @@ enum StaffRole {
 }
 
 model Location {
-  id        String          @id @default(cuid())
-  code      LocationCode    @unique
-  name      String
-  staff     StaffMember[]
-  movements StockMovement[]
-  sales     Sale[]
+  id                  String               @id @default(cuid())
+  code                LocationCode         @unique
+  name                String
+  staff               StaffMember[]
+  movements           StockMovement[]
+  ingredientMovements IngredientMovement[]
+  sales               Sale[]
 
   @@map("locations")
 }
 
 model StaffMember {
-  id         String          @id @default(cuid())
-  name       String          @unique
-  phone      String          @unique
-  pinHash    String
-  role       StaffRole
-  locationId String
-  location   Location        @relation(fields: [locationId], references: [id])
+  id                  String               @id @default(cuid())
+  name                String               @unique
+  phone               String               @unique
+  pinHash             String
+  role                StaffRole
+  locationId          String
+  location            Location             @relation(fields: [locationId], references: [id])
   // docs/architecture.md: deactivated, never deleted — a former employee's
   // sales must stay attributed to them.
-  active     Boolean         @default(true)
-  createdAt  DateTime        @default(now())
-  sessions   Session[]
-  movements  StockMovement[]
-  sales      Sale[]
+  active              Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  sessions            Session[]
+  movements           StockMovement[]
+  ingredientMovements IngredientMovement[]
+  sales               Sale[]
 
   @@map("staff_members")
 }
@@ -80,16 +82,17 @@ model Product {
 }
 
 model Ingredient {
-  id     String @id @default(cuid())
-  name   String @unique
+  id                 String               @id @default(cuid())
+  name               String               @unique
   // Free text per the ticket — kg, litre, packet, whatever the owner enters.
-  unitOfMeasure String
+  unitOfMeasure      String
   // Convenience figure only, not the authoritative cost history (that's
   // stock's movement ledger once receiving is built). Null until known.
   lastKnownCostMinor Int?
-  active Boolean @default(true)
-  createdAt DateTime @default(now())
-  recipeLines RecipeLine[]
+  active             Boolean              @default(true)
+  createdAt          DateTime             @default(now())
+  recipeLines        RecipeLine[]
+  movements          IngredientMovement[]
 
   @@map("ingredients")
 }
@@ -160,52 +163,61 @@ enum PaymentMethod {
 // Never edited or deleted per architecture.md's reversal-only model — void
 // (ticket 09) adds a reversing entry rather than touching this row.
 model Sale {
-  id            String         @id @default(cuid())
-  locationId    String
-  location      Location       @relation(fields: [locationId], references: [id])
-  staffMemberId String
-  staffMember   StaffMember    @relation(fields: [staffMemberId], references: [id])
-  fulfilment    SaleFulfilment
+  id               String         @id @default(cuid())
+  locationId       String
+  location         Location       @relation(fields: [locationId], references: [id])
+  staffMemberId    String
+  staffMember      StaffMember    @relation(fields: [staffMemberId], references: [id])
+  fulfilment       SaleFulfilment
+  // Required when fulfilment = delivery, independent of payment method —
+  // ticket 11. Null for a counter sale.
+  customerId       String?
+  customer         Customer?      @relation(fields: [customerId], references: [id])
   // Minor units, same convention as Product.priceMinor. Sum of line
   // quantity x product price at the time of sale — stored rather than
   // recomputed, because a later product price change must not reshape a
   // past sale's total.
-  totalMinor    Int
-  lines         SaleLine[]
-  paymentLines  PaymentLine[]
-  occurredAt    DateTime       @default(now())
+  totalMinor       Int
+  // Present only when fulfilment = delivery. Added on top of product-line
+  // value to form totalMinor; kept as its own figure (not blended into line
+  // totals) so a later reporting stage can tell delivery income apart from
+  // product revenue — ticket 11.
+  deliveryFeeMinor Int?
+  lines            SaleLine[]
+  paymentLines     PaymentLine[]
+  occurredAt       DateTime       @default(now())
   // Reversal, not deletion — docs/architecture.md's data-lifecycle rule.
   // Unset by anything in this ticket; the void action itself is ticket 10.
-  voided        Boolean        @default(false)
-  voidedAt      DateTime?
-  voidedBy      String?
+  voided           Boolean        @default(false)
+  voidedAt         DateTime?
+  voidedBy         String?
 
   @@map("sales")
 }
 
 model SaleLine {
-  id          String  @id @default(cuid())
-  saleId      String
-  sale        Sale    @relation(fields: [saleId], references: [id])
-  productId   String
-  product     Product @relation(fields: [productId], references: [id])
-  quantity    Int
+  id         String  @id @default(cuid())
+  saleId     String
+  sale       Sale    @relation(fields: [saleId], references: [id])
+  productId  String
+  product    Product @relation(fields: [productId], references: [id])
+  quantity   Int
   // The product's priceMinor at the moment of sale — see Sale.totalMinor.
-  priceMinor  Int
+  priceMinor Int
 
   @@map("sale_lines")
 }
 
 model PaymentLine {
-  id            String        @id @default(cuid())
-  saleId        String
-  sale          Sale          @relation(fields: [saleId], references: [id])
-  method        PaymentMethod
-  amountMinor   Int
+  id          String        @id @default(cuid())
+  saleId      String
+  sale        Sale          @relation(fields: [saleId], references: [id])
+  method      PaymentMethod
+  amountMinor Int
   // Required for credit lines only — CONTEXT.md: "any staff member may
   // extend credit provided the customer is named." Null for cash/M-Pesa.
-  customerId    String?
-  customer      Customer?     @relation(fields: [customerId], references: [id])
+  customerId  String?
+  customer    Customer?     @relation(fields: [customerId], references: [id])
 
   @@map("payment_lines")
 }
@@ -226,6 +238,33 @@ model StockMovement {
   occurredAt    DateTime            @default(now())
 
   @@map("stock_movements")
+}
+
+// CONTEXT.md: "store movement" — an Ingredient moving through the store,
+// valued at cost rather than selling price. Kept separate from
+// StockMovement (which moves Product) rather than a nullable dual-FK on one
+// table, per ticket 12's decision — the two families are read as genuinely
+// separate records by the client.
+model IngredientMovement {
+  id            String              @id @default(cuid())
+  ingredientId  String
+  ingredient    Ingredient          @relation(fields: [ingredientId], references: [id])
+  locationId    String
+  location      Location            @relation(fields: [locationId], references: [id])
+  // Unsigned in this ticket — receiving is the only reason written so far.
+  // A future issuing/wastage ticket may need this signed, same as
+  // StockMovement.quantity; revisit then rather than guessing the sign
+  // convention now.
+  quantity      Int
+  reason        StockMovementReason
+  // Price paid per unit on this occasion — proposal.md: "prices are
+  // entered per delivery rather than held as a fixed figure."
+  unitCostMinor Int
+  staffMemberId String
+  staffMember   StaffMember         @relation(fields: [staffMemberId], references: [id])
+  occurredAt    DateTime            @default(now())
+
+  @@map("ingredient_movements")
 }
 
 model Session {
@@ -249,6 +288,7 @@ model Customer {
   phone        String?
   createdAt    DateTime      @default(now())
   paymentLines PaymentLine[]
+  sales        Sale[]
 
   @@map("customers")
 }

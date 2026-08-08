@@ -4,9 +4,13 @@ import {
   findLocationById,
   type AuthenticatedStaff,
 } from "@/modules/people";
-import { findProductsByIds } from "@/modules/catalogue";
-import { createStockMovement, sumMovementsByProductAtLocation } from "./queries";
-import type { StockLevel, StockMovement, StockMovementReason } from "./schema";
+import { findIngredientsByIds, findProductsByIds, recordIngredientCost } from "@/modules/catalogue";
+import {
+  createIngredientMovement,
+  createStockMovement,
+  sumMovementsByProductAtLocation,
+} from "./queries";
+import type { IngredientMovement, StockLevel, StockMovement, StockMovementReason } from "./schema";
 
 export type StockAccessResult =
   | { ok: true; levels: StockLevel[] }
@@ -76,4 +80,62 @@ export async function getCurrentStockAtLocation(
     .sort((a, b) => a.productName.localeCompare(b.productName));
 
   return { ok: true, levels };
+}
+
+export type RecordIngredientReceiptResult =
+  | { ok: true; movements: IngredientMovement[] }
+  | { ok: false; reason: "forbidden" | "invalid_quantity" | "invalid_cost" | "inactive_ingredient" };
+
+// architecture.md: receiving is a store-manager/attendant capability, each
+// at their own location, plus the owner — not restaurant-only.
+function canReceive(role: string): boolean {
+  return role === "owner" || role === "store_manager" || role === "attendant";
+}
+
+export async function recordIngredientReceipt(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    locationId: string;
+    lines: { ingredientId: string; quantity: number; unitCostMinor: number }[];
+  },
+): Promise<RecordIngredientReceiptResult> {
+  if (
+    !canReceive(requester.staff.role) ||
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.lines.some((line) => line.quantity <= 0)) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  if (input.lines.some((line) => line.unitCostMinor < 0)) {
+    return { ok: false, reason: "invalid_cost" };
+  }
+
+  const ingredients = await findIngredientsByIds(
+    db,
+    input.lines.map((line) => line.ingredientId),
+  );
+  const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+  const allActive = input.lines.every((line) => ingredientById.get(line.ingredientId)?.active);
+  if (!allActive) return { ok: false, reason: "inactive_ingredient" };
+
+  const movements: IngredientMovement[] = [];
+  for (const line of input.lines) {
+    const movement = await createIngredientMovement(db, {
+      ingredientId: line.ingredientId,
+      locationId: input.locationId,
+      quantity: line.quantity,
+      reason: "received",
+      unitCostMinor: line.unitCostMinor,
+      staffMemberId: requester.staff.id,
+    });
+    movements.push(movement);
+    await recordIngredientCost(db, requester, line.ingredientId, line.unitCostMinor);
+  }
+
+  return { ok: true, movements };
 }

@@ -17,3 +17,14 @@ export type StockLevel = {
   productName: string;
   quantityOnHand: number;
 };
+
+export type IngredientMovement = {
+  id: string;
+  ingredientId: string;
+  locationId: string;
+  quantity: number;
+  reason: StockMovementReason;
+  unitCostMinor: number;
+  staffMemberId: string;
+  occurredAt: Date;
+};

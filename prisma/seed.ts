@@ -16,6 +16,7 @@ async function main() {
   await db.customer.deleteMany({});
   await db.recipeLine.deleteMany({});
   await db.recipe.deleteMany({});
+  await db.ingredientMovement.deleteMany({});
   await db.ingredient.deleteMany({});
   await db.stockMovement.deleteMany({});
   await db.product.deleteMany({});
@@ -125,6 +126,26 @@ async function main() {
     db.ingredient.create({ data: { name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 80 } }),
   ]);
 
+  // More ingredients purely so the receiving screen's picker/search has a
+  // realistic list to exercise, not just the three the Recipes tab needs.
+  // A mix of known and unknown last cost (the input pre-fill only fires for
+  // the former), varied units, and one inactive — provably excluded from
+  // the picker rather than just untested.
+  await db.ingredient.createMany({
+    data: [
+      { name: "Rice", unitOfMeasure: "kg", lastKnownCostMinor: 150 },
+      { name: "Onions", unitOfMeasure: "kg", lastKnownCostMinor: 90 },
+      { name: "Tomatoes", unitOfMeasure: "kg", lastKnownCostMinor: 100 },
+      { name: "Sugar", unitOfMeasure: "kg", lastKnownCostMinor: 140 },
+      { name: "Tea leaves", unitOfMeasure: "packet", lastKnownCostMinor: 200 },
+      { name: "Salt", unitOfMeasure: "kg", lastKnownCostMinor: 50 },
+      { name: "Charcoal", unitOfMeasure: "bag", lastKnownCostMinor: 900 },
+      { name: "Printing paper (bulk)", unitOfMeasure: "ream", lastKnownCostMinor: null },
+      { name: "Toner", unitOfMeasure: "cartridge", lastKnownCostMinor: null },
+      { name: "Discontinued spice mix", unitOfMeasure: "kg", lastKnownCostMinor: 60, active: false },
+    ],
+  });
+
   // Mukimo has a recipe (so the Recipes tab shows a real cost); Chips does
   // not — the absence is deliberate, per design.md: "a list of fifteen with
   // twelve blank states it" — the Recipes tab must show both cases.
@@ -166,7 +187,7 @@ async function main() {
   });
 
   console.log(
-    "Seeded 2 locations, 8 staff members, 5 products, 3 ingredients, 1 recipe and stock movements.",
+    "Seeded 2 locations, 8 staff members, 5 products, 13 ingredients, 1 recipe and stock movements.",
   );
   console.log(`Every seeded staff member's PIN is ${SEED_PIN}.`);
 }

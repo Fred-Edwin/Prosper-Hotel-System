@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { StockMovement, StockMovementReason } from "./schema";
+import type { IngredientMovement, StockMovement, StockMovementReason } from "./schema";
 
 export async function createStockMovement(
   db: PrismaClient,
@@ -28,4 +28,18 @@ export async function sumMovementsByProductAtLocation(
     productId: g.productId,
     quantityOnHand: g._sum.quantity ?? 0,
   }));
+}
+
+export async function createIngredientMovement(
+  db: PrismaClient,
+  data: {
+    ingredientId: string;
+    locationId: string;
+    quantity: number;
+    reason: StockMovementReason;
+    unitCostMinor: number;
+    staffMemberId: string;
+  },
+): Promise<IngredientMovement> {
+  return db.ingredientMovement.create({ data });
 }

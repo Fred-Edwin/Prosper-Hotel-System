@@ -97,6 +97,14 @@ export async function setIngredientActive(
   return db.ingredient.update({ where: { id }, data: { active } });
 }
 
+export async function setIngredientLastKnownCost(
+  db: PrismaClient,
+  id: string,
+  lastKnownCostMinor: number,
+): Promise<Ingredient> {
+  return db.ingredient.update({ where: { id }, data: { lastKnownCostMinor } });
+}
+
 export async function createRecipeRecord(
   db: PrismaClient,
   data: {

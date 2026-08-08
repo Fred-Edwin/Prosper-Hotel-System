@@ -1,6 +1,6 @@
 // Products, ingredients, recipes, prices. See docs/architecture.md.
 
-export { listProducts, findProductsByIds, listIngredients } from "./queries";
+export { listProducts, findProductsByIds, listIngredients, findIngredientsByIds } from "./queries";
 export {
   createProduct,
   updateProduct,
@@ -10,6 +10,7 @@ export {
   updateIngredient,
   deactivateIngredient,
   reactivateIngredient,
+  recordIngredientCost,
   createRecipe,
   getCurrentRecipe,
   getRecipeAt,
@@ -19,6 +20,7 @@ export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost } from ".
 export {
   catalogueRoute,
   activeProductsRoute,
+  activeIngredientsRoute,
   createProductRoute,
   updateProductRoute,
   setProductActiveRoute,

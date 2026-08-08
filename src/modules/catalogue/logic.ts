@@ -12,6 +12,7 @@ import {
   findRecipeInForceAt,
   listRecipeVersionsByProduct,
   setIngredientActive,
+  setIngredientLastKnownCost,
   setProductActive,
   updateIngredientRecord,
   updateProductRecord,
@@ -167,6 +168,22 @@ export async function reactivateIngredient(
   if (!current) return { ok: false, reason: "not_found" };
 
   return { ok: true, value: await setIngredientActive(db, id, true) };
+}
+
+// Deliberately not owner-gated, unlike updateIngredient: this only records
+// the price paid on a delivery (a frequent store-manager/attendant action,
+// like createCustomer), never the ingredient's name or unit of measure —
+// those stay an admin edit through updateIngredient.
+export async function recordIngredientCost(
+  db: PrismaClient,
+  _requester: AuthenticatedStaff,
+  id: string,
+  unitCostMinor: number,
+): Promise<WriteResult<Ingredient>> {
+  const current = await findIngredientById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await setIngredientLastKnownCost(db, id, unitCostMinor) };
 }
 
 export async function createRecipe(

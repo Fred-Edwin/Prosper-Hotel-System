@@ -28,8 +28,16 @@
  * home is a real cost. Six links is where this frame is least comfortable.
  */
 
+"use client";
+
+import { useRouter } from "next/navigation";
 import { staffNav, type StaffRole } from "./staff-nav";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
+
+async function handleSignOut(router: ReturnType<typeof useRouter>) {
+  await fetch("/api/auth/logout", { method: "POST" });
+  router.push("/login");
+}
 
 export function StaffShellHome({
   staffName,
@@ -49,6 +57,7 @@ export function StaffShellHome({
   children: React.ReactNode;
 }) {
   const inTask = active !== null;
+  const router = useRouter();
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -72,14 +81,24 @@ export function StaffShellHome({
             </div>
           </>
         ) : (
-          <div className="min-w-0 flex-1 px-2">
-            <div className="text-[15px] leading-tight font-semibold capitalize">
-              {locationName}
+          <>
+            <div className="min-w-0 flex-1 px-2">
+              <div className="text-[15px] leading-tight font-semibold capitalize">
+                {locationName}
+              </div>
+              <div className="text-[11px] leading-tight text-muted-foreground">
+                {staffName}
+              </div>
             </div>
-            <div className="text-[11px] leading-tight text-muted-foreground">
-              {staffName}
-            </div>
-          </div>
+            <button
+              onClick={() => handleSignOut(router)}
+              className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+              aria-label="Sign out"
+              data-testid="staff-sign-out"
+            >
+              <LogOut className="size-4.5" />
+            </button>
+          </>
         )}
       </header>
 
