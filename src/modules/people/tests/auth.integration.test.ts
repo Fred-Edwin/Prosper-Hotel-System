@@ -34,6 +34,7 @@ beforeEach(async () => {
       pinHash: await hashPin(PIN),
       role: "cashier",
       locationId,
+      dailyRateMinor: 55000,
     },
   });
   staffId = staff.id;

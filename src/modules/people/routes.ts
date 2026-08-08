@@ -1,12 +1,25 @@
 import { cookies } from "next/headers";
 import { db } from "@/shared/db";
-import { createCustomer, getAuthenticatedStaff, listCustomers, login, logout } from "./logic";
+import {
+  createCustomer,
+  createStaffMember,
+  deactivateStaffMember,
+  getAuthenticatedStaff,
+  listCustomers,
+  listStaffMembers,
+  login,
+  logout,
+  reactivateStaffMember,
+  updateStaffMember,
+} from "./logic";
+import { listLocations } from "./queries";
 import type { AuthenticatedStaff } from "./logic";
 
 const SESSION_COOKIE = "prosper_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14; // 14 days, matches logic.ts
 
 function writeStatus(reason: string): number {
+  if (reason === "forbidden") return 403;
   if (reason === "not_found") return 404;
   return 400;
 }
@@ -73,4 +86,77 @@ export async function createCustomerRoute(request: Request): Promise<Response> {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
   return Response.json({ customer: result.value });
+}
+
+// Owner-only, per proposal.md's role list — see listStaffMembers.
+export async function staffRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const result = await listStaffMembers(db, session);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  const locations = await listLocations(db);
+  return Response.json({ staff: result.value, locations });
+}
+
+export async function createStaffMemberRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await createStaffMember(db, session, {
+    name: body.name,
+    phone: body.phone,
+    role: body.role,
+    locationId: body.locationId,
+    pin: body.pin,
+    dailyRateMinor: body.dailyRateMinor,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ staff: result.value });
+}
+
+export async function updateStaffMemberRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const body = await request.json();
+  const result = await updateStaffMember(db, session, id, {
+    name: body.name,
+    phone: body.phone,
+    role: body.role,
+    locationId: body.locationId,
+    dailyRateMinor: body.dailyRateMinor,
+    pin: body.pin === "" || body.pin == null ? undefined : body.pin,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ staff: result.value });
+}
+
+export async function setStaffMemberActiveRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const body = await request.json();
+  const result = body.active
+    ? await reactivateStaffMember(db, session, id)
+    : await deactivateStaffMember(db, session, id);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ staff: result.value });
 }

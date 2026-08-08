@@ -8,6 +8,7 @@ export type StaffMember = {
   phone: string;
   role: StaffRole;
   locationId: string;
+  dailyRateMinor: number;
   active: boolean;
 };
 

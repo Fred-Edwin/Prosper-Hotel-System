@@ -20,6 +20,7 @@ function staffAt(
       phone: "+254700111444",
       role,
       locationId,
+      dailyRateMinor: 0,
       active: true,
     },
     location: { id: locationId, code: "restaurant", name: "Test" },
@@ -44,6 +45,7 @@ beforeEach(async () => {
       pinHash: await hashPin("1234"),
       role: "store_manager",
       locationId: restaurant.id,
+      dailyRateMinor: 700,
     },
   });
   storeManagerId = storeManager.id;
@@ -109,6 +111,7 @@ describe("recordIngredientReceipt", () => {
         pinHash: await hashPin("1234"),
         role: "cashier",
         locationId: restaurantId,
+        dailyRateMinor: 550,
       },
     });
     const requester = staffAt("cashier", restaurantId, cashier.id);
@@ -132,6 +135,7 @@ describe("recordIngredientReceipt", () => {
         pinHash: await hashPin("1234"),
         role: "attendant",
         locationId: canteen.id,
+        dailyRateMinor: 600,
       },
     });
     const requester = staffAt("attendant", canteen.id, attendant.id);
