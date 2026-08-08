@@ -29,6 +29,7 @@ model Location {
   movements           StockMovement[]
   ingredientMovements IngredientMovement[]
   sales               Sale[]
+  handovers           Handover[]
 
   @@map("locations")
 }
@@ -49,6 +50,7 @@ model StaffMember {
   movements           StockMovement[]
   ingredientMovements IngredientMovement[]
   sales               Sale[]
+  handovers           Handover[]
 
   @@map("staff_members")
 }
@@ -291,4 +293,33 @@ model Customer {
   sales        Sale[]
 
   @@map("customers")
+}
+
+// CONTEXT.md: money physically handed to the owner, for one location, one
+// day, checked against an expected amount. Restaurant only for now —
+// canteen's expected figure needs Takings (Stage 4, not built).
+// "One per staff member/location/day" is enforced in cash/logic.ts (find
+// today's row, update in place) rather than a DB constraint — same
+// same-day-edit style as Sale's void rule, not a unique index.
+// expectedCashMinor/expectedMpesaMinor are computed once at record time from
+// that day's recorded sales and stored, not recomputed on every read — a
+// later void must not silently reshape an already-recorded handover.
+// docs/design.md's blind-count decision: the staff member who records this
+// never sees these two fields back from the API. Only the owner (ticket 14)
+// reads them.
+model Handover {
+  id                 String      @id @default(cuid())
+  locationId         String
+  location           Location    @relation(fields: [locationId], references: [id])
+  staffMemberId      String
+  staffMember        StaffMember @relation(fields: [staffMemberId], references: [id])
+  expectedCashMinor  Int
+  expectedMpesaMinor Int
+  actualCashMinor    Int
+  actualMpesaMinor   Int
+  occurredAt         DateTime    @default(now())
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@map("handovers")
 }
