@@ -41,6 +41,10 @@ model StaffMember {
   role                StaffRole
   locationId          String
   location            Location             @relation(fields: [locationId], references: [id])
+  // proposal.md §11: "a daily rate set for each" — minor units, same
+  // convention as Product.priceMinor. Pay calculation itself (days worked
+  // x rate) is a follow-on ticket; this ticket only stores the rate.
+  dailyRateMinor      Int
   // docs/architecture.md: deactivated, never deleted — a former employee's
   // sales must stay attributed to them.
   active              Boolean              @default(true)

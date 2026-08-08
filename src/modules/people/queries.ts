@@ -15,6 +15,12 @@ export async function findLocationById(
   return db.location.findUnique({ where: { id } });
 }
 
+// docs/architecture.md: LocationCode only ever has two values — no
+// pagination or filtering needed for a picker built from this.
+export async function listLocations(db: PrismaClient): Promise<Location[]> {
+  return db.location.findMany({ orderBy: { name: "asc" } });
+}
+
 export async function findStaffMemberByName(
   db: PrismaClient,
   name: string,
@@ -30,6 +36,61 @@ export async function listActiveStaffAtLocation(
     where: { locationId, active: true },
     orderBy: { name: "asc" },
   });
+}
+
+export async function listAllStaff(db: PrismaClient): Promise<StaffMember[]> {
+  return db.staffMember.findMany({ orderBy: { name: "asc" } });
+}
+
+export async function findStaffMemberById(
+  db: PrismaClient,
+  id: string,
+): Promise<StaffMember | null> {
+  return db.staffMember.findUnique({ where: { id } });
+}
+
+export async function findStaffMemberByPhone(
+  db: PrismaClient,
+  phone: string,
+): Promise<StaffMember | null> {
+  return db.staffMember.findUnique({ where: { phone } });
+}
+
+export async function createStaffMemberRecord(
+  db: PrismaClient,
+  data: {
+    name: string;
+    phone: string;
+    pinHash: string;
+    role: StaffMember["role"];
+    locationId: string;
+    dailyRateMinor: number;
+  },
+): Promise<StaffMember> {
+  return db.staffMember.create({ data });
+}
+
+export async function updateStaffMemberRecord(
+  db: PrismaClient,
+  id: string,
+  data: {
+    name: string;
+    phone: string;
+    pinHash?: string;
+    role: StaffMember["role"];
+    locationId: string;
+    dailyRateMinor: number;
+  },
+): Promise<StaffMember> {
+  return db.staffMember.update({ where: { id }, data });
+}
+
+export async function setStaffMemberActive(
+  db: PrismaClient,
+  id: string,
+  active: boolean,
+): Promise<StaffMember> {
+  return db.staffMember.update({ where: { id }, data: { active } });
 }
 
 export async function createSession(

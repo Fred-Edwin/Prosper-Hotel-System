@@ -11,6 +11,7 @@ function staffAt(role: "owner" | "cashier"): AuthenticatedStaff {
       phone: "+254700111555",
       role,
       locationId: "location-1",
+      dailyRateMinor: 0,
       active: true,
     },
     location: { id: "location-1", code: "restaurant", name: "Test" },

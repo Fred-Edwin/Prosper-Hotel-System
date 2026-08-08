@@ -41,6 +41,7 @@ async function main() {
         pinHash,
         role: "owner",
         locationId: restaurant.id,
+        dailyRateMinor: 0,
         active: true,
       },
       {
@@ -49,6 +50,7 @@ async function main() {
         pinHash,
         role: "store_manager",
         locationId: restaurant.id,
+        dailyRateMinor: 700,
         active: true,
       },
       {
@@ -57,6 +59,7 @@ async function main() {
         pinHash,
         role: "cashier",
         locationId: restaurant.id,
+        dailyRateMinor: 550,
         active: true,
       },
       {
@@ -65,6 +68,7 @@ async function main() {
         pinHash,
         role: "cashier",
         locationId: restaurant.id,
+        dailyRateMinor: 550,
         active: true,
       },
       {
@@ -73,6 +77,7 @@ async function main() {
         pinHash,
         role: "attendant",
         locationId: canteen.id,
+        dailyRateMinor: 600,
         active: true,
       },
       {
@@ -81,6 +86,7 @@ async function main() {
         pinHash,
         role: "attendant",
         locationId: canteen.id,
+        dailyRateMinor: 600,
         active: true,
       },
       // Edge case: deactivated staff member — must never authenticate,
@@ -91,6 +97,7 @@ async function main() {
         pinHash,
         role: "cashier",
         locationId: restaurant.id,
+        dailyRateMinor: 550,
         active: false,
       },
       // Edge case: a 200-character name.
@@ -100,6 +107,7 @@ async function main() {
         pinHash,
         role: "cashier",
         locationId: restaurant.id,
+        dailyRateMinor: 550,
         active: true,
       },
     ],

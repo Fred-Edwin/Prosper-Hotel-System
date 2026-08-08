@@ -4,12 +4,17 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import {
   createCustomerRecord,
   createSession,
+  createStaffMemberRecord,
   deleteSession,
   findCustomerById as findCustomerByIdQuery,
   findSessionByToken,
   findStaffMemberByName,
+  findStaffMemberById as findStaffMemberByIdQuery,
+  listAllStaff,
   listCustomers as listCustomersQuery,
+  setStaffMemberActive,
   updateCustomerRecord,
+  updateStaffMemberRecord,
 } from "./queries";
 import type { Customer, Location, StaffMember, StaffRole } from "./schema";
 
@@ -78,6 +83,152 @@ export function canAccessLocation(
 
 export async function hashPin(pin: string): Promise<string> {
   return bcrypt.hash(pin, 10);
+}
+
+type StaffWriteResult =
+  | { ok: true; value: StaffMember }
+  | {
+      ok: false;
+      reason: "forbidden" | "not_found" | "invalid_name" | "invalid_phone" | "invalid_pin" | "duplicate_name" | "duplicate_phone";
+    };
+
+function requireOwner(requester: AuthenticatedStaff): boolean {
+  return requester.staff.role === "owner";
+}
+
+// ADR 0007: login is a name and a four-digit PIN.
+function isValidPin(pin: string): boolean {
+  return /^\d{4}$/.test(pin);
+}
+
+// proposal.md §11: staff are added and deactivated by the owner. This is
+// the only write path in this module gated to the owner role, matching
+// catalogue's Product/Ingredient pattern.
+export async function createStaffMember(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    name: string;
+    phone: string;
+    role: StaffRole;
+    locationId: string;
+    pin: string;
+    dailyRateMinor: number;
+  },
+): Promise<StaffWriteResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const name = input.name.trim();
+  if (!name) return { ok: false, reason: "invalid_name" };
+
+  const phone = input.phone.trim();
+  if (!phone) return { ok: false, reason: "invalid_phone" };
+
+  if (!isValidPin(input.pin)) return { ok: false, reason: "invalid_pin" };
+
+  const existingName = await findStaffMemberByName(db, name);
+  if (existingName) return { ok: false, reason: "duplicate_name" };
+
+  const pinHash = await hashPin(input.pin);
+  const staffMember = await createStaffMemberRecord(db, {
+    name,
+    phone,
+    pinHash,
+    role: input.role,
+    locationId: input.locationId,
+    dailyRateMinor: input.dailyRateMinor,
+  });
+  return { ok: true, value: staffMember };
+}
+
+// Lifecycle ticket: name, phone, role, location, daily rate and PIN are
+// all non-financial, in-place edits — architecture.md's "non-financial
+// typos... are edited in place" rule, extended to a staff record's own
+// fields. PIN is optional here: omitting it keeps the current PIN.
+export async function updateStaffMember(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+  input: {
+    name: string;
+    phone: string;
+    role: StaffRole;
+    locationId: string;
+    dailyRateMinor: number;
+    pin?: string;
+  },
+): Promise<StaffWriteResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findStaffMemberByIdQuery(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  const name = input.name.trim();
+  if (!name) return { ok: false, reason: "invalid_name" };
+
+  const phone = input.phone.trim();
+  if (!phone) return { ok: false, reason: "invalid_phone" };
+
+  if (name !== current.name) {
+    const existingName = await findStaffMemberByName(db, name);
+    if (existingName) return { ok: false, reason: "duplicate_name" };
+  }
+
+  let pinHash: string | undefined;
+  if (input.pin !== undefined) {
+    if (!isValidPin(input.pin)) return { ok: false, reason: "invalid_pin" };
+    pinHash = await hashPin(input.pin);
+  }
+
+  const staffMember = await updateStaffMemberRecord(db, id, {
+    name,
+    phone,
+    pinHash,
+    role: input.role,
+    locationId: input.locationId,
+    dailyRateMinor: input.dailyRateMinor,
+  });
+  return { ok: true, value: staffMember };
+}
+
+// Deactivate, never delete — a former employee's sales, movements and
+// handovers must stay attributed to them. Exactly
+// deactivateProduct/deactivateIngredient's pattern.
+export async function deactivateStaffMember(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+): Promise<StaffWriteResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findStaffMemberByIdQuery(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await setStaffMemberActive(db, id, false) };
+}
+
+export async function reactivateStaffMember(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+): Promise<StaffWriteResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findStaffMemberByIdQuery(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await setStaffMemberActive(db, id, true) };
+}
+
+// Owner-only, same as the write paths above — pay/rate/role is
+// managerial data, per proposal.md's role list.
+export async function listStaffMembers(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+): Promise<{ ok: true; value: StaffMember[] } | { ok: false; reason: "forbidden" }> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  return { ok: true, value: await listAllStaff(db) };
 }
 
 type CustomerWriteResult =
