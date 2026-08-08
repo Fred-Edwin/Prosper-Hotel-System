@@ -4,16 +4,23 @@ export {
   getCurrentStockAtLocation,
   recordStockMovement,
   recordIngredientReceipt,
+  recordNonSalesConsumption,
 } from "./logic";
 export type {
   StockAccessResult,
   RecordMovementResult,
   RecordIngredientReceiptResult,
+  RecordNonSalesConsumptionResult,
 } from "./logic";
-export { stockAtLocationRoute, recordIngredientReceiptRoute } from "./routes";
+export {
+  stockAtLocationRoute,
+  recordIngredientReceiptRoute,
+  recordNonSalesConsumptionRoute,
+} from "./routes";
 export type {
   StockMovement,
   StockMovementReason,
   StockLevel,
   IngredientMovement,
+  NonSalesCategory,
 } from "./schema";

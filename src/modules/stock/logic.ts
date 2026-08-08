@@ -4,13 +4,30 @@ import {
   findLocationById,
   type AuthenticatedStaff,
 } from "@/modules/people";
-import { findIngredientsByIds, findProductsByIds, recordIngredientCost } from "@/modules/catalogue";
 import {
+  findIngredientsByIds,
+  findProductsByIds,
+  getCurrentRecipe,
+  recordIngredientCost,
+} from "@/modules/catalogue";
+import {
+  createIngredientConsumptionMovement,
   createIngredientMovement,
   createStockMovement,
   sumMovementsByProductAtLocation,
 } from "./queries";
-import type { IngredientMovement, StockLevel, StockMovement, StockMovementReason } from "./schema";
+import type {
+  IngredientMovement,
+  NonSalesCategory,
+  StockLevel,
+  StockMovement,
+  StockMovementReason,
+} from "./schema";
+
+// CONTEXT.md's Non-sales Stock Consumption: where no per-unit cost is
+// known, cost is estimated at 60% of selling price, per the owner's own
+// discovery figure. See docs/formulas.md §4.
+const ESTIMATED_COST_RATE = 0.6;
 
 export type StockAccessResult =
   | { ok: true; levels: StockLevel[] }
@@ -138,4 +155,90 @@ export async function recordIngredientReceipt(
   }
 
   return { ok: true, movements };
+}
+
+export type RecordNonSalesConsumptionResult =
+  | { ok: true; movement: StockMovement | IngredientMovement }
+  | {
+      ok: false;
+      reason: "forbidden" | "invalid_quantity" | "inactive_item" | "not_found" | "invalid_cost";
+    };
+
+// CONTEXT.md: unlike receiving, any staff member may record wastage,
+// consumption or a give-away observed at their own location — not
+// restricted to store manager/owner.
+export async function recordNonSalesConsumption(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    itemType: "product" | "ingredient";
+    itemId: string;
+    locationId: string;
+    quantity: number;
+    category: NonSalesCategory;
+  },
+): Promise<RecordNonSalesConsumptionResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.quantity <= 0) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  if (input.itemType === "product") {
+    const [product] = await findProductsByIds(db, [input.itemId]);
+    if (!product) return { ok: false, reason: "not_found" };
+    if (!product.active) return { ok: false, reason: "inactive_item" };
+
+    const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
+    const sellingValueMinor = product.priceMinor;
+
+    let costBasisMinor: number;
+    let isEstimated: boolean;
+    if (recipe?.perUnitCostMinor != null) {
+      costBasisMinor = recipe.perUnitCostMinor;
+      isEstimated = false;
+    } else if (sellingValueMinor != null) {
+      costBasisMinor = Math.round(sellingValueMinor * ESTIMATED_COST_RATE);
+      isEstimated = true;
+    } else {
+      // No recipe cost and no selling price to estimate from.
+      return { ok: false, reason: "invalid_cost" };
+    }
+
+    const movement = await createStockMovement(db, {
+      productId: product.id,
+      locationId: input.locationId,
+      quantity: -input.quantity,
+      reason: input.category,
+      staffMemberId: requester.staff.id,
+      costBasisMinor: costBasisMinor * input.quantity,
+      sellingValueMinor: sellingValueMinor != null ? sellingValueMinor * input.quantity : null,
+      isEstimated,
+    });
+    return { ok: true, movement };
+  }
+
+  const [ingredient] = await findIngredientsByIds(db, [input.itemId]);
+  if (!ingredient) return { ok: false, reason: "not_found" };
+  if (!ingredient.active) return { ok: false, reason: "inactive_item" };
+
+  // Ingredients are never sold (CONTEXT.md), so there is no selling price
+  // to estimate a cost from — where lastKnownCostMinor is unset, no cost
+  // figure can be produced at all.
+  if (ingredient.lastKnownCostMinor == null) {
+    return { ok: false, reason: "invalid_cost" };
+  }
+
+  const movement = await createIngredientConsumptionMovement(db, {
+    ingredientId: ingredient.id,
+    locationId: input.locationId,
+    quantity: -input.quantity,
+    reason: input.category,
+    staffMemberId: requester.staff.id,
+    costBasisMinor: ingredient.lastKnownCostMinor * input.quantity,
+    isEstimated: false,
+  });
+  return { ok: true, movement };
 }

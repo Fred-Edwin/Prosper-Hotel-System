@@ -9,6 +9,9 @@ export async function createStockMovement(
     quantity: number;
     reason: StockMovementReason;
     staffMemberId: string;
+    costBasisMinor?: number;
+    sellingValueMinor?: number | null;
+    isEstimated?: boolean;
   },
 ): Promise<StockMovement> {
   return db.stockMovement.create({ data });
@@ -39,6 +42,21 @@ export async function createIngredientMovement(
     reason: StockMovementReason;
     unitCostMinor: number;
     staffMemberId: string;
+  },
+): Promise<IngredientMovement> {
+  return db.ingredientMovement.create({ data });
+}
+
+export async function createIngredientConsumptionMovement(
+  db: PrismaClient,
+  data: {
+    ingredientId: string;
+    locationId: string;
+    quantity: number;
+    reason: StockMovementReason;
+    staffMemberId: string;
+    costBasisMinor: number;
+    isEstimated: boolean;
   },
 ): Promise<IngredientMovement> {
   return db.ingredientMovement.create({ data });
