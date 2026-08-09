@@ -1,7 +1,13 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { canAccessLocation, type AuthenticatedStaff } from "@/modules/people";
 import { listTodaysSalesForStaff } from "@/modules/sales";
-import { createHandoverRecord, findTodaysHandover, updateHandoverActuals } from "./queries";
+import {
+  createHandoverRecord,
+  findTodaysHandover,
+  findTodaysHandoversAtLocation,
+  updateHandoverActuals,
+  type HandoverWithStaffName,
+} from "./queries";
 import type { Handover } from "./schema";
 
 function dayBounds(): { dayStart: Date; dayEnd: Date } {
@@ -94,4 +100,25 @@ export async function getTodaysHandoverForStaff(
   const { dayStart, dayEnd } = dayBounds();
   const handover = await findTodaysHandover(db, requester.staff.id, locationId, dayStart, dayEnd);
   return { ok: true, handover };
+}
+
+export type GetTodaysHandoversAtLocationResult =
+  | { ok: true; handovers: HandoverWithStaffName[] }
+  | { ok: false; reason: "forbidden" };
+
+// Dashboard's own-staff-only Handover section (ticket 14). Owner-only,
+// restaurant-scoped: the canteen has no handover concept yet, and this
+// screen must not imply canteen coverage that doesn't exist.
+export async function getTodaysHandoversAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<GetTodaysHandoversAtLocationResult> {
+  if (requester.staff.role !== "owner") {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const { dayStart, dayEnd } = dayBounds();
+  const handovers = await findTodaysHandoversAtLocation(db, locationId, dayStart, dayEnd);
+  return { ok: true, handovers };
 }

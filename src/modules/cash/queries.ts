@@ -38,3 +38,22 @@ export async function updateHandoverActuals(
 ): Promise<Handover> {
   return db.handover.update({ where: { id }, data });
 }
+
+export type HandoverWithStaffName = Handover & { staffName: string };
+
+export async function findTodaysHandoversAtLocation(
+  db: PrismaClient,
+  locationId: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<HandoverWithStaffName[]> {
+  const handovers = await db.handover.findMany({
+    where: { locationId, occurredAt: { gte: dayStart, lt: dayEnd } },
+    include: { staffMember: true },
+    orderBy: { staffMember: { name: "asc" } },
+  });
+  return handovers.map(({ staffMember, ...handover }) => ({
+    ...handover,
+    staffName: staffMember.name,
+  }));
+}

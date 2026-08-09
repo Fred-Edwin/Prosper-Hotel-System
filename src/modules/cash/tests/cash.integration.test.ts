@@ -2,7 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { recordCounterSale, voidSale } from "@/modules/sales";
-import { getTodaysHandoverForStaff, recordHandover } from "../logic";
+import {
+  getTodaysHandoverForStaff,
+  getTodaysHandoversAtLocation,
+  recordHandover,
+} from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -31,6 +35,7 @@ function staffMemberAt(
       phone: "+254700111333",
       role,
       locationId,
+      dailyRateMinor: 0,
       active: true,
     },
     location: { id: locationId, code: locationCode, name: "Test" },
@@ -55,6 +60,7 @@ beforeAll(async () => {
       pinHash: await hashPin("1234"),
       role: "cashier",
       locationId: restaurant.id,
+      dailyRateMinor: 0,
     },
   });
 
@@ -66,6 +72,7 @@ beforeAll(async () => {
       pinHash: await hashPin("1234"),
       role: "cashier",
       locationId: restaurant.id,
+      dailyRateMinor: 0,
     },
   });
 
@@ -216,6 +223,7 @@ describe("recordHandover", () => {
         phone: "+254700111334",
         role: "cashier",
         locationId: canteenId,
+        dailyRateMinor: 0,
         active: true,
       },
       location: { id: canteenId, code: "canteen", name: "Test Canteen" },
@@ -260,5 +268,76 @@ describe("getTodaysHandoverForStaff", () => {
     const result = await getTodaysHandoverForStaff(testDb, staffAt("cashier", restaurantId));
 
     expect(result).toEqual({ ok: true, handover: null });
+  });
+});
+
+describe("getTodaysHandoversAtLocation", () => {
+  test("a non-owner cannot view the location's handover roster", async () => {
+    const result = await getTodaysHandoversAtLocation(
+      testDb,
+      staffAt("cashier", restaurantId),
+      restaurantId,
+    );
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("returns one row per staff member who has recorded a handover today, with their name", async () => {
+    await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 100,
+      mpesaMinor: 0,
+    });
+    await recordHandover(
+      testDb,
+      staffMemberAt("staff-2", "Other Cashier", "cashier", restaurantId),
+      { cashMinor: 50, mpesaMinor: 20 },
+    );
+
+    const result = await getTodaysHandoversAtLocation(
+      testDb,
+      staffAt("owner", restaurantId),
+      restaurantId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handovers).toHaveLength(2);
+    const names = result.handovers.map((h) => h.staffName).sort();
+    expect(names).toEqual(["Other Cashier", "Test Cashier"]);
+  });
+
+  test("a staff member who has not recorded a handover today does not appear", async () => {
+    await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 100,
+      mpesaMinor: 0,
+    });
+
+    const result = await getTodaysHandoversAtLocation(
+      testDb,
+      staffAt("owner", restaurantId),
+      restaurantId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handovers).toHaveLength(1);
+  });
+
+  test("does not include handovers from a different location", async () => {
+    await recordHandover(
+      testDb,
+      staffMemberAt("staff-2", "Other Cashier", "cashier", canteenId, "canteen"),
+      { cashMinor: 50, mpesaMinor: 0 },
+    );
+
+    const result = await getTodaysHandoversAtLocation(
+      testDb,
+      staffAt("owner", restaurantId),
+      restaurantId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handovers).toHaveLength(0);
   });
 });

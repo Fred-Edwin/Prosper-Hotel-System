@@ -200,6 +200,52 @@ export function LoadingTable({
   );
 }
 
+/**
+ * A section's title bar — inside a dashboard-style card, not a whole page.
+ * Kept here next to `SectionNotBuilt` since the two are meant to be used
+ * together: a card with a header, whose body is either real content or a
+ * not-built placeholder sized to the card rather than the whole screen.
+ */
+export function SectionHeader({
+  title,
+  action,
+  badge,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between border-b px-4 py-2.5">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-medium">{title}</h2>
+        {badge}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * `NotBuilt`, sized for one card in a composed grid rather than a whole
+ * screen — e.g. a dashboard section whose module doesn't exist yet, sitting
+ * next to sections that are real. Same message, shorter frame, no separate
+ * border (the caller's card already has one).
+ */
+export function SectionNotBuilt({ section }: { section: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="mb-2 flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Hammer className="size-3.5" />
+      </div>
+      <p className="text-[13px] font-medium">{section} isn&apos;t built yet</p>
+      <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+        Planned but not live. Check back once it&apos;s built.
+      </p>
+    </div>
+  );
+}
+
 /** The detail page's loading shape — two columns, not a table. */
 export function LoadingDetail() {
   return (
