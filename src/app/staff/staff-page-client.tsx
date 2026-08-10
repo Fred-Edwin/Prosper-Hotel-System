@@ -5,6 +5,7 @@ import { StaffShellHome, StaffHome } from "@/components/layout/staff-shell";
 import { staffNav, type StaffRole } from "@/components/layout/staff-nav";
 import { StockList } from "@/modules/stock/ui/stock-list";
 import { ReceiveDelivery } from "@/modules/stock/ui/receive-delivery";
+import { IssueToKitchen } from "@/modules/stock/ui/issue-to-kitchen";
 import { RecordWastage } from "@/modules/stock/ui/record-wastage";
 import { NewSale } from "@/modules/sales/ui/new-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
@@ -43,6 +44,7 @@ export function StaffPageClient({
       {active === "sell" && <NewSale onDone={() => setActive(null)} />}
       {active === "sales" && <TodaysSales />}
       {active === "receive" && <ReceiveDelivery onDone={() => setActive(null)} />}
+      {active === "issue" && <IssueToKitchen onDone={() => setActive(null)} />}
       {active === "wastage" && <RecordWastage onDone={() => setActive(null)} />}
       {active === "handover" && <Handover />}
       {active !== null &&
@@ -50,6 +52,7 @@ export function StaffPageClient({
         active !== "sell" &&
         active !== "sales" &&
         active !== "receive" &&
+        active !== "issue" &&
         active !== "wastage" &&
         active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>

@@ -48,6 +48,18 @@ export async function createIngredientMovement(
   return db.ingredientMovement.create({ data });
 }
 
+export async function createIngredientIssueMovement(
+  db: PrismaClient,
+  data: {
+    ingredientId: string;
+    locationId: string;
+    quantity: number;
+    staffMemberId: string;
+  },
+): Promise<IngredientMovement> {
+  return db.ingredientMovement.create({ data: { ...data, reason: "issued" } });
+}
+
 export async function createIngredientConsumptionMovement(
   db: PrismaClient,
   data: {
