@@ -12,6 +12,7 @@ import {
 } from "@/modules/catalogue";
 import {
   createIngredientConsumptionMovement,
+  createIngredientIssueMovement,
   createIngredientMovement,
   createStockMovement,
   findReceiptById,
@@ -160,6 +161,57 @@ export async function recordIngredientReceipt(
     });
     movements.push(movement);
     await recordIngredientCost(db, requester, line.ingredientId, line.unitCostMinor);
+  }
+
+  return { ok: true, movements };
+}
+
+export type RecordIngredientIssueResult =
+  | { ok: true; movements: IngredientMovement[] }
+  | { ok: false; reason: "forbidden" | "invalid_quantity" | "inactive_ingredient" };
+
+// architecture.md: store manager and owner only — same as receiving, but
+// narrower (no attendant: the canteen has no kitchen to issue to).
+function canIssue(role: string): boolean {
+  return role === "owner" || role === "store_manager";
+}
+
+export async function recordIngredientIssue(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    locationId: string;
+    lines: { ingredientId: string; quantity: number }[];
+  },
+): Promise<RecordIngredientIssueResult> {
+  if (
+    !canIssue(requester.staff.role) ||
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.lines.some((line) => line.quantity <= 0)) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  const ingredients = await findIngredientsByIds(
+    db,
+    input.lines.map((line) => line.ingredientId),
+  );
+  const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+  const allActive = input.lines.every((line) => ingredientById.get(line.ingredientId)?.active);
+  if (!allActive) return { ok: false, reason: "inactive_ingredient" };
+
+  const movements: IngredientMovement[] = [];
+  for (const line of input.lines) {
+    const movement = await createIngredientIssueMovement(db, {
+      ingredientId: line.ingredientId,
+      locationId: input.locationId,
+      quantity: -line.quantity,
+      staffMemberId: requester.staff.id,
+    });
+    movements.push(movement);
   }
 
   return { ok: true, movements };

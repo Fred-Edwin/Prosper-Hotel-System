@@ -4,6 +4,7 @@ export {
   getCurrentStockAtLocation,
   recordStockMovement,
   recordIngredientReceipt,
+  recordIngredientIssue,
   recordNonSalesConsumption,
   listReceiptsAtLocation,
   findReceipt,
@@ -12,12 +13,14 @@ export type {
   StockAccessResult,
   RecordMovementResult,
   RecordIngredientReceiptResult,
+  RecordIngredientIssueResult,
   RecordNonSalesConsumptionResult,
   ReceiptsAtLocationResult,
 } from "./logic";
 export {
   stockAtLocationRoute,
   recordIngredientReceiptRoute,
+  recordIngredientIssueRoute,
   recordNonSalesConsumptionRoute,
 } from "./routes";
 export type {

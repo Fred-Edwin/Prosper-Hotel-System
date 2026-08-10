@@ -143,6 +143,9 @@ model RecipeLine {
 // consumed and given-away as siblings the client reads together but
 // distinguishes per entry — reason is already the place that distinction
 // lives, so no separate sub-field.
+// issued added by ticket 18: an ingredient leaving the store for the
+// kitchen — a store movement (CONTEXT.md's Stock Movement split), not a
+// product being created.
 enum StockMovementReason {
   received
   transferred
@@ -150,6 +153,7 @@ enum StockMovementReason {
   wasted
   consumed
   given_away
+  issued
   corrected
 }
 
