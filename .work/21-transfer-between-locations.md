@@ -5,9 +5,16 @@
 and `IngredientMovementReason`, unused by any ticket so far;
 `canAccessLocation()` and the existing product/ingredient movement
 queries are all this needs)
-**Status:** in-progress
+**Status:** blocked
 
 **Claimed:** /root — 2026-08-10 (Africa/Nairobi)
+
+**Blocked:** 2026-08-10 — The design-reference worktree contains no transfer
+screen or comparable staff stock-operation screen. The closest available
+implemented pattern is `src/modules/stock/ui/receive-delivery.tsx`: its
+item-picker/form-and-confirm flow can be adapted for a transfer. Please
+approve that adaptation, or ask for 2–3 transfer-screen variants to choose
+from before implementation.
 
 ## What this delivers
 
