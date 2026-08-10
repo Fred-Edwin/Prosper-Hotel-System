@@ -1,6 +1,6 @@
 # 19 — Production: recording kitchen output
 
-**Status:** in-progress (claimed by Claude Sonnet 5, 2026-08-10)
+**Status:** in-review (Claude Sonnet 5, 2026-08-10)
 
 **Type:** logic (test-first)
 **Blocked by:** 18 (issuing to the kitchen) — production records what

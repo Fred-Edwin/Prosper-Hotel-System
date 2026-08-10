@@ -21,6 +21,7 @@ import {
   Receipt,
   Boxes,
   History,
+  ChefHat,
   type LucideIcon,
 } from "lucide-react";
 
@@ -75,6 +76,12 @@ const all: Record<string, StaffLink> = {
     icon: ArrowLeftRight,
     hint: "Issue ingredients from the store",
   },
+  production: {
+    key: "production",
+    label: "Production",
+    icon: ChefHat,
+    hint: "Record what the kitchen made",
+  },
   count: {
     key: "count",
     label: "Stock count",
@@ -104,6 +111,7 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     all.sales,
     all.receive,
     all.issue,
+    all.production,
     all.count,
     all.wastage,
     all.stock,

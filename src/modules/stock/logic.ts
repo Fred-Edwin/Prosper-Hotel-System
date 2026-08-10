@@ -12,17 +12,27 @@ import {
 } from "@/modules/catalogue";
 import {
   createIngredientConsumptionMovement,
+  createIngredientCorrectionMovement,
   createIngredientIssueMovement,
   createIngredientMovement,
+  createProductionMovement,
+  createStockCount,
   createStockMovement,
+  findLatestStockCountAtLocation,
   findReceiptById,
   findReceiptsAtLocation,
+  findStockCountById,
+  markStockCountLineCorrected,
+  sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
 } from "./queries";
 import type {
   IngredientMovement,
   NonSalesCategory,
   Receipt,
+  StockCount,
+  StockCountItemType,
+  StockCountForReader,
   StockLevel,
   StockMovement,
   StockMovementReason,
@@ -217,6 +227,72 @@ export async function recordIngredientIssue(
   return { ok: true, movements };
 }
 
+export type RecordProductionResult =
+  | { ok: true; movement: StockMovement }
+  | {
+      ok: false;
+      reason: "forbidden" | "invalid_quantity" | "inactive_product" | "not_found" | "no_recipe";
+    };
+
+// architecture.md: store manager and owner only — same actors as issuing.
+function canProduce(role: string): boolean {
+  return role === "owner" || role === "store_manager";
+}
+
+// Ticket 19: producing a product consumes ingredients according to its
+// current recipe (catalogue's getCurrentRecipe) rather than referencing a
+// specific prior issue — no lot-tracking. Deduction and produced-quantity
+// costing both derive from the same recipe read.
+export async function recordProduction(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    productId: string;
+    locationId: string;
+    quantity: number;
+  },
+): Promise<RecordProductionResult> {
+  if (
+    !canProduce(requester.staff.role) ||
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.quantity <= 0) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  const [product] = await findProductsByIds(db, [input.productId]);
+  if (!product) return { ok: false, reason: "not_found" };
+  if (!product.active) return { ok: false, reason: "inactive_product" };
+
+  const recipe = await getCurrentRecipe(db, product.id);
+  if (!recipe || recipe.perUnitCostMinor == null) {
+    return { ok: false, reason: "no_recipe" };
+  }
+
+  for (const line of recipe.lines) {
+    await createIngredientIssueMovement(db, {
+      ingredientId: line.ingredientId,
+      locationId: input.locationId,
+      quantity: -(line.quantity * input.quantity),
+      staffMemberId: requester.staff.id,
+    });
+  }
+
+  const movement = await createProductionMovement(db, {
+    productId: product.id,
+    locationId: input.locationId,
+    quantity: input.quantity,
+    staffMemberId: requester.staff.id,
+    costBasisMinor: recipe.perUnitCostMinor * input.quantity,
+    sellingValueMinor: product.priceMinor != null ? product.priceMinor * input.quantity : null,
+  });
+
+  return { ok: true, movement };
+}
+
 export type RecordNonSalesConsumptionResult =
   | { ok: true; movement: StockMovement | IngredientMovement }
   | {
@@ -329,4 +405,259 @@ export async function findReceipt(
   receiptId: string,
 ): Promise<{ receiptId: string; locationId: string } | null> {
   return findReceiptById(db, receiptId);
+}
+
+export type RecordStockCountResult =
+  | { ok: true; count: StockCount }
+  | { ok: false; reason: "forbidden" | "invalid_quantity" | "inactive_item" | "not_found" };
+
+// docs/architecture.md: "the count never changes the record on its own —
+// it records what was counted and shows the gap." Any role that can
+// access the location may record a count, same as receiving/issuing —
+// store manager and attendant per the ticket, owner always.
+export async function recordStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    locationId: string;
+    lines: { itemType: StockCountItemType; itemId: string; countedQuantity: number }[];
+  },
+): Promise<RecordStockCountResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.lines.some((line) => line.countedQuantity < 0)) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  const productIds = input.lines.filter((l) => l.itemType === "product").map((l) => l.itemId);
+  const ingredientIds = input.lines
+    .filter((l) => l.itemType === "ingredient")
+    .map((l) => l.itemId);
+
+  const products = productIds.length > 0 ? await findProductsByIds(db, productIds) : [];
+  const ingredients =
+    ingredientIds.length > 0 ? await findIngredientsByIds(db, ingredientIds) : [];
+  const productById = new Map(products.map((p) => [p.id, p]));
+  const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+  for (const line of input.lines) {
+    if (line.itemType === "product") {
+      const product = productById.get(line.itemId);
+      if (!product) return { ok: false, reason: "not_found" };
+      if (!product.active) return { ok: false, reason: "inactive_item" };
+    } else {
+      const ingredient = ingredientById.get(line.itemId);
+      if (!ingredient) return { ok: false, reason: "not_found" };
+      if (!ingredient.active) return { ok: false, reason: "inactive_item" };
+    }
+  }
+
+  const productSums = await sumMovementsByProductAtLocation(db, input.locationId);
+  const ingredientSums = await sumMovementsByIngredientAtLocation(db, input.locationId);
+  const expectedByProduct = new Map(productSums.map((s) => [s.productId, s.quantityOnHand]));
+  const expectedByIngredient = new Map(
+    ingredientSums.map((s) => [s.ingredientId, s.quantityOnHand]),
+  );
+
+  const count = await createStockCount(db, {
+    locationId: input.locationId,
+    staffMemberId: requester.staff.id,
+    lines: input.lines.map((line) => ({
+      itemType: line.itemType,
+      itemId: line.itemId,
+      countedQuantity: line.countedQuantity,
+      expectedQuantity:
+        (line.itemType === "product"
+          ? expectedByProduct.get(line.itemId)
+          : expectedByIngredient.get(line.itemId)) ?? 0,
+    })),
+  });
+
+  return { ok: true, count };
+}
+
+async function withItemNames(
+  db: PrismaClient,
+  count: StockCount,
+): Promise<StockCountForReader> {
+  const productIds = count.lines.filter((l) => l.itemType === "product").map((l) => l.itemId);
+  const ingredientIds = count.lines
+    .filter((l) => l.itemType === "ingredient")
+    .map((l) => l.itemId);
+
+  const products = productIds.length > 0 ? await findProductsByIds(db, productIds) : [];
+  const ingredients =
+    ingredientIds.length > 0 ? await findIngredientsByIds(db, ingredientIds) : [];
+  const nameById = new Map([
+    ...products.map((p) => [p.id, p.name] as const),
+    ...ingredients.map((i) => [i.id, i.name] as const),
+  ]);
+
+  return {
+    ...count,
+    lines: count.lines.map((line) => ({
+      ...line,
+      itemName: nameById.get(line.itemId) ?? "Unknown item",
+    })),
+  };
+}
+
+export type StockCountResult =
+  | { ok: true; count: StockCountForReader }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// Read is location-scoped the same way as every other stock read — a
+// store-manager-recorded count is visible to anyone who can see that
+// location, not just the owner (only the correct action is owner-only).
+//
+// The comparison (expected quantity, and therefore the difference) is
+// owner-only regardless of who recorded the count — showing it to whoever
+// is doing the physical count would anchor her count to what the system
+// already believes, undermining the count as an independent check. Strip
+// it here so a non-owner's response never contains the figure at all,
+// rather than trusting the UI to hide a column it already received.
+export async function getStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  stockCountId: string,
+): Promise<StockCountResult> {
+  const count = await findStockCountById(db, stockCountId);
+  if (!count) return { ok: false, reason: "not_found" };
+
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, count.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const named = await withItemNames(db, count);
+
+  if (requester.staff.role === "owner") {
+    return { ok: true, count: named };
+  }
+
+  const counted: StockCountForReader = {
+    ...named,
+    lines: named.lines.map((line) => {
+      const { expectedQuantity: _expectedQuantity, ...rest } = line;
+      return rest as StockCountForReader["lines"][number];
+    }),
+  };
+  return { ok: true, count: counted };
+}
+
+export type LatestStockCountResult =
+  | { ok: true; count: StockCountForReader | null }
+  | { ok: false; reason: "forbidden" };
+
+// The owner's review/correct table under the admin Stock destination —
+// shows the current/most recent count at a location, not a full history
+// (out of scope per the ticket). Owner-only: this is the comparison view,
+// same restriction as getStockCount's expected/difference fields.
+export async function getLatestStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<LatestStockCountResult> {
+  if (
+    requester.staff.role !== "owner" ||
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const count = await findLatestStockCountAtLocation(db, locationId);
+  if (!count) return { ok: true, count: null };
+
+  return { ok: true, count: await withItemNames(db, count) };
+}
+
+export type CorrectStockCountResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "not_found" | "already_corrected" | "invalid_cost" };
+
+// docs/architecture.md: "only the owner may correct" — the person who
+// counts is not the person who adjusts. The owner investigates off-system
+// and enters what she determines the actual correct quantity is — this may
+// or may not equal what was originally counted — so the correction's delta
+// is against her entered figure, not the count's own recorded difference.
+//
+// Financial valuation follows recordNonSalesConsumption's precedent: a
+// product is valued at recipe cost if it has one, else an estimate from
+// its selling price; an ingredient is valued at lastKnownCostMinor, cost
+// only. A shortfall (negative delta) is a real loss and carries selling
+// value the same way wastage does; a surplus (positive delta) is cost-only
+// — a found item is not profit until it is actually sold.
+export async function correctStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { stockCountId: string; lineId: string; correctedQuantity: number },
+): Promise<CorrectStockCountResult> {
+  if (requester.staff.role !== "owner") {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const count = await findStockCountById(db, input.stockCountId);
+  if (!count) return { ok: false, reason: "not_found" };
+
+  const line = count.lines.find((l) => l.id === input.lineId);
+  if (!line) return { ok: false, reason: "not_found" };
+  if (line.correctedAt) return { ok: false, reason: "already_corrected" };
+
+  const delta = input.correctedQuantity - line.expectedQuantity;
+
+  if (delta !== 0) {
+    if (line.itemType === "product") {
+      const [product] = await findProductsByIds(db, [line.itemId]);
+      if (!product) return { ok: false, reason: "not_found" };
+
+      const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
+      const sellingValueMinor = product.priceMinor;
+
+      let costBasisMinor: number;
+      let isEstimated: boolean;
+      if (recipe?.perUnitCostMinor != null) {
+        costBasisMinor = recipe.perUnitCostMinor;
+        isEstimated = false;
+      } else if (sellingValueMinor != null) {
+        costBasisMinor = Math.round(sellingValueMinor * ESTIMATED_COST_RATE);
+        isEstimated = true;
+      } else {
+        return { ok: false, reason: "invalid_cost" };
+      }
+
+      await createStockMovement(db, {
+        productId: line.itemId,
+        locationId: count.locationId,
+        quantity: delta,
+        reason: "corrected",
+        staffMemberId: requester.staff.id,
+        costBasisMinor: costBasisMinor * Math.abs(delta),
+        // A shortfall is a real, unexplained loss of sellable inventory —
+        // value it the same way wastage does. A surplus is not profit
+        // until it's actually sold, so no selling value is recognised.
+        sellingValueMinor:
+          delta < 0 && sellingValueMinor != null ? sellingValueMinor * Math.abs(delta) : null,
+        isEstimated,
+      });
+    } else {
+      const [ingredient] = await findIngredientsByIds(db, [line.itemId]);
+      if (!ingredient) return { ok: false, reason: "not_found" };
+      if (ingredient.lastKnownCostMinor == null) {
+        return { ok: false, reason: "invalid_cost" };
+      }
+
+      await createIngredientCorrectionMovement(db, {
+        ingredientId: line.itemId,
+        locationId: count.locationId,
+        quantity: delta,
+        staffMemberId: requester.staff.id,
+        costBasisMinor: ingredient.lastKnownCostMinor * Math.abs(delta),
+      });
+    }
+  }
+
+  await markStockCountLineCorrected(db, line.id, requester.staff.id);
+
+  return { ok: true };
 }

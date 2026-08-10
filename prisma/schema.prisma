@@ -31,6 +31,7 @@ model Location {
   sales               Sale[]
   handovers           Handover[]
   expenses            Expense[]
+  stockCounts         StockCount[]
 
   @@map("locations")
 }
@@ -57,6 +58,7 @@ model StaffMember {
   sales               Sale[]
   handovers           Handover[]
   expenses            Expense[]
+  stockCounts         StockCount[]
 
   @@map("staff_members")
 }
@@ -146,6 +148,12 @@ model RecipeLine {
 // issued added by ticket 18: an ingredient leaving the store for the
 // kitchen — a store movement (CONTEXT.md's Stock Movement split), not a
 // product being created.
+// produced added by ticket 19: cooked food coming into existence at
+// selling location — a product movement, priced at selling value, cost of
+// sales, and profit, unlike issuing's plain ingredient relocation. Also
+// used on the IngredientMovement side is `issued`, reused rather than a
+// separate reason — the ingredients really did leave the store for this
+// production run.
 enum StockMovementReason {
   received
   transferred
@@ -154,6 +162,7 @@ enum StockMovementReason {
   consumed
   given_away
   issued
+  produced
   corrected
 }
 
@@ -415,4 +424,42 @@ model DrawingDebt {
   reversedAt  DateTime?
 
   @@map("drawing_debts")
+}
+
+// docs/architecture.md's "physical count": a location-generic count of
+// products and/or ingredients on hand. One row groups the lines recorded
+// together, same shape as IngredientMovement.receiptId grouping a
+// delivery. Ticket 20.
+model StockCount {
+  id            String          @id @default(cuid())
+  locationId    String
+  location      Location        @relation(fields: [locationId], references: [id])
+  staffMemberId String
+  staffMember   StaffMember     @relation(fields: [staffMemberId], references: [id])
+  occurredAt    DateTime        @default(now())
+  lines         StockCountLine[]
+
+  @@map("stock_counts")
+}
+
+// itemType + itemId rather than two nullable FKs, matching CONTEXT.md's
+// product/ingredient split (never both) and precedent
+// (recordNonSalesConsumption's discriminated itemType). expectedQuantity is
+// snapshotted at count time per the ticket — later movements must not
+// reshape a past count's comparison.
+model StockCountLine {
+  id                String      @id @default(cuid())
+  stockCountId      String
+  stockCount        StockCount  @relation(fields: [stockCountId], references: [id])
+  itemType          String
+  itemId            String
+  countedQuantity   Int
+  expectedQuantity  Int
+  // Set only once the owner applies the correction from this line's
+  // difference — ticket's "correcting an already-corrected line is
+  // rejected" rule reads off this being non-null.
+  correctedAt       DateTime?
+  correctedBy       String?
+
+  @@map("stock_count_lines")
 }
