@@ -14,6 +14,7 @@ import {
   createIngredientConsumptionMovement,
   createIngredientIssueMovement,
   createIngredientMovement,
+  createProductionMovement,
   createStockMovement,
   findReceiptById,
   findReceiptsAtLocation,
@@ -215,6 +216,72 @@ export async function recordIngredientIssue(
   }
 
   return { ok: true, movements };
+}
+
+export type RecordProductionResult =
+  | { ok: true; movement: StockMovement }
+  | {
+      ok: false;
+      reason: "forbidden" | "invalid_quantity" | "inactive_product" | "not_found" | "no_recipe";
+    };
+
+// architecture.md: store manager and owner only — same actors as issuing.
+function canProduce(role: string): boolean {
+  return role === "owner" || role === "store_manager";
+}
+
+// Ticket 19: producing a product consumes ingredients according to its
+// current recipe (catalogue's getCurrentRecipe) rather than referencing a
+// specific prior issue — no lot-tracking. Deduction and produced-quantity
+// costing both derive from the same recipe read.
+export async function recordProduction(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    productId: string;
+    locationId: string;
+    quantity: number;
+  },
+): Promise<RecordProductionResult> {
+  if (
+    !canProduce(requester.staff.role) ||
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.quantity <= 0) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  const [product] = await findProductsByIds(db, [input.productId]);
+  if (!product) return { ok: false, reason: "not_found" };
+  if (!product.active) return { ok: false, reason: "inactive_product" };
+
+  const recipe = await getCurrentRecipe(db, product.id);
+  if (!recipe || recipe.perUnitCostMinor == null) {
+    return { ok: false, reason: "no_recipe" };
+  }
+
+  for (const line of recipe.lines) {
+    await createIngredientIssueMovement(db, {
+      ingredientId: line.ingredientId,
+      locationId: input.locationId,
+      quantity: -(line.quantity * input.quantity),
+      staffMemberId: requester.staff.id,
+    });
+  }
+
+  const movement = await createProductionMovement(db, {
+    productId: product.id,
+    locationId: input.locationId,
+    quantity: input.quantity,
+    staffMemberId: requester.staff.id,
+    costBasisMinor: recipe.perUnitCostMinor * input.quantity,
+    sellingValueMinor: product.priceMinor != null ? product.priceMinor * input.quantity : null,
+  });
+
+  return { ok: true, movement };
 }
 
 export type RecordNonSalesConsumptionResult =

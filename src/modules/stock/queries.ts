@@ -17,6 +17,20 @@ export async function createStockMovement(
   return db.stockMovement.create({ data });
 }
 
+export async function createProductionMovement(
+  db: PrismaClient,
+  data: {
+    productId: string;
+    locationId: string;
+    quantity: number;
+    staffMemberId: string;
+    costBasisMinor: number;
+    sellingValueMinor: number | null;
+  },
+): Promise<StockMovement> {
+  return db.stockMovement.create({ data: { ...data, reason: "produced", isEstimated: false } });
+}
+
 export async function sumMovementsByProductAtLocation(
   db: PrismaClient,
   locationId: string,

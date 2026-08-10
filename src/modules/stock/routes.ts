@@ -5,6 +5,7 @@ import {
   recordIngredientIssue,
   recordIngredientReceipt,
   recordNonSalesConsumption,
+  recordProduction,
 } from "./logic";
 
 export async function stockAtLocationRoute(
@@ -58,6 +59,23 @@ export async function recordIngredientIssueRoute(request: Request): Promise<Resp
   }
 
   return Response.json({ movements: result.movements });
+}
+
+export async function recordProductionRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await recordProduction(db, session, {
+    productId: body.productId,
+    locationId: session.staff.locationId,
+    quantity: body.quantity,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ movement: result.movement });
 }
 
 export async function recordNonSalesConsumptionRoute(request: Request): Promise<Response> {
