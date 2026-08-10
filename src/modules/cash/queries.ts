@@ -107,3 +107,22 @@ export async function sumUnreversedDrawingDebt(db: PrismaClient): Promise<number
   });
   return result._sum.amountMinor ?? 0;
 }
+
+export type HandoverWithStaffName = Handover & { staffName: string };
+
+export async function findTodaysHandoversAtLocation(
+  db: PrismaClient,
+  locationId: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<HandoverWithStaffName[]> {
+  const handovers = await db.handover.findMany({
+    where: { locationId, occurredAt: { gte: dayStart, lt: dayEnd } },
+    include: { staffMember: true },
+    orderBy: { staffMember: { name: "asc" } },
+  });
+  return handovers.map(({ staffMember, ...handover }) => ({
+    ...handover,
+    staffName: staffMember.name,
+  }));
+}

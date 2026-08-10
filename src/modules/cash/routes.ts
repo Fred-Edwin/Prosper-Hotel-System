@@ -1,7 +1,14 @@
 import { db } from "@/shared/db";
-import { getSession, findStaffMembersByIds } from "@/modules/people";
+import { getSession, findStaffMembersByIds, findLocationByCode } from "@/modules/people";
 import { listReceiptsAtLocation } from "@/modules/stock";
-import { getTodaysHandoverForStaff, recordHandover, listExpenses, recordExpense, reverseExpense } from "./logic";
+import {
+  getTodaysHandoverForStaff,
+  getTodaysHandoversAtLocation,
+  recordHandover,
+  listExpenses,
+  recordExpense,
+  reverseExpense,
+} from "./logic";
 import type { ExpenseCategory } from "./schema";
 
 function writeStatus(reason: string): number {
@@ -54,6 +61,34 @@ export async function todaysHandoverRoute(): Promise<Response> {
           occurredAt: result.handover.occurredAt,
         }
       : null,
+  });
+}
+
+// Dashboard's Handover section (ticket 14): today's restaurant handovers,
+// all staff, expected vs. actual — the owner's comparison, never sent to
+// the staff member who recorded it (see recordHandoverRoute's note above).
+export async function todaysHandoversAtRestaurantRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const restaurant = await findLocationByCode(db, "restaurant");
+  if (!restaurant) return Response.json({ error: "not_found" }, { status: 404 });
+
+  const result = await getTodaysHandoversAtLocation(db, session, restaurant.id);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({
+    handovers: result.handovers.map((h) => ({
+      id: h.id,
+      staffName: h.staffName,
+      expectedCashMinor: h.expectedCashMinor,
+      expectedMpesaMinor: h.expectedMpesaMinor,
+      actualCashMinor: h.actualCashMinor,
+      actualMpesaMinor: h.actualMpesaMinor,
+      occurredAt: h.occurredAt,
+    })),
   });
 }
 

@@ -9,11 +9,13 @@ import {
   findDrawingDebtByExpenseId,
   findExpenseById,
   findTodaysHandover,
+  findTodaysHandoversAtLocation,
   listExpensesAtLocation,
   markDrawingDebtReversed,
   markExpenseReversed,
   sumUnreversedDrawingDebt,
   updateHandoverActuals,
+  type HandoverWithStaffName,
 } from "./queries";
 import type { Expense, ExpenseCategory, Handover } from "./schema";
 
@@ -230,4 +232,25 @@ export async function listExpenses(
 
   const expenses = await listExpensesAtLocation(db, locationId, category);
   return { ok: true, expenses };
+}
+
+export type GetTodaysHandoversAtLocationResult =
+  | { ok: true; handovers: HandoverWithStaffName[] }
+  | { ok: false; reason: "forbidden" };
+
+// Dashboard's own-staff-only Handover section (ticket 14). Owner-only,
+// restaurant-scoped: the canteen has no handover concept yet, and this
+// screen must not imply canteen coverage that doesn't exist.
+export async function getTodaysHandoversAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<GetTodaysHandoversAtLocationResult> {
+  if (requester.staff.role !== "owner") {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const { dayStart, dayEnd } = dayBounds();
+  const handovers = await findTodaysHandoversAtLocation(db, locationId, dayStart, dayEnd);
+  return { ok: true, handovers };
 }
