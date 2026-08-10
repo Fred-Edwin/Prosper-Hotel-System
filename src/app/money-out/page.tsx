@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/modules/people";
-import { NotBuiltPageClient } from "../not-built-page-client";
+import { MoneyOutDestination } from "@/modules/cash/ui/money-out-destination";
 
 // Owner-only, same pattern as catalogue/page.tsx. Only the owner pays money
 // out (docs/architecture.md), so this destination is hers alone.
@@ -9,12 +9,5 @@ export default async function MoneyOutPage() {
   if (!session) redirect("/login");
   if (session.staff.role !== "owner") redirect("/staff");
 
-  return (
-    <NotBuiltPageClient
-      staffName={session.staff.name}
-      active="money-out"
-      title="Money out"
-      subtitle="Purchases, running costs, assets, drawings"
-    />
-  );
+  return <MoneyOutDestination staffName={session.staff.name} />;
 }

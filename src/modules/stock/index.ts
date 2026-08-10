@@ -5,12 +5,15 @@ export {
   recordStockMovement,
   recordIngredientReceipt,
   recordNonSalesConsumption,
+  listReceiptsAtLocation,
+  findReceipt,
 } from "./logic";
 export type {
   StockAccessResult,
   RecordMovementResult,
   RecordIngredientReceiptResult,
   RecordNonSalesConsumptionResult,
+  ReceiptsAtLocationResult,
 } from "./logic";
 export {
   stockAtLocationRoute,
@@ -23,4 +26,5 @@ export type {
   StockLevel,
   IngredientMovement,
   NonSalesCategory,
+  Receipt,
 } from "./schema";

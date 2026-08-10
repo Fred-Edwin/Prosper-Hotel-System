@@ -22,6 +22,7 @@ function staffAt(
       role,
       locationId,
       active: true,
+      dailyRateMinor: 0,
     },
     location: { id: locationId, code: "restaurant", name: "Test" },
   };
@@ -49,6 +50,7 @@ beforeEach(async () => {
       pinHash: await hashPin("1234"),
       role: "cashier",
       locationId: restaurant.id,
+      dailyRateMinor: 0,
     },
   });
   cashierId = cashier.id;
@@ -107,6 +109,7 @@ describe("recordNonSalesConsumption", () => {
         role: "owner",
         locationId: restaurantId,
         active: true,
+        dailyRateMinor: 0,
       },
       location: { id: restaurantId, code: "restaurant", name: "Test" },
     };
@@ -160,6 +163,7 @@ describe("recordNonSalesConsumption", () => {
         role: "owner",
         locationId: restaurantId,
         active: true,
+        dailyRateMinor: 0,
       },
       location: { id: restaurantId, code: "restaurant", name: "Test" },
     };
@@ -203,6 +207,7 @@ describe("recordNonSalesConsumption", () => {
         role: "owner",
         locationId: restaurantId,
         active: true,
+        dailyRateMinor: 0,
       },
       location: { id: restaurantId, code: "restaurant", name: "Test" },
     };

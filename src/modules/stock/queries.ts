@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { IngredientMovement, StockMovement, StockMovementReason } from "./schema";
+import type { IngredientMovement, Receipt, StockMovement, StockMovementReason } from "./schema";
 
 export async function createStockMovement(
   db: PrismaClient,
@@ -42,6 +42,7 @@ export async function createIngredientMovement(
     reason: StockMovementReason;
     unitCostMinor: number;
     staffMemberId: string;
+    receiptId: string;
   },
 ): Promise<IngredientMovement> {
   return db.ingredientMovement.create({ data });
@@ -60,4 +61,38 @@ export async function createIngredientConsumptionMovement(
   },
 ): Promise<IngredientMovement> {
   return db.ingredientMovement.create({ data });
+}
+
+// receiptId is only nullable for wasted/consumed/given_away rows (ticket
+// 15) — the "received" filter below means every row here always has one.
+export async function findReceiptsAtLocation(db: PrismaClient, locationId: string): Promise<Receipt[]> {
+  const movements = await db.ingredientMovement.findMany({
+    where: { locationId, reason: "received" },
+    orderBy: { occurredAt: "desc" },
+  });
+
+  const byReceiptId = new Map<string, IngredientMovement[]>();
+  for (const movement of movements) {
+    const receiptId = movement.receiptId as string;
+    const group = byReceiptId.get(receiptId) ?? [];
+    group.push(movement);
+    byReceiptId.set(receiptId, group);
+  }
+
+  return Array.from(byReceiptId.entries()).map(([receiptId, lines]) => ({
+    receiptId,
+    locationId,
+    occurredAt: lines[0].occurredAt,
+    totalMinor: lines.reduce((sum, l) => sum + l.quantity * (l.unitCostMinor ?? 0), 0),
+    lineCount: lines.length,
+  }));
+}
+
+export async function findReceiptById(
+  db: PrismaClient,
+  receiptId: string,
+): Promise<{ receiptId: string; locationId: string } | null> {
+  const movement = await db.ingredientMovement.findFirst({ where: { receiptId } });
+  if (!movement) return null;
+  return { receiptId: movement.receiptId as string, locationId: movement.locationId };
 }

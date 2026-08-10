@@ -8,6 +8,7 @@ import { ReceiveDelivery } from "@/modules/stock/ui/receive-delivery";
 import { RecordWastage } from "@/modules/stock/ui/record-wastage";
 import { NewSale } from "@/modules/sales/ui/new-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
+import { Handover } from "@/modules/cash/ui/handover";
 import { NotBuilt } from "@/components/patterns/states";
 
 export function StaffPageClient({
@@ -15,11 +16,13 @@ export function StaffPageClient({
   locationId,
   locationName,
   role,
+  handedOverToday,
 }: {
   staffName: string;
   locationId: string;
   locationName: string;
   role: StaffRole;
+  handedOverToday: boolean;
 }) {
   const [active, setActive] = useState<string | null>(null);
 
@@ -34,19 +37,21 @@ export function StaffPageClient({
       onHome={() => setActive(null)}
     >
       {active === null && (
-        <StaffHome role={role} handedOverToday={false} onOpen={setActive} />
+        <StaffHome role={role} handedOverToday={handedOverToday} onOpen={setActive} />
       )}
       {active === "stock" && <StockList locationId={locationId} />}
       {active === "sell" && <NewSale onDone={() => setActive(null)} />}
       {active === "sales" && <TodaysSales />}
       {active === "receive" && <ReceiveDelivery onDone={() => setActive(null)} />}
       {active === "wastage" && <RecordWastage onDone={() => setActive(null)} />}
+      {active === "handover" && <Handover />}
       {active !== null &&
         active !== "stock" &&
         active !== "sell" &&
         active !== "sales" &&
         active !== "receive" &&
-        active !== "wastage" && <NotBuilt destination={activeLink?.label ?? ""} />}
+        active !== "wastage" &&
+        active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>
   );
 }
