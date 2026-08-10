@@ -146,6 +146,12 @@ model RecipeLine {
 // issued added by ticket 18: an ingredient leaving the store for the
 // kitchen — a store movement (CONTEXT.md's Stock Movement split), not a
 // product being created.
+// produced added by ticket 19: cooked food coming into existence at
+// selling location — a product movement, priced at selling value, cost of
+// sales, and profit, unlike issuing's plain ingredient relocation. Also
+// used on the IngredientMovement side is `issued`, reused rather than a
+// separate reason — the ingredients really did leave the store for this
+// production run.
 enum StockMovementReason {
   received
   transferred
@@ -154,6 +160,7 @@ enum StockMovementReason {
   consumed
   given_away
   issued
+  produced
   corrected
 }
 
