@@ -1,5 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Defaults to 3000 so nothing changes for the common single-checkout case.
+// Set PLAYWRIGHT_PORT when running e2e from a parallel git worktree, so its
+// build/start doesn't collide with another worktree's server on the same
+// port — see .claude/skills/build/SKILL.md's worktree step.
+const port = process.env.PLAYWRIGHT_PORT ?? "3000";
+const baseURL = `http://localhost:${port}`;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -7,12 +14,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL,
     trace: "on-first-retry",
   },
   webServer: {
-    command: "pnpm build && pnpm start",
-    url: "http://localhost:3000",
+    command: `PORT=${port} pnpm build && PORT=${port} pnpm start`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
   },
   projects: [

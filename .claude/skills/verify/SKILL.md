@@ -20,13 +20,31 @@ From the ticket's acceptance criteria and the diff. Cover:
 
 ## 2. Set up
 
-- Start the dev server
+- **If running in a git worktree** (parallel `/build`/`/verify` sessions
+  across sibling worktrees is common on this project — check `git branch
+  --show-current` against `main`), start the dev server on that ticket's
+  own port (`pnpm dev -- -p 30<NN>`), not the bare default — see
+  `.claude/skills/build/SKILL.md` step 0 for the full per-worktree
+  port/database rules this project uses. In the main checkout, the
+  default port is fine.
 - Ensure seed data is loaded; run the seed command if not
 - **Reuse the saved auth state** from the Playwright setup. Never log in through the UI unless login is what's being tested
+- **This starts a real dev server and browser process** — resource-
+  intensive, same as `/build` step 0a's gate. If this session hasn't
+  already gotten approval to run heavyweight processes, ask once before
+  starting.
 
 ## 3. Drive the flow
 
-Write a throwaway Playwright script. Screenshot **every** step, including passing ones — the screenshots are the output, and they let the user review a whole flow in thirty seconds without running anything.
+**Prefer the Playwright MCP server** (`.mcp.json`, once approved) —
+direct navigate/click/screenshot tool calls instead of writing a script.
+It runs over stdio (no listening port), so it doesn't collide with a
+sibling worktree's dev server or Storybook port. **Fall back to a
+throwaway Playwright script** (`docs/gotchas.md`'s Testing/Playwright
+section has the pattern) if the MCP server isn't available or approved
+for this session. Either way: screenshot **every** step, including
+passing ones — the screenshots are the output, and they let the user
+review a whole flow in thirty seconds without running anything.
 
 ## 4. Check the mechanical states
 

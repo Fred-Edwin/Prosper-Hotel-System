@@ -57,14 +57,20 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   other spec reuses it via `storageState`. Don't hand-roll a browser launch
   inside a spec file; extend the existing config instead.
 - **Ad hoc visual checks (screenshots, manually driving a page, verifying
-  something live) are a different use of the same library** — not a
-  `test()` block. Import `chromium` from `playwright` directly
+  something live) prefer the Playwright MCP server** (`.mcp.json`, once
+  approved) — direct tool calls (navigate/click/screenshot) instead of
+  writing a throwaway script each time. It runs over stdio (spawned per
+  session, no listening port), so it doesn't collide with `next dev` or
+  Storybook's per-worktree ports across parallel builds — but it does
+  launch its own headless browser process, a real RAM/CPU cost same as
+  any other resource-intensive process (`.claude/skills/build/SKILL.md`
+  step 0a's approval gate covers it). **Fall back to the throwaway-script
+  approach below if the MCP server isn't available or approved for this
+  session** — import `chromium` from `playwright` directly
   (`import { chromium } from "playwright"`), launch with
   `chromium.launch({ args: ["--no-sandbox"] })`, and drive it with
   `page.goto()` / `page.fill()` / `page.click()` / `page.screenshot()` in a
   plain throwaway script — no Playwright test runner needed for this.
-  This is what backs the visual checkpoint in
-  `.claude/skills/build/SKILL.md`.
 - **The single most common failure running such a script: launching it
   from outside the project directory.** `playwright` is a project
   dependency in `node_modules`, resolved the same way any other npm
@@ -74,6 +80,26 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   the repo). If a script needs to live outside the repo (e.g. a session
   scratchpad), either run it via `cd` into the repo first, or copy it into
   the repo temporarily and delete it after.
+- **"Chromium isn't installed" — check the shared cache before installing
+  anything.** `~/.cache/ms-playwright/` is a home-directory cache, shared
+  by every git worktree on the machine (they share one home directory).
+  Run `ls ~/.cache/ms-playwright/` before assuming a fresh install is
+  needed — if `chromium-<version>` is already there, it's visible from
+  every worktree with no extra setup. **Never install system Google
+  Chrome as a fix** (`apt`/a downloaded `.deb`) — the MCP server and
+  `@playwright/test` both use Playwright's own bundled `chromium`, not
+  system Chrome, so a system install is redundant, needs `sudo`, and
+  doesn't fix anything. If the bundled binary is genuinely missing (rare
+  — only in a truly isolated sandbox that can't see the shared cache),
+  the correct fix is `npx playwright install chromium`, not a system
+  package manager. This happened for real: a worktree session
+  misdiagnosed a slow MCP connection as a missing browser and installed
+  a redundant system Chrome before the mistake was caught.
+- **A slow first MCP connection can look like a missing dependency.**
+  `.mcp.json`'s `playwright` server resolves via `npx`; pin the version
+  (`@playwright/mcp@<version>`, not `@latest`) so it uses the local npm
+  cache instead of re-resolving against the registry every session —
+  that resolution delay is what caused the misdiagnosis above.
 - **Prefer handing the user a live URL over a screenshot when they can
   reach one.** A screenshot is one frame of one state; a running
   `pnpm storybook` (or `pnpm dev`) URL is every state, interactive, at

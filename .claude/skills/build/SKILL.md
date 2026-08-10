@@ -14,6 +14,128 @@ Read `<skills>/reference/MODULES.md` for interface vocabulary, `<skills>/referen
 
 **If a reference file cannot be found, stop and tell the user.** Do not proceed from memory — these files hold the discipline the skill depends on, and running without them silently produces work that looks right and isn't.
 
+## 0. Ask: worktree or main checkout?
+
+**Before reading anything else**, ask the user whether this ticket should
+build in a new git worktree or directly in the current checkout. Default
+suggestion: a worktree if other unblocked tickets exist in `.work/` that
+could plausibly run at the same time (worth naming which ones); the
+current checkout otherwise.
+
+If the user says worktree:
+
+1. Create it from the repo root: `git worktree add ../<repo-name>-ticket-<NN> -b ticket/<NN>-<slug>`
+2. `cd` into it for the rest of this session — every later step (reading,
+   building, testing, committing) happens there, not in the original
+   checkout.
+3. Run whatever setup the project needs in a fresh worktree before
+   anything else works: `pnpm install` (separate `node_modules`), copy
+   untracked files the app needs (`.env*`). Then work through every
+   shared resource below — a worktree is a separate checkout, but it is
+   **not** a separate machine: one Postgres instance and one set of TCP
+   ports are shared by every worktree unless a session explicitly claims
+   its own. Pick a per-ticket number (`NN`, the ticket number) and reuse
+   it consistently for every port/name below, so collisions are
+   predictable rather than discovered mid-session.
+
+   - **Postgres schema, if this ticket touches it at all** (a new
+     migration, a new model, a new field — check the ticket before
+     assuming it doesn't): give this worktree its own local database,
+     not the shared dev/test one. Two worktrees migrating one shared
+     database collide — whichever runs `prisma migrate dev`/`reset`
+     second either fails against the other's uncommitted migration
+     history or silently resets it, destroying that session's
+     in-progress data. This happened for real running tickets 13 and 15
+     in parallel. Create `<db-name>_ticket<NN>` on the same Postgres
+     instance, point this worktree's `DATABASE_URL` and
+     `TEST_DATABASE_URL` at it, and migrate there, fully isolated. The
+     vitest integration suite (`pnpm test`) reads the same
+     `TEST_DATABASE_URL`, so it's automatically isolated too — no
+     separate fix needed. Reconcile at merge time: whoever merges second
+     regenerates their migration against `main`'s now-current schema.
+     If the ticket touches no schema, the shared database is fine.
+   - **Storybook**, if this ticket needs it (any new screen composition —
+     see step 4a): the `pnpm storybook` script hardcodes `-p 6006`
+     (`package.json`), and a second worktree binding 6006 fails. Don't
+     run `pnpm storybook -- -p 63<NN>` — `--` appends your flag after the
+     script's own `-p 6006` rather than replacing it, so the port pick
+     doesn't take effect. Bypass the script instead: `pnpm exec
+     storybook dev -p 63<NN>` (ticket 15 → `6315`), and hand the user
+     that port's URL, not the bare default.
+   - **`next dev`**, for the manual check (step 5): defaults to port
+     `3000`, same collision as Storybook if another worktree already has
+     a dev server running there — worse, a silently-successful bind to
+     someone else's already-running server means you review the wrong
+     ticket's code. Run `pnpm dev -- -p 30<NN>` (Next's CLI accepts `-p`
+     natively as its own flag, so this one *does* pass through correctly,
+     unlike Storybook's wrapped script) and use that port for every
+     manual check and screenshot in step 5.
+   - **Playwright e2e** (`pnpm test:e2e`), if this ticket needs it:
+     `playwright.config.ts` reads `PLAYWRIGHT_PORT` (defaults to 3000)
+     for both its `baseURL` and its own `build && start` server, so run
+     it as `PLAYWRIGHT_PORT=30<NN> pnpm test:e2e` to keep it off whatever
+     port `next dev` or another worktree's e2e run is using.
+
+   Each worktree is a fully separate checkout — own `node_modules`, own
+   files on disk, never symlinked — so there is no risk of one
+   worktree's dev server or Storybook instance serving *another*
+   ticket's component changes. Every conflict above is a port or
+   database collision, never a code-isolation one.
+4. Proceed through the rest of this skill normally, staying on that
+   branch — never create a second branch or switch branches inside it.
+5. **Stop at commit (step 7).** Commit in the worktree, then tell the
+   user the branch and worktree path are ready to merge into `main` —
+   merging, and removing the worktree afterward (`git worktree remove
+   ../<repo-name>-ticket-<NN>`), is the user's call, not this session's.
+
+If the user says main checkout: proceed as normal, no worktree.
+
+**Never create a worktree without asking first** — this decision is the
+user's, made once per ticket, not inferred from whether other tickets
+happen to be unblocked.
+
+## 0a. Ask, once: permission to run resource-intensive processes
+
+Four kinds of process in this project are heavyweight and long-lived —
+**Storybook, `next dev`, Vitest, Playwright** — as distinct from cheap,
+short-lived ones (typecheck, lint, `pnpm install`) that need no gate.
+Each one committed adds real, permanent memory/CPU pressure on the whole
+machine for as long as it runs, and that pressure is shared across every
+worktree — a worktree isolates files, never CPU or RAM. This has caused
+real problems: running several of these across parallel worktrees at
+once has driven the machine to full swap exhaustion.
+
+**Ask once, before the first time this session needs to start any of the
+four**, whether it's approved to run resource-intensive processes for
+the rest of *this session*. Frame it plainly: which of the four this
+ticket is likely to need, and that approval covers all of them for the
+session's remaining duration — the user should not be asked again this
+session unless they've since revoked it.
+
+**The approval is session-scoped, not permanent and not global.** A
+fresh `/build` session on a different ticket — including a sibling
+session in another worktree — asks again; it does not inherit another
+session's approval.
+
+**Approval is not a license to leave things running.** Whatever this
+session starts under that approval, it stops once no longer needed for
+this ticket:
+
+- A `next dev` or Storybook instance started for a manual check (step 5
+  / step 4a) is killed once that check is done — not left running
+  "in case," and not left running after the ticket is committed.
+- A Vitest or Playwright run is not a long-lived process at all — it
+  exits on its own — but if anything was left in watch mode, stop it
+  before ending the session.
+- Before ending the session (after step 7's commit), confirm nothing
+  this session started is still running.
+
+If the user declines resource-intensive processes for this session,
+proceed without them where possible (e.g. rely on typecheck and the
+existing test suite rather than a live `next dev` check) and tell the
+user plainly which steps had to be skipped or degraded as a result —
+don't silently start the process anyway.
+
 ## 1. Read
 
 - The ticket file in `.work/`
@@ -109,6 +231,14 @@ For any ticket with a **user-facing change**, do the setup so the user only has 
 1. Start the dev server
 2. Ensure the data exists — run the seed command if needed
 3. **Load every new or changed page yourself, in an actual browser, before handing anything to the user.** Typecheck and `curl` prove a route responds; neither executes client-side rendering, so a server/client boundary violation, a runtime type mismatch (e.g. a `Date` that arrived as a JSON string), or a hydration error will pass both and still crash the first time a human opens the page. This is not optional for pages doing anything beyond a static render — it is the check step, not a nice-to-have on top of it.
+   Prefer the Playwright MCP server (`.mcp.json`) for this — direct
+   navigate/click/screenshot tool calls instead of a throwaway script.
+   It runs over stdio, not a listening port, so it doesn't collide with
+   this worktree's `next dev` port or a sibling worktree's. Falls under
+   step 0a's resource-approval gate the same as any other heavyweight
+   process — it launches its own headless browser. If it isn't available
+   or approved, fall back to the throwaway-script pattern in
+   `docs/gotchas.md`'s Testing/Playwright section.
 4. Hand over: the **exact URL**, the **login to use**, and a **numbered list** of what to click and what should happen
 
 ```
