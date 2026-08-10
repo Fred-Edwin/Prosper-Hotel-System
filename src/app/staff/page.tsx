@@ -27,7 +27,6 @@ export default async function StaffPage() {
       locationId={session.location.id}
       locationName={session.location.name}
       role={toShellRole(session.staff.role)}
-      isOwner={session.staff.role === "owner"}
       handedOverToday={handedOverToday}
     />
   );

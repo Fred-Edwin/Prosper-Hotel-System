@@ -56,6 +56,9 @@ export type NonSalesCategory = "wasted" | "consumed" | "given_away";
 
 export type StockCountItemType = "product" | "ingredient";
 
+// The stored/internal shape — expectedQuantity is always captured on
+// write, for every role, per the ticket ("expected is still captured on
+// write for every role, it's just not *shown* to a non-owner reader").
 export type StockCountLine = {
   id: string;
   itemType: StockCountItemType;
@@ -72,4 +75,17 @@ export type StockCount = {
   staffMemberId: string;
   occurredAt: Date;
   lines: StockCountLine[];
+};
+
+// getStockCount's response shape — expectedQuantity is present only when
+// the caller is the owner. The comparison is owner-only regardless of who
+// recorded the count, so a store manager/attendant's response omits the
+// field entirely rather than the UI hiding a column it already received.
+export type StockCountLineForReader = Omit<StockCountLine, "expectedQuantity"> & {
+  expectedQuantity?: number;
+  itemName: string;
+};
+
+export type StockCountForReader = Omit<StockCount, "lines"> & {
+  lines: StockCountLineForReader[];
 };

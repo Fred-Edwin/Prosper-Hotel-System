@@ -11,6 +11,7 @@ export {
   findReceipt,
   recordStockCount,
   getStockCount,
+  getLatestStockCount,
   correctStockCount,
 } from "./logic";
 export type {
@@ -23,6 +24,7 @@ export type {
   ReceiptsAtLocationResult,
   RecordStockCountResult,
   StockCountResult,
+  LatestStockCountResult,
   CorrectStockCountResult,
 } from "./logic";
 export {
@@ -33,6 +35,7 @@ export {
   recordNonSalesConsumptionRoute,
   recordStockCountRoute,
   stockCountRoute,
+  latestStockCountRoute,
   correctStockCountRoute,
 } from "./routes";
 export type {
@@ -45,4 +48,6 @@ export type {
   StockCount,
   StockCountLine,
   StockCountItemType,
+  StockCountForReader,
+  StockCountLineForReader,
 } from "./schema";

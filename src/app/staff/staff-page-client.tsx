@@ -19,14 +19,12 @@ export function StaffPageClient({
   locationId,
   locationName,
   role,
-  isOwner,
   handedOverToday,
 }: {
   staffName: string;
   locationId: string;
   locationName: string;
   role: StaffRole;
-  isOwner: boolean;
   handedOverToday: boolean;
 }) {
   const [active, setActive] = useState<string | null>(null);
@@ -51,7 +49,7 @@ export function StaffPageClient({
       {active === "issue" && <IssueToKitchen onDone={() => setActive(null)} />}
       {active === "production" && <RecordProduction onDone={() => setActive(null)} />}
       {active === "wastage" && <RecordWastage onDone={() => setActive(null)} />}
-      {active === "count" && <StockCount isOwner={isOwner} />}
+      {active === "count" && <StockCount />}
       {active === "handover" && <Handover />}
       {active !== null &&
         active !== "stock" &&

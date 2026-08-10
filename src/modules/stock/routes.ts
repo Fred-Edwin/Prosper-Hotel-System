@@ -3,6 +3,7 @@ import { getSession } from "@/modules/people";
 import {
   correctStockCount,
   getCurrentStockAtLocation,
+  getLatestStockCount,
   getStockCount,
   recordIngredientIssue,
   recordIngredientReceipt,
@@ -133,6 +134,22 @@ export async function stockCountRoute(
   return Response.json({ count: result.count });
 }
 
+export async function latestStockCountRoute(
+  _request: Request,
+  { params }: { params: Promise<{ locationId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { locationId } = await params;
+  const result = await getLatestStockCount(db, session, locationId);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: 403 });
+  }
+
+  return Response.json({ count: result.count });
+}
+
 export async function correctStockCountRoute(
   request: Request,
   { params }: { params: Promise<{ countId: string }> },
@@ -145,6 +162,7 @@ export async function correctStockCountRoute(
   const result = await correctStockCount(db, session, {
     stockCountId: countId,
     lineId: body.lineId,
+    correctedQuantity: body.correctedQuantity,
   });
   if (!result.ok) {
     const status = result.reason === "not_found" ? 404 : result.reason === "forbidden" ? 403 : 400;

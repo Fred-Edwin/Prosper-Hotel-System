@@ -88,9 +88,12 @@ export async function createIngredientCorrectionMovement(
     locationId: string;
     quantity: number;
     staffMemberId: string;
+    costBasisMinor: number;
   },
 ): Promise<IngredientMovement> {
-  return db.ingredientMovement.create({ data: { ...data, reason: "corrected" } });
+  return db.ingredientMovement.create({
+    data: { ...data, reason: "corrected", isEstimated: false },
+  });
 }
 
 export async function createIngredientConsumptionMovement(
@@ -188,6 +191,21 @@ export async function findStockCountById(
 ): Promise<StockCount | null> {
   const count = await db.stockCount.findUnique({
     where: { id: stockCountId },
+    include: { lines: true },
+  });
+  return count as StockCount | null;
+}
+
+// The owner's review screen shows the current/most recent count, not a
+// full history (out of scope per the ticket) — one query, most recent
+// first.
+export async function findLatestStockCountAtLocation(
+  db: PrismaClient,
+  locationId: string,
+): Promise<StockCount | null> {
+  const count = await db.stockCount.findFirst({
+    where: { locationId },
+    orderBy: { occurredAt: "desc" },
     include: { lines: true },
   });
   return count as StockCount | null;
