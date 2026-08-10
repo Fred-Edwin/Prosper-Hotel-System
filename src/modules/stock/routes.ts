@@ -1,6 +1,10 @@
 import { db } from "@/shared/db";
 import { getSession } from "@/modules/people";
-import { getCurrentStockAtLocation, recordIngredientReceipt } from "./logic";
+import {
+  getCurrentStockAtLocation,
+  recordIngredientReceipt,
+  recordNonSalesConsumption,
+} from "./logic";
 
 export async function stockAtLocationRoute(
   _request: Request,
@@ -37,4 +41,23 @@ export async function recordIngredientReceiptRoute(request: Request): Promise<Re
   }
 
   return Response.json({ movements: result.movements });
+}
+
+export async function recordNonSalesConsumptionRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await recordNonSalesConsumption(db, session, {
+    itemType: body.itemType,
+    itemId: body.itemId,
+    locationId: session.staff.locationId,
+    quantity: body.quantity,
+    category: body.category,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ movement: result.movement });
 }

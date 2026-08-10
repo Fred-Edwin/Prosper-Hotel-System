@@ -9,6 +9,9 @@ export async function createStockMovement(
     quantity: number;
     reason: StockMovementReason;
     staffMemberId: string;
+    costBasisMinor?: number;
+    sellingValueMinor?: number | null;
+    isEstimated?: boolean;
   },
 ): Promise<StockMovement> {
   return db.stockMovement.create({ data });
@@ -45,6 +48,23 @@ export async function createIngredientMovement(
   return db.ingredientMovement.create({ data });
 }
 
+export async function createIngredientConsumptionMovement(
+  db: PrismaClient,
+  data: {
+    ingredientId: string;
+    locationId: string;
+    quantity: number;
+    reason: StockMovementReason;
+    staffMemberId: string;
+    costBasisMinor: number;
+    isEstimated: boolean;
+  },
+): Promise<IngredientMovement> {
+  return db.ingredientMovement.create({ data });
+}
+
+// receiptId is only nullable for wasted/consumed/given_away rows (ticket
+// 15) — the "received" filter below means every row here always has one.
 export async function findReceiptsAtLocation(db: PrismaClient, locationId: string): Promise<Receipt[]> {
   const movements = await db.ingredientMovement.findMany({
     where: { locationId, reason: "received" },
@@ -53,16 +73,17 @@ export async function findReceiptsAtLocation(db: PrismaClient, locationId: strin
 
   const byReceiptId = new Map<string, IngredientMovement[]>();
   for (const movement of movements) {
-    const group = byReceiptId.get(movement.receiptId) ?? [];
+    const receiptId = movement.receiptId as string;
+    const group = byReceiptId.get(receiptId) ?? [];
     group.push(movement);
-    byReceiptId.set(movement.receiptId, group);
+    byReceiptId.set(receiptId, group);
   }
 
   return Array.from(byReceiptId.entries()).map(([receiptId, lines]) => ({
     receiptId,
     locationId,
     occurredAt: lines[0].occurredAt,
-    totalMinor: lines.reduce((sum, l) => sum + l.quantity * l.unitCostMinor, 0),
+    totalMinor: lines.reduce((sum, l) => sum + l.quantity * (l.unitCostMinor ?? 0), 0),
     lineCount: lines.length,
   }));
 }
@@ -73,5 +94,5 @@ export async function findReceiptById(
 ): Promise<{ receiptId: string; locationId: string } | null> {
   const movement = await db.ingredientMovement.findFirst({ where: { receiptId } });
   if (!movement) return null;
-  return { receiptId: movement.receiptId, locationId: movement.locationId };
+  return { receiptId: movement.receiptId as string, locationId: movement.locationId };
 }
