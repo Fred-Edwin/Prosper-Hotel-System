@@ -113,6 +113,230 @@ export async function getCurrentStockAtLocation(
   return { ok: true, levels };
 }
 
+export type TransferMovement = StockMovement | IngredientMovement;
+export type TransferableItem = {
+  itemType: "product" | "ingredient";
+  itemId: string;
+  name: string;
+  quantityOnHand: number;
+  unit: string;
+};
+
+export async function getTransferableItems(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<{ ok: true; items: TransferableItem[] } | { ok: false; reason: "forbidden" }> {
+  if (requester.staff.role === "cashier" || !canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const [productSums, ingredientSums] = await Promise.all([
+    sumMovementsByProductAtLocation(db, locationId),
+    sumMovementsByIngredientAtLocation(db, locationId),
+  ]);
+  const [products, ingredients] = await Promise.all([
+    findProductsByIds(db, productSums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.productId)),
+    findIngredientsByIds(db, ingredientSums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.ingredientId)),
+  ]);
+  const productQuantity = new Map(productSums.map((sum) => [sum.productId, sum.quantityOnHand]));
+  const ingredientQuantity = new Map(ingredientSums.map((sum) => [sum.ingredientId, sum.quantityOnHand]));
+  return {
+    ok: true,
+    items: [
+      ...products.filter((product) => product.active).map((product) => ({ itemType: "product" as const, itemId: product.id, name: product.name, quantityOnHand: productQuantity.get(product.id) ?? 0, unit: "units" })),
+      ...ingredients.filter((ingredient) => ingredient.active).map((ingredient) => ({ itemType: "ingredient" as const, itemId: ingredient.id, name: ingredient.name, quantityOnHand: ingredientQuantity.get(ingredient.id) ?? 0, unit: ingredient.unitOfMeasure })),
+    ].sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+export type RecordTransferResult =
+  | { ok: true; movements: [TransferMovement, TransferMovement] }
+  | {
+      ok: false;
+      reason:
+        | "forbidden"
+        | "invalid_quantity"
+        | "same_location"
+        | "inactive_item"
+        | "not_found"
+        | "insufficient_stock";
+    };
+
+export type RecordTransfersResult =
+  | { ok: true; movements: TransferMovement[] }
+  | Exclude<RecordTransferResult, { ok: true }>;
+
+// A transfer is a paired ledger event: the source loses stock at the same
+// moment the destination receives it. The transaction prevents a partial
+// transfer from ever being visible if the second write fails.
+export async function recordTransfer(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    fromLocationId: string;
+    toLocationId: string;
+    itemType: "product" | "ingredient";
+    itemId: string;
+    quantity: number;
+  },
+): Promise<RecordTransferResult> {
+  const result = await recordTransfers(db, requester, {
+    fromLocationId: input.fromLocationId,
+    toLocationId: input.toLocationId,
+    lines: [{ itemType: input.itemType, itemId: input.itemId, quantity: input.quantity }],
+  });
+  if (!result.ok) return result;
+  return { ok: true, movements: [result.movements[0], result.movements[1]] };
+}
+
+export async function recordTransfers(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    fromLocationId: string;
+    toLocationId: string;
+    lines: { itemType: "product" | "ingredient"; itemId: string; quantity: number }[];
+    allowReversalFromOtherLocation?: boolean;
+  },
+): Promise<RecordTransfersResult> {
+  if (
+    requester.staff.role === "cashier" ||
+    (!input.allowReversalFromOtherLocation &&
+      !canAccessLocation(requester.staff.role, requester.staff.locationId, input.fromLocationId))
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (input.lines.length === 0 || input.lines.some((line) => line.quantity <= 0)) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+  if (input.fromLocationId === input.toLocationId) return { ok: false, reason: "same_location" };
+
+  const [fromLocation, toLocation] = await Promise.all([
+    findLocationById(db, input.fromLocationId),
+    findLocationById(db, input.toLocationId),
+  ]);
+  if (!fromLocation || !toLocation) return { ok: false, reason: "not_found" };
+
+  return db.$transaction(async (tx) => {
+    const transferId = crypto.randomUUID();
+    const movements: TransferMovement[] = [];
+
+    for (const line of input.lines) {
+      if (line.itemType === "product") {
+        const product = await tx.product.findUnique({ where: { id: line.itemId } });
+      if (!product) return { ok: false, reason: "not_found" } as const;
+      if (!product.active) return { ok: false, reason: "inactive_item" } as const;
+
+      const stock = await tx.stockMovement.aggregate({
+        where: { productId: product.id, locationId: input.fromLocationId },
+        _sum: { quantity: true },
+      });
+        if ((stock._sum.quantity ?? 0) < line.quantity) {
+        return { ok: false, reason: "insufficient_stock" } as const;
+      }
+
+      const outgoing = await tx.stockMovement.create({
+        data: {
+          productId: product.id,
+          locationId: input.fromLocationId,
+          quantity: -line.quantity,
+          reason: "transferred",
+          staffMemberId: requester.staff.id,
+          transferId,
+        },
+      });
+      const incoming = await tx.stockMovement.create({
+        data: {
+          productId: product.id,
+          locationId: input.toLocationId,
+          quantity: line.quantity,
+          reason: "transferred",
+          staffMemberId: requester.staff.id,
+          transferId,
+        },
+      });
+        movements.push(outgoing, incoming);
+        continue;
+      }
+
+      const ingredient = await tx.ingredient.findUnique({ where: { id: line.itemId } });
+    if (!ingredient) return { ok: false, reason: "not_found" } as const;
+    if (!ingredient.active) return { ok: false, reason: "inactive_item" } as const;
+
+    const stock = await tx.ingredientMovement.aggregate({
+      where: { ingredientId: ingredient.id, locationId: input.fromLocationId },
+      _sum: { quantity: true },
+    });
+      if ((stock._sum.quantity ?? 0) < line.quantity) {
+      return { ok: false, reason: "insufficient_stock" } as const;
+    }
+
+    const outgoing = await tx.ingredientMovement.create({
+      data: {
+        ingredientId: ingredient.id,
+        locationId: input.fromLocationId,
+        quantity: -line.quantity,
+        reason: "transferred",
+        staffMemberId: requester.staff.id,
+        transferId,
+      },
+    });
+    const incoming = await tx.ingredientMovement.create({
+      data: {
+        ingredientId: ingredient.id,
+        locationId: input.toLocationId,
+        quantity: line.quantity,
+        reason: "transferred",
+        staffMemberId: requester.staff.id,
+        transferId,
+      },
+    });
+      movements.push(outgoing, incoming);
+    }
+
+    return { ok: true, movements } as const;
+  });
+}
+
+export async function reverseTransfer(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  transferId: string,
+): Promise<RecordTransfersResult> {
+  const [products, ingredients] = await Promise.all([
+    db.stockMovement.findMany({ where: { transferId } }),
+    db.ingredientMovement.findMany({ where: { transferId } }),
+  ]);
+  const productOut = products.filter((movement) => movement.quantity < 0);
+  const ingredientOut = ingredients.filter((movement) => movement.quantity < 0);
+  const original = productOut[0] ?? ingredientOut[0];
+  if (!original) return { ok: false, reason: "not_found" };
+  if (original.staffMemberId !== requester.staff.id && requester.staff.role !== "owner") {
+    return { ok: false, reason: "forbidden" };
+  }
+  const incoming = products.find((movement) => movement.quantity > 0) ?? ingredients.find((movement) => movement.quantity > 0);
+  if (!incoming) return { ok: false, reason: "not_found" };
+  return recordTransfers(db, requester, {
+    fromLocationId: incoming.locationId,
+    toLocationId: original.locationId,
+    allowReversalFromOtherLocation: true,
+    lines: [
+      ...productOut.map((movement) => ({ itemType: "product" as const, itemId: movement.productId, quantity: -movement.quantity })),
+      ...ingredientOut.map((movement) => ({ itemType: "ingredient" as const, itemId: movement.ingredientId, quantity: -movement.quantity })),
+    ],
+  });
+}
+
+export async function listTransfersAtLocation(db: PrismaClient, requester: AuthenticatedStaff) {
+  if (requester.staff.role === "cashier") return { ok: false as const, reason: "forbidden" as const };
+  const locationId = requester.staff.locationId;
+  const [products, ingredients] = await Promise.all([
+    db.stockMovement.findMany({ where: { locationId, reason: "transferred", transferId: { not: null } }, orderBy: { occurredAt: "desc" } }),
+    db.ingredientMovement.findMany({ where: { locationId, reason: "transferred", transferId: { not: null } }, orderBy: { occurredAt: "desc" } }),
+  ]);
+  return { ok: true as const, movements: [...products, ...ingredients].sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime()) };
+}
+
 export type RecordIngredientReceiptResult =
   | { ok: true; movements: IngredientMovement[] }
   | { ok: false; reason: "forbidden" | "invalid_quantity" | "invalid_cost" | "inactive_ingredient" };

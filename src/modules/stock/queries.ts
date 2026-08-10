@@ -19,6 +19,7 @@ export async function createStockMovement(
     costBasisMinor?: number;
     sellingValueMinor?: number | null;
     isEstimated?: boolean;
+    transferId?: string;
   },
 ): Promise<StockMovement> {
   return db.stockMovement.create({ data });
@@ -64,6 +65,7 @@ export async function createIngredientMovement(
     unitCostMinor: number;
     staffMemberId: string;
     receiptId: string;
+    transferId?: string;
   },
 ): Promise<IngredientMovement> {
   return db.ingredientMovement.create({ data });

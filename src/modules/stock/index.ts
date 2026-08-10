@@ -2,6 +2,11 @@
 
 export {
   getCurrentStockAtLocation,
+  getTransferableItems,
+  recordTransfer,
+  recordTransfers,
+  reverseTransfer,
+  listTransfersAtLocation,
   recordStockMovement,
   recordIngredientReceipt,
   recordIngredientIssue,
@@ -16,6 +21,10 @@ export {
 } from "./logic";
 export type {
   StockAccessResult,
+  RecordTransferResult,
+  RecordTransfersResult,
+  TransferMovement,
+  TransferableItem,
   RecordMovementResult,
   RecordIngredientReceiptResult,
   RecordIngredientIssueResult,
@@ -29,6 +38,10 @@ export type {
 } from "./logic";
 export {
   stockAtLocationRoute,
+  recordTransferRoute,
+  transferableItemsRoute,
+  transferHistoryRoute,
+  reverseTransferRoute,
   recordIngredientReceiptRoute,
   recordIngredientIssueRoute,
   recordProductionRoute,

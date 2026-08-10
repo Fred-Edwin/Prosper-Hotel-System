@@ -9,6 +9,8 @@ import { IssueToKitchen } from "@/modules/stock/ui/issue-to-kitchen";
 import { RecordProduction } from "@/modules/stock/ui/record-production";
 import { RecordWastage } from "@/modules/stock/ui/record-wastage";
 import { StockCount } from "@/modules/stock/ui/stock-count";
+import { TransferStock } from "@/modules/stock/ui/transfer-stock";
+import { TransferHistoryView } from "@/modules/stock/ui/transfer-history";
 import { NewSale } from "@/modules/sales/ui/new-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
 import { Handover } from "@/modules/cash/ui/handover";
@@ -50,6 +52,8 @@ export function StaffPageClient({
       {active === "production" && <RecordProduction onDone={() => setActive(null)} />}
       {active === "wastage" && <RecordWastage onDone={() => setActive(null)} />}
       {active === "count" && <StockCount />}
+      {active === "transfer" && <TransferStock />}
+      {active === "transfer-history" && <TransferHistoryView />}
       {active === "handover" && <Handover />}
       {active !== null &&
         active !== "stock" &&
@@ -60,6 +64,7 @@ export function StaffPageClient({
         active !== "production" &&
         active !== "wastage" &&
         active !== "count" &&
+        active !== "transfer" &&
         active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>
   );

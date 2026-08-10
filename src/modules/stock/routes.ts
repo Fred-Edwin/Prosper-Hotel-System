@@ -1,8 +1,9 @@
 import { db } from "@/shared/db";
-import { getSession } from "@/modules/people";
+import { getSession, listLocations } from "@/modules/people";
 import {
   correctStockCount,
   getCurrentStockAtLocation,
+  getTransferableItems,
   getLatestStockCount,
   getStockCount,
   recordIngredientIssue,
@@ -10,6 +11,10 @@ import {
   recordNonSalesConsumption,
   recordProduction,
   recordStockCount,
+  recordTransfer,
+  recordTransfers,
+  reverseTransfer,
+  listTransfersAtLocation,
 } from "./logic";
 
 export async function stockAtLocationRoute(
@@ -46,6 +51,54 @@ export async function recordIngredientReceiptRoute(request: Request): Promise<Re
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
 
+  return Response.json({ movements: result.movements });
+}
+
+export async function recordTransferRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const common = {
+    fromLocationId: session.staff.locationId,
+    toLocationId: body.toLocationId,
+  };
+  const result = Array.isArray(body.lines)
+    ? await recordTransfers(db, session, { ...common, lines: body.lines })
+    : await recordTransfer(db, session, { ...common, itemType: body.itemType, itemId: body.itemId, quantity: body.quantity });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ movements: result.movements });
+}
+
+export async function transferableItemsRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const result = await getTransferableItems(db, session, session.staff.locationId);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
+  const locations = await listLocations(db);
+  return Response.json({
+    items: result.items,
+    toLocation: locations.find((location) => location.id !== session.staff.locationId) ?? null,
+  });
+}
+
+export async function transferHistoryRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const result = await listTransfersAtLocation(db, session);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
+  return Response.json({ movements: result.movements });
+}
+
+export async function reverseTransferRoute(_request: Request, { params }: { params: Promise<{ transferId: string }> }): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const { transferId } = await params;
+  const result = await reverseTransfer(db, session, transferId);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   return Response.json({ movements: result.movements });
 }
 
