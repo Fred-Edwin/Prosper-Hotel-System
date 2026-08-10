@@ -1,114 +1,75 @@
 # Skills
 
-Eleven skills implementing [`workflow.md`](../workflow.md).
+A reusable AI-agent-driven software development workflow, for enterprise
+web development projects. Portable — copy this whole `.claude/skills/`
+folder into any new or existing project.
 
-## Installing
+Full worked example: [`workflow.md`](../../workflow.md) at the repo root
+walks a realistic project through every skill below, end to end.
 
-Copy the skill folders into `.claude/skills/` in a project, or into `~/.claude/skills/` to have them available everywhere.
+## Start here: which entry point applies?
 
-```bash
-cp -r skills/* ~/.claude/skills/
-```
+**Starting a brand new project, nothing built yet:**
+Start with [`/notes`](notes/SKILL.md). Follow the bootstrap sequence below
+in order.
 
-The `reference/` folder must sit **alongside** the skill folders, never inside one:
+**Picking up an existing, in-progress project** (real code already
+shipped, possibly with rougher/older docs from an earlier version of this
+workflow):
+Start with [`/adopt`](adopt/SKILL.md) instead. Run it once to reconcile
+old docs and real code onto the current doc set, then continue with the
+steady-state skills below.
 
-```
-~/.claude/skills/
-├── plan/SKILL.md
-├── build/SKILL.md
-├── …
-└── reference/          ← a sibling of the skills, not a child
-    ├── INTERROGATION.md
-    └── …
-```
+## Bootstrap sequence (fresh projects only, run once, in order)
 
-Skills write these as `<skills>/reference/NAME.md` and resolve `<skills>` themselves — global install first, then project-local. A skill that cannot find a reference file **stops and says so** rather than proceeding from memory.
-
-## The flow
-
-```
-LIFECYCLE (once per project)
-
-  /discovery ──► /plan ──► /design ──► /foundation
-                                            │
-LOOPS (forever)                             ▼
-                                       /tickets ──┐
-                                                  │
-                                                  ▼
-                            ┌─────────────┐
-                            │   /build    │──► /review
-                            │             │──► /verify
-                            │             │──► /critique
-                            └─────────────┘
-                                   │
-                            /fix ──┤
-                                   │
-                            /care ─┘──► /tickets (next tranche)
-```
-
-## The skills
-
-| Skill | When | What it does |
+| Skill | Does | Produces |
 |---|---|---|
-| `/discovery` | Before and after a client meeting | Preps questions, or debriefs you and writes `docs/discovery.md` |
-| `/plan` | Once per project | Interrogates you into architectural decisions. Writes `CONTEXT.md`, `architecture.md`, `scope.md` |
-| `/tickets` | After `/plan`, and between tranches | Cuts one tranche of vertical tickets into `.work/` |
-| `/design` | Once per project | Refinement rounds until converged, then locks theme, templates, and stories |
-| `/design references` | When a round disappoints | Reruns the round against real-world examples you supply. Never entered automatically |
-| `/foundation` | Once per project | The skeleton plus one real end-to-end slice. Writes `CLAUDE.md` |
-| `/build` | Once per ticket, fresh session | The core loop. Interface plan → checkpoint → build → verify → commit |
-| `/review` | After every ticket | Two-axis review — standards and ticket — in parallel sub-agents |
-| `/verify` | After a UI or multi-role ticket | Playwright drives the flow, screenshots, hands you the judgment calls |
-| `/critique` | After a ticket that built screens | Audits UI against written rules. Findings, not opinions |
-| `/fix` | A bug whose cause is unknown | Six-phase diagnosis. Refuses to theorise before a red loop exists |
-| `/care` | Between tranches | Scans for architectural friction, ranks candidates, stops for your pick |
+| [`/notes`](notes/SKILL.md) | Structures a raw brain dump into internal notes | `docs/notes.md` |
+| [`/alignment`](alignment/SKILL.md) | Drives full technical + scope alignment as a senior architect | `docs/architecture.md`, `docs/scope.md`, `docs/conventions.md`, `docs/release.md`, `docs/proposal.md` |
+| [`/foundation`](foundation/SKILL.md) | Scaffolds the repo, tooling, CI gates, env/secrets, seed data, a reference module | A running, empty codebase |
+| [`/design`](design/SKILL.md) | Finalizes the theme, designs every screen as a real built prototype | Finalized theme, `docs/screens.md`, `docs/design.md`, Storybook stories |
 
-## Reference files
+## Steady-state loop (recurring, for the life of the project)
 
-Shared discipline, read by the skills. Not invoked directly.
+| Skill | Does | Produces |
+|---|---|---|
+| [`/tickets`](tickets/SKILL.md) | Cuts one feature into demoable tickets — runs per-feature, just-in-time, not once for the whole project. First invocation also cuts the App Shell ticket. | `docs/tickets/<feature>/*.md` |
+| [`/build`](build/SKILL.md) | Claims one ticket, implements it, self-verifies, opens a PR | A PR per ticket |
+| [`/review`](review/SKILL.md) | Independent fresh-eyes review of a ticket's PR before merge | Merged PR or rejection with findings |
+| [`/release`](release/SKILL.md) | Gets merged code to production, per `docs/release.md`'s configured tier | Code running in production |
 
-| File | Holds |
+## Entry points into the loop
+
+| Skill | Does | Produces |
+|---|---|---|
+| [`/fix`](fix/SKILL.md) | Triages a logged bug, routes it through the full pipeline or a direct fix | Bug resolved, `docs/bugs.md` updated |
+| [`/add`](add/SKILL.md) | Scopes a new, previously-unplanned feature request against existing docs | New `docs/scope.md` entry, tickets cut |
+
+## One-time migration
+
+| Skill | Does | Produces |
+|---|---|---|
+| [`/adopt`](adopt/SKILL.md) | Reconciles an existing project's old docs + real code onto the current doc set | Current doc set reflecting real project state |
+
+## Shared references
+
+| File | Used by |
 |---|---|
-| `reference/INTERROGATION.md` | How to interview. Used by `/discovery`, `/plan`, `/design`, `/care` |
-| `reference/MODULES.md` | Module, interface, boundary, depth, seam vocabulary |
-| `reference/TESTING.md` | Test types, seams, test-first rules, anti-patterns |
-| `reference/TICKET-FORMAT.md` | The ticket template and the lifecycle check |
-| `reference/UI-RULES.md` | The checkable design rules |
+| [`references/ui-rules.md`](references/ui-rules.md) | `/design`, `/review` — checkable UI rules |
+| [`references/design-principles.md`](references/design-principles.md) | `/design`, `/review` — the reasoning behind the rules, tooling defaults, page templates |
 
-## Which checks after a ticket
+## Core principles running through every skill
 
-`/build` recommends, you decide.
-
-| Ticket touched | Run |
-|---|---|
-| Logic only | `/review` |
-| UI | `/review`, `/verify`, `/critique` |
-| A multi-step flow or multiple roles | `/verify` especially |
-
-Run `/verify` before `/critique` — no point critiquing a flow that doesn't work.
-
-## Structural rules
-
-**All eleven are user-invoked.** They produce work or make decisions; you decide when to take that on.
-
-Four carry no `disable-model-invocation` flag — `/review`, `/verify`, `/critique`, and `/fix` — so the agent can also reach for them when the task obviously fits. The rest are typed only.
-
-**A skill never calls another skill.** Where one hands off, it *ends* and tells you what to run next. Shared behaviour lives in `reference/`, not in cross-skill calls.
-
-## Porting to another agent
-
-Skill bodies are plain markdown with no harness-specific syntax. Moving to Codex or another tool is a rename plus a frontmatter change.
-
-Two things assume Claude Code:
-
-- **Parallel sub-agents** in `/review` and `/care`. Fallback: run sequentially in separate sessions. Slower, slight cross-contamination, but the discipline survives
-- **`CLAUDE.md`** as a filename. `AGENTS.md` is the cross-tool convention
-
-## Revising these
-
-Expect to. When a skill produces something wrong, fix the skill — that's the loop.
-
-Two specific feedback paths worth honouring:
-
-- **`/critique` findings should become `CLAUDE.md` lines.** If the same finding appears three times, that's a missing prevention rule, not a recurring fix
-- **`/build` stop conditions that fire repeatedly** mean `/tickets` is cutting badly. Fix the upstream skill, not the symptom
+- **Ask, don't guess** — every open question comes with a recommended
+  default; Edwinfred approves or overrides, never composes from a blank
+  slate.
+- **Code and worked examples over prose** — conventions and design rules
+  point to real in-repo examples wherever possible, not descriptions.
+- **Docs are living, not one-shot** — `scope.md`, `conventions.md`, etc.
+  get appended to (`/add`, `/fix`) rather than rewritten from scratch.
+- **Escalate only on real decisions** — local implementation judgment
+  calls don't need sign-off; anything touching scope, architecture, or
+  established convention does.
+- **Machine-enforced over remembered** — anything checkable by a linter,
+  type checker, or CI gate is enforced that way, not left to an agent's
+  memory of a rule.

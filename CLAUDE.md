@@ -15,11 +15,18 @@ touching UI.
 - Scope and out-of-scope → `docs/scope.md`
 - The full feature spec → `docs/proposal.md`; **the build order** →
   `docs/roadmap.md` — read both before assuming what's next
+- Checkable code/folder/testing/UI conventions (the expansion of this
+  file's own rules, for `/build` and `/review`) → `docs/conventions.md`
+- Screen/Storybook-story inventory → `docs/screens.md`
 - Design intent → `docs/design.md`
+- How code reaches production (single direct-to-prod tier, no staging) →
+  `docs/release.md`
 - Every secret/credential and how to rotate it → `docs/infrastructure.md`
 - Hit something strange? → `docs/gotchas.md`
 - Infra learnings (deploy, backups, rollback, Sentry) → `docs/architecture.md`
   under Environments/Observability
+- Logged bugs / feature requests awaiting triage → `docs/bugs.md` /
+  `docs/feature-requests.md`
 
 ## Structure
 ```

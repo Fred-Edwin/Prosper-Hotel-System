@@ -1,123 +1,200 @@
 ---
 name: tickets
-description: Cut one tranche of vertical-slice tickets from settled architecture, each with a lifecycle check and a test-first/test-after declaration. Writes one file per ticket under .work/. Run after /plan and between tranches.
-disable-model-invocation: true
+description: Cut one feature (mapped to a scope.md feature area) into demoable, independently reviewable tickets with explicit dependencies. Runs once per feature, just-in-time before that feature is built — not once for the whole project. Also invoked by /fix and /add.
 ---
 
 # Tickets
 
-Cut **one tranche** of vertical tickets. Not the whole project — enough to reach the next demoable thing.
+Bridges bootstrap and steady state — it **runs per-feature, just-in-time**,
+not once for the entire project. First invocation happens right after
+`/design`, scoped to cutting the App Shell ticket(s) plus the first
+feature to be built; that first invocation is the last strictly-bootstrap
+step. Every invocation after that — before each subsequent feature, and
+later on behalf of `/fix`/`/add` — is steady-state behavior, even though
+the mechanism is identical each time.
 
-Read `<skills>/reference/TICKET-FORMAT.md` for the template and the rules. Read `<skills>/reference/MODULES.md` for boundary vocabulary.
+## Why per-feature, not all-at-once
 
-**Resolving `<skills>/`.** It is the directory holding the skill folders — `~/.claude/skills/` for a global install, or `<project>/.claude/skills/` for a per-project one. **It is not inside this skill's own folder, and it is not in the project root.** Check the global path first, then the project-local one.
+Cutting every ticket for the whole project upfront means later tickets are
+written against assumptions that may be stale by the time they're
+actually built — real patterns and friction only become visible once
+earlier features are actually implemented. Cutting each feature's tickets
+just before that feature is built lets later cutting benefit from what
+actually exists in the codebase by then, not just what was planned during
+`/design`/`/alignment`.
 
-**If a reference file cannot be found, stop and tell the user.** Do not proceed from memory — these files hold the discipline the skill depends on, and running without them silently produces work that looks right and isn't.
+## Purpose
 
-## 0. Check Foundation exists
+Decompose one feature into tickets small enough to implement, verify, and
+review as one coherent, standalone unit — so `/build` never has to guess
+scope, and a bad agent run only costs one ticket's worth of work.
 
-**A ticket cuts a vertical slice through every layer.** If those layers don't exist, it cannot be cut — it becomes a wish, and the agent building it invents structure and design instead of adding to them.
+## Input
 
-Before anything else, confirm `CLAUDE.md` exists and `src/modules/` (or the project's equivalent) has the shape `docs/architecture.md` describes.
+`docs/scope.md`, `docs/architecture.md`, `docs/conventions.md`, and
+`docs/screens.md`. Also: the current state of the codebase, if this is not
+the first feature — read what's already built before cutting the next
+feature's tickets, so they reflect real patterns already in use.
 
-**If Foundation hasn't run, stop.** Tell the user the order is `/design` → `/foundation` → `/tickets`, and which of those is missing. Do not cut tickets against a plan alone.
+## Concepts
 
-## 1. Read the settled decisions
+**Feature** — a deployable, demoable milestone. Maps directly to one
+feature area in `docs/scope.md`'s definition-of-done.
 
-- `CONTEXT.md` — ticket titles and descriptions use this vocabulary
-- `docs/architecture.md` — module boundaries and the confirmed seam list
-- `docs/scope.md` — what's in and what's explicitly out
-- `docs/proposal.md`, if it exists — the full client-facing feature description. Read this for what the finished system actually does; `scope.md` only tracks the in/out boundary, not the feature set
-- `docs/roadmap.md`, if it exists — the module-by-module build sequence already decided. Cut the next tranche from wherever the roadmap says the frontier is; don't re-derive "what's next" from `proposal.md` on every run
-- `docs/adr/` — decisions in the area you're touching, which you don't re-litigate
-- Existing `.work/` tickets — what's already cut
+**Ticket** — one vertical slice of a feature: a coherent piece of behavior
+cutting through whatever layers are relevant (schema, API, UI) for that
+slice. A feature is built across multiple tickets; no single ticket claims
+an entire feature. Example, for an "Orders" feature: T01 order creation
+(schema + create endpoint + create form screen), T02 order listing
+(list endpoint + list screen wired to real data), T03 order detail +
+status transitions, T04 refunds.
 
-**This skill works within settled architecture. It never re-decides boundaries.**
+## The App Shell ticket — special, cut first, before any feature
 
-## 2. Explore the codebase
+Before the first regular feature's tickets are cut, `/tickets` cuts one
+cross-cutting **App Shell** ticket (or small set of tickets), independent
+of any single feature. It implements the real, running navigation/routing
+for the whole app: every destination from `docs/screens.md` present and
+clickable in the actual nav, real routes for every destination — and for
+any destination whose owning feature isn't built yet, that route renders
+the screen's already-designed empty/pending state (from `/design`) instead
+of a 404 or missing route.
 
-Understand the current state. Look for **prefactoring opportunities** — groundwork that makes the real change easy. *"Make the change easy, then make the easy change."* Prefactoring goes in the first tickets of the tranche.
+This makes the app navigable and demoable from the very start of `/build`,
+and it's what makes the cross-feature screen-wiring mechanism (below)
+possible — a feature's ticket can't "wire into a screen slot" unless the
+route and layout hosting that slot already exist. Build and merge this
+before cutting or starting any other feature.
 
-## 3. Decide the tranche boundary
+## Ticket sizing
 
-Cut only enough to reach **the next demoable thing** — typically five to eight tickets.
+No token-based size ceiling — model context windows are large enough that
+this is no longer the binding constraint. Size a ticket by demoability
+instead: **can "done" be described in one or two sentences, and can it be
+demoed standalone?** If describing a ticket needs "and also" more than
+once, split it. The reasons this still matters: a ticket that's too large
+stops being independently reviewable, a bad agent run on an oversized
+ticket loses more work, and oversized tickets are more likely to conflict
+with other in-flight tickets at merge time.
 
-A tranche is roughly "the next thing you could show someone." Not a fixed count.
+## Cross-feature screens (dashboards, composite views)
 
-Don't cut the whole project. Slicing thirty tickets in week two means writing twenty-five of them at the moment you know least.
+Composite screens that pull data from multiple features were already
+fully designed in `/design` against mock data in every slot, including
+each slot's empty/loading state, and are already routed/hosted by the App
+Shell. There is no separate "shell ticket" per feature. Instead: **each
+feature ticket that owns a given piece of data is responsible for wiring
+that data into every screen slot that depends on it**, wherever in the app
+those slots are — not just that feature's own dedicated screens. Until a
+given slot's owning ticket lands, that slot correctly renders its
+already-designed empty/loading state, because the real data simply isn't
+wired in yet and the App Shell already put that state there by default.
+Note this explicitly in any ticket that fills a slot on a screen belonging
+to a different feature (e.g. "Orders:T02 also wires the Recent Orders
+widget on the Dashboard route hosted by the App Shell").
 
-**If `docs/roadmap.md` exists, the tranche boundary is already decided** — cut the next unbuilt stage in its sequence, don't pick a new one. If no roadmap exists and `docs/proposal.md` does, this is the first tranche being cut for the project — say so, and recommend writing a roadmap before cutting tickets blind against a full feature spec.
+## TDD classification
 
-## 4. Draft vertical slices
+Each ticket is marked `TDD: true` or `TDD: false` when cut, based on
+whether it contains non-trivial logic worth specifying before it's
+written — not applied uniformly. Mark `true` for tickets with real
+business logic: validation rules, calculations, state transitions,
+branching behavior. Mark `false` for tickets that are mostly composition
+or wiring with no ambiguous behavior to specify — pure UI assembly from
+already-approved Storybook stories, thin CRUD wrappers, glue code. A
+single vertical-slice ticket can reasonably contain both; if so, mark it
+`true` and scope the acceptance criteria so the test-first discipline
+applies to the logic portion, not the UI composition portion.
 
-Each ticket:
+The reasoning: writing the test first, before any implementation exists,
+forces the spec (inputs, outputs, edge cases) to be nailed down
+independent of an implementation — and specifically prevents an agent
+from writing tests that just describe what its own code already does,
+which validates bugs as readily as it catches them. That value is real
+for logic and close to zero for pure composition, where `/review` against
+`references/ui-rules.md` and the approved Storybook story is already the
+correctness check.
 
-- Cuts a narrow but **complete** path through every layer — schema, logic, API, UI, tests
-- Leaves the system **working and demoable** on its own
-- Fits comfortably in one fresh session — **target ~250k tokens; ~350k means cut too coarsely**
-- Declares what blocks it
-- Declares **logic** (test-first) or **plumbing** (test-after or none)
+## Process
 
-**Logic** means rules: pricing, permissions, state transitions, validation, edge cases.
-**Plumbing** means CRUD, wiring, config, layout, styling.
+1. **First invocation only:** cut the App Shell ticket(s) per above.
 
-Never cut horizontally. "Build the API layer" has no observable behaviour to test and nothing to demo.
+2. **Pick the next feature** from `docs/scope.md` to cut tickets for —
+   Edwinfred confirms which, if not already obvious from priority/roadmap
+   order.
 
-## 5. Apply the lifecycle check
+3. **Cut vertical-slice tickets for that feature only** along its folder
+   boundary (per `docs/conventions.md`'s feature-based structure — one
+   ticket's changes should live almost entirely inside one feature folder,
+   except for the cross-feature screen-wiring case above).
 
-**For every ticket that creates or modifies a record type**, state explicitly what happens for:
+4. **Declare dependencies explicitly** — including a dependency on the App
+   Shell ticket for any ticket that wires into a shell-hosted route, and
+   dependencies on other features' tickets where genuinely needed. This is
+   what lets `/build` know what's safe to run concurrently versus what
+   must wait.
 
-- **Create**
-- **Read** — list and detail
-- **Update** — what's editable, by whom, in which states
-- **Delete** — soft, hard, or not allowed; what happens to things referencing it
-- **Undo / reverse** — for actions with consequences: can a sent invoice be voided, a payment reversed, an approval withdrawn
+5. **Write each ticket using the fixed template below.** Tickets are read
+   cold by agents with no conversation history — ambiguity here becomes a
+   wrong implementation later, not a quick clarifying question.
 
-**"You cannot delete these" is a fine answer — but it must be decided, not silent.**
+6. **Confirm this feature's ticket set with Edwinfred** before `/build`
+   starts on it — a last checkpoint to catch a missing or wrongly-scoped
+   ticket while it's still cheap to fix. This confirmation is per-feature,
+   not a single whole-project gate.
 
-Silence here is what produces missing delete flows and no way to recover from a mistake. The agent builds exactly what was described, and descriptions default to the optimistic case.
+## Ticket template
 
-The Group B data-lifecycle decision in `docs/architecture.md` sets the default (soft vs hard delete). The ticket says how it applies here.
+Each ticket is one file: `docs/tickets/<feature>/T<NN>-<slug>.md`
+(App Shell tickets live in `docs/tickets/app-shell/`.)
 
-## 6. Handle wide refactors as the exception
+```markdown
+# T<NN>: <short title>
 
-A **wide refactor** is one mechanical change whose blast radius spans the codebase — renaming a column, retyping a shared symbol. No vertical slice can land green.
+**Feature:** <feature name>
+**Depends on:** <ticket IDs, or "none">
+**Status:** planned
+**TDD:** true | false
 
-Sequence it **expand–contract** instead:
+## Goal
+One sentence: what this ticket makes true that wasn't true before.
 
-1. **Expand** — add the new form beside the old. Nothing breaks
-2. **Migrate** — call sites in batches sized by blast radius, each batch its own ticket blocked by the expand. CI stays green because the old form still exists
-3. **Contract** — delete the old form, blocked by every migrate batch
+## Context
+Pointers, not explanations — the agent reads these, not a summary of them:
+- Relevant folder(s): `src/features/<x>/`
+- Relevant docs sections: `docs/conventions.md#<section>`, `docs/architecture.md#<section>`
+- Relevant Storybook stories / screens from `docs/screens.md`: <names>
+- Relevant prior tickets this builds on: <ticket IDs>
 
-## 7. Quiz the user
+## Scope
+**In:** explicit list of what this ticket implements.
+**Out:** explicit list of what it deliberately does not — prevents
+over-building into a neighboring ticket's territory.
 
-Present the tranche as a numbered list. For each: **title**, **blocked by**, **type** (logic/plumbing), **what it delivers**.
+## Acceptance criteria
+Concrete and checkable — this is "demoable" made literal. What should be
+true, visible, and testable when this is done. Include any screen slots
+(per the cross-feature note above) this ticket is responsible for wiring.
+If **TDD: true**, write these as criteria that translate directly into
+executable test cases — `/build` will write them as failing tests before
+implementing.
 
-Then ask:
-- Does the granularity feel right — too coarse, too fine?
-- Are the blocking edges correct?
-- Should any be merged or split?
+## Verification
+What the implementing agent must run/check before marking this done:
+tests to write/pass, lint/typecheck, manual check against
+`references/ui-rules.md` if UI is touched.
+```
 
-Iterate until approved.
+## Output
 
-## 8. Write the files
+`docs/tickets/<feature>/T<NN>-<slug>.md` for every ticket in the feature
+just cut (or `docs/tickets/app-shell/` on first invocation), each with
+dependencies declared, confirmed with Edwinfred.
 
-One file per ticket: `.work/NN-<slug>.md`, numbered from `01` in **dependency order** — blockers first.
+## Explicit non-goals
 
-Never a single combined file. One file per ticket means an agent opens exactly its own job with no distraction from the other forty.
-
-Use the template in `<skills>/reference/TICKET-FORMAT.md`.
-
-## Never
-
-- **Never cut horizontal slices**
-- **Never write file paths or line numbers** into a ticket — a ticket may sit for weeks while the codebase moves. Describe behaviour and interfaces
-- **Never cut the whole project up front**
-- **Never re-decide architecture.** If a ticket can't be cut inside existing module boundaries, **stop and tell the user Planning is needed** for this work
-- **Never invent vocabulary.** If a needed word isn't in `CONTEXT.md`, surface the gap
-
-## Done when
-
-The tranche is written to `.work/` and approved.
-
-Tell the user to run **`/build`** on ticket `01`, in a fresh session.
+- No implementation — that's `/build`.
+- Don't cut tickets for features beyond the one currently being started —
+  that's next invocation's job, once this feature is far enough along.
+- When re-entered by `/fix` or `/add`, only cut the new tickets/feature
+  those skills hand off — don't re-derive the whole roadmap.

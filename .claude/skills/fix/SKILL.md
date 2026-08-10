@@ -1,156 +1,90 @@
 ---
 name: fix
-description: Diagnose a bug by building a reliable failing command first, then minimising, hypothesising, instrumenting, and fixing with a regression test. Refuses to theorise before a red-capable loop exists. Use when something is broken and the cause is unknown.
+description: Triage a logged bug from docs/bugs.md, ask Edwinfred whether it needs the full ticket pipeline or a direct fix, then either hand off to /tickets->/build->/review->/release or fix and ship directly. Steady-state skill, invoked any time bugs need addressing.
 ---
 
 # Fix
 
-A discipline for bugs whose cause is unknown.
+Steady-state skill. Invoked whenever there are bugs in `docs/bugs.md` to
+address — either on demand or in a batch.
 
-**If the cause is already known, use `/build`.** "The label says Custmer" is not a diagnosis problem.
+## Purpose
 
-Read `<skills>/reference/TESTING.md` for seam rules. Read `CONTEXT.md` for the vocabulary of the modules involved, and check `docs/gotchas.md` — this may already be known.
+Get logged bugs resolved with a level of process matched to their actual
+risk — not maximal ceremony for a typo, not a silent unreviewed patch for
+something that touches real logic.
 
-**Resolving `<skills>/`.** It is the directory holding the skill folders — `~/.claude/skills/` for a global install, or `<project>/.claude/skills/` for a per-project one. **It is not inside this skill's own folder, and it is not in the project root.** Check the global path first, then the project-local one.
+## Input
 
-**If a reference file cannot be found, stop and tell the user.** Do not proceed from memory — these files hold the discipline the skill depends on, and running without them silently produces work that looks right and isn't.
+`docs/bugs.md` (or `docs/bugs/<id>-<slug>.md` if it's been split out due to
+volume). If it doesn't exist or is empty, there's nothing to do.
 
----
+## Bug entry format
 
-## Phase 1 — Build the feedback loop
+Each entry in `docs/bugs.md`:
 
-**This is the skill. Everything else is mechanical.**
+```markdown
+## BUG-<NN>: <short title>
+**Severity:** critical | high | normal | low
+**Discovered:** <how — client report, production error, manual testing>
+**Status:** open | in-progress | fixed
 
-With a reliable red signal, the bug is essentially found — bisecting, hypothesising, and instrumenting all just consume it. Without one, you are guessing, and agents guess *confidently*, which is worse than guessing slowly.
+### Description
+What's broken.
 
-**Spend disproportionate effort here. Be aggressive. Be creative. Refuse to give up.**
+### Repro steps
+How to reproduce it reliably.
+```
 
-### Ways to build one, roughly in order
+## Process
 
-1. **A failing test** at whatever seam reaches the bug
-2. **A curl or HTTP script** against a running dev server
-3. **A CLI invocation** with fixture input, diffed against known-good output
-4. **A Playwright script** driving the UI, asserting on DOM, console, or network
-5. **Replay a captured payload** — save the real request, event, or record to disk and push it through the code path in isolation
-6. **A throwaway harness** — the minimum subset of the system that exercises the path in one call
-7. **A fuzz loop** — if the bug is "sometimes wrong output", run 1000 inputs and look for the failure mode
-8. **A bisection harness** — if it appeared between two known-good states, automate "boot at state X, check, repeat" so `git bisect run` can consume it
+1. **Triage by severity.** Critical/high severity bugs are addressed
+   immediately, ahead of any batch. Normal/low severity bugs may be
+   processed together when this skill is invoked in batch mode.
 
-### Requirements — all four
+2. **For each bug being addressed, ask Edwinfred how to route it** —
+   do not assume. Give a recommended default based on the bug's apparent
+   complexity and blast radius:
+   - **Recommend the full ticket pipeline** (`/tickets` → `/build` →
+     `/review` → `/release`) when the fix touches business logic, auth,
+     data integrity, or anything with real complexity — the independent
+     review matters most exactly where a rushed fix could cause a
+     regression.
+   - **Recommend a direct fix** (implement, self-verify, ship, no separate
+     ticket/review cycle) only for trivial, obviously-contained changes —
+     a typo, a copy fix, an off-by-one in a clearly isolated spot.
+   
+   Edwinfred approves the recommendation or overrides it per bug.
 
-- **Red-capable** — it drives the actual bug path and asserts the **user's exact symptom**. Not "runs without erroring". It must be able to catch *this* bug
-- **Deterministic** — the same verdict every run. For intermittent bugs, raise the reproduction rate until it's debuggable. A 50% flake is workable; 1% is not
-- **Fast** — seconds, not minutes
-- **Unattended** — runnable without a human
+3. **If routed through the ticket pipeline:** create a ticket using
+   `/tickets`' template, feature = the existing feature folder the bug
+   belongs to (or a `bugfixes` catch-all if it's genuinely cross-cutting).
+   The ticket's acceptance criteria must include a regression test that
+   reproduces the original bug — this is required, not optional, whenever
+   this path is taken. Hand off to `/build` as normal.
 
-**Paste the invocation and its output.** The command must have been run at least once.
+4. **If routed as a direct fix:** implement the fix, write a regression
+   test reproducing the bug if practical, self-verify (tests, lint,
+   typecheck, `references/ui-rules.md` if UI is touched), and ship per
+   `docs/release.md`'s configured tier. Still requires the bug entry to be
+   updated to `Status: fixed` — this path skips ticket/review ceremony, it
+   does not skip verification.
 
-### The hard rule
+5. **If the root cause was non-obvious** — something a future agent could
+   plausibly repeat — append a short entry to `docs/gotchas.md`: what went
+   wrong, why, how to avoid it. Keep it terse; this file's value is in
+   being skimmable.
 
-**If you catch yourself reading code to build a theory before this command exists, stop.** Jumping straight to a hypothesis is the exact failure this skill prevents. No red-capable command, no Phase 2.
+6. **Update `docs/bugs.md`**, marking resolved entries `Status: fixed`.
 
-### If you genuinely cannot build one
+## Output
 
-Stop and say so explicitly. List what you tried. Ask the user for one of:
+Bugs resolved and shipped (per whichever route was chosen), `docs/bugs.md`
+updated, `docs/gotchas.md` appended where a real lesson was learned.
 
-- Access to an environment that reproduces it
-- A captured artifact — HAR file, log dump, screen recording with timestamps
-- Permission to add temporary production instrumentation
+## Explicit non-goals
 
-**Do not proceed to hypothesise without a loop.** A fix applied without one might work, applied to a cause that might be real, and you will have no way to tell.
-
----
-
-## Phase 2 — Reproduce and minimise
-
-Run the loop. Watch it go red.
-
-Confirm:
-- It produces **the symptom the user described** — not a different failure that happens to be nearby. Wrong bug means wrong fix
-- It's reproducible across runs
-- You've captured the exact symptom — error message, wrong output, timing — so later phases can verify the fix addresses it
-
-**Then minimise.** Cut inputs, callers, config, data, and steps **one at a time**, re-running after each. Keep only what's load-bearing.
-
-Done when removing **any** remaining element makes it go green.
-
-Why bother: fewer moving parts means a smaller hypothesis space in Phase 3, and the minimised case becomes the clean regression test in Phase 5.
-
----
-
-## Phase 3 — Hypothesise
-
-**Generate 3–5 ranked hypotheses before testing any of them.** Single-hypothesis generation anchors on the first plausible idea and then finds evidence for it.
-
-Each must be **falsifiable** — state the prediction:
-
-> "If X is the cause, then changing Y will make the bug disappear."
-
-If you can't state the prediction, it's a vibe. Sharpen it or discard it.
-
-**Show the ranked list to the user before testing.** They often re-rank it instantly — "we deployed a change to #3 last week" — or know one is already ruled out. Cheap checkpoint, big saving. **Don't block on it**; proceed with your ranking if they're away.
-
----
-
-## Phase 4 — Instrument
-
-Each probe maps to a specific prediction from Phase 3. **Change one variable at a time.**
-
-Tool preference:
-1. **Debugger or REPL** if the environment supports it. One breakpoint beats ten logs
-2. **Targeted logs** at the boundaries that distinguish hypotheses
-3. **Never "log everything and grep"**
-
-**Tag every debug log with a unique prefix** — `[DEBUG-a4f2]` — so cleanup is one search. Untagged logs survive forever.
-
-**For performance bugs**, logs are usually wrong. Establish a baseline measurement first — a timing harness, a profiler, a query plan — then bisect. Measure first, fix second.
-
----
-
-## Phase 5 — Fix with a regression test
-
-Write the test **before** the fix — **but only if a correct seam exists.**
-
-A correct seam is one where the test exercises the **real bug pattern as it occurs at the call site**. A seam that's too shallow — a unit test that can't replicate the chain that triggered it — gives false confidence.
-
-### If no correct seam exists, that is the finding
-
-Record it. **The architecture is preventing this bug from being locked down**, which is more valuable information than the fix itself. Hand it to `/care` with specifics.
-
-### If a correct seam exists
-
-1. Turn the minimised repro into a failing test at that seam
-2. Watch it fail
-3. Apply the fix
-4. Watch it pass
-5. **Re-run the Phase 1 loop against the original, un-minimised scenario**
-
-**Regression tests: yes for logic bugs. No for cosmetic ones** — a misaligned button doesn't silently return.
-
----
-
-## Phase 6 — Cleanup and post-mortem
-
-Required before declaring done:
-
-- [ ] The original repro no longer reproduces — re-run the Phase 1 loop
-- [ ] The regression test passes, or the absence of a seam is recorded
-- [ ] All `[DEBUG-…]` instrumentation removed — grep the prefix
-- [ ] Throwaway scripts and harnesses deleted
-- [ ] **The correct hypothesis stated in the commit message** — cheap, and the next person debugging nearby learns from it
-
-Then two questions, asked **after** the fix, when you know more than you did at the start:
-
-**What would have prevented this?** If the answer is structural — no good seam, tangled modules, hidden coupling — hand it to `/care` with the specifics.
-
-**Does this belong in `docs/gotchas.md`?** Only if it cost real time and reading the code wouldn't have revealed it. **If the root cause is fixable, fix the root cause instead** — a gotcha is an admission you couldn't.
-
----
-
-## Never
-
-- **Never hypothesise before a red-capable loop exists**
-- **Never generate a single hypothesis**
-- **Never leave tagged debug logs behind**
-- **Never claim it's fixed without re-running the original loop**
-- **Never write a regression test at a seam that can't exercise the real bug pattern** — say so instead
+- Never skip `/review` for anything routed through the ticket pipeline,
+  regardless of urgency — critical severity changes priority, not rigor.
+- Don't silently choose the routing without asking — severity and
+  complexity inform the recommendation, but the decision is Edwinfred's.
