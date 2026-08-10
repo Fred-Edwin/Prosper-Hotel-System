@@ -181,3 +181,30 @@ schema change.
   inserted a matching `_prisma_migrations` row. `pnpm test:migrate` replaces
   that entirely; no need to repeat it.)
 - **Added:** 2026-08-07
+
+## The first hit to a freshly-added API route can silently no-op in `next dev`
+
+**Symptom:** A POST route returns `200 {ok: true}` — the client sees success
+and updates its UI — but the write never happened. The dev server log shows
+a `SyntaxError: Unexpected end of JSON input` at `request.json()` logged
+*after* the 200 line for the same route, with no second request line
+before it. Retrying the exact same action (same button, same data)
+immediately afterward works correctly and the write persists.
+
+**Cause:** Turbopack compiles a route handler on demand, the first time
+it's hit. On that first hit, hitting the route while it's still compiling
+raced the module reload against reading the request body — the body
+stream is single-use, so the second (module-reload-triggered) read got a
+consumed stream and threw. This only affects the very first request to a
+brand-new route file in a given `next dev` session; every request after
+is served by the already-compiled module and behaves correctly. Confirmed
+by re-running the identical action after the route had already been hit
+once — it wrote to the database correctly the second time.
+
+**Fix:** Not a code bug — production builds compile ahead of time, so
+this can't happen there. During a manual dev-server check, don't trust
+the very first hit to a newly-added route as proof of correctness if
+something looks off; hit it a second time before concluding the logic is
+wrong. Worth remembering before sinking time re-reading logic that
+already has passing integration tests.
+**Added:** 2026-08-10

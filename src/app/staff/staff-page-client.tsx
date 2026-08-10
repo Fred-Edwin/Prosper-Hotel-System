@@ -8,6 +8,7 @@ import { ReceiveDelivery } from "@/modules/stock/ui/receive-delivery";
 import { IssueToKitchen } from "@/modules/stock/ui/issue-to-kitchen";
 import { RecordProduction } from "@/modules/stock/ui/record-production";
 import { RecordWastage } from "@/modules/stock/ui/record-wastage";
+import { StockCount } from "@/modules/stock/ui/stock-count";
 import { NewSale } from "@/modules/sales/ui/new-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
 import { Handover } from "@/modules/cash/ui/handover";
@@ -18,12 +19,14 @@ export function StaffPageClient({
   locationId,
   locationName,
   role,
+  isOwner,
   handedOverToday,
 }: {
   staffName: string;
   locationId: string;
   locationName: string;
   role: StaffRole;
+  isOwner: boolean;
   handedOverToday: boolean;
 }) {
   const [active, setActive] = useState<string | null>(null);
@@ -48,6 +51,7 @@ export function StaffPageClient({
       {active === "issue" && <IssueToKitchen onDone={() => setActive(null)} />}
       {active === "production" && <RecordProduction onDone={() => setActive(null)} />}
       {active === "wastage" && <RecordWastage onDone={() => setActive(null)} />}
+      {active === "count" && <StockCount isOwner={isOwner} />}
       {active === "handover" && <Handover />}
       {active !== null &&
         active !== "stock" &&
@@ -57,6 +61,7 @@ export function StaffPageClient({
         active !== "issue" &&
         active !== "production" &&
         active !== "wastage" &&
+        active !== "count" &&
         active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>
   );

@@ -9,6 +9,9 @@ export {
   recordNonSalesConsumption,
   listReceiptsAtLocation,
   findReceipt,
+  recordStockCount,
+  getStockCount,
+  correctStockCount,
 } from "./logic";
 export type {
   StockAccessResult,
@@ -18,6 +21,9 @@ export type {
   RecordProductionResult,
   RecordNonSalesConsumptionResult,
   ReceiptsAtLocationResult,
+  RecordStockCountResult,
+  StockCountResult,
+  CorrectStockCountResult,
 } from "./logic";
 export {
   stockAtLocationRoute,
@@ -25,6 +31,9 @@ export {
   recordIngredientIssueRoute,
   recordProductionRoute,
   recordNonSalesConsumptionRoute,
+  recordStockCountRoute,
+  stockCountRoute,
+  correctStockCountRoute,
 } from "./routes";
 export type {
   StockMovement,
@@ -33,4 +42,7 @@ export type {
   IngredientMovement,
   NonSalesCategory,
   Receipt,
+  StockCount,
+  StockCountLine,
+  StockCountItemType,
 } from "./schema";

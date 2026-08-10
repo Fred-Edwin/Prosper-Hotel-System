@@ -53,3 +53,23 @@ export type Receipt = {
 // CONTEXT.md's Non-sales Stock Consumption — the three reasons the client
 // reads together but records distinctly.
 export type NonSalesCategory = "wasted" | "consumed" | "given_away";
+
+export type StockCountItemType = "product" | "ingredient";
+
+export type StockCountLine = {
+  id: string;
+  itemType: StockCountItemType;
+  itemId: string;
+  countedQuantity: number;
+  expectedQuantity: number;
+  correctedAt: Date | null;
+  correctedBy: string | null;
+};
+
+export type StockCount = {
+  id: string;
+  locationId: string;
+  staffMemberId: string;
+  occurredAt: Date;
+  lines: StockCountLine[];
+};

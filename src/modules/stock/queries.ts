@@ -1,5 +1,12 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { IngredientMovement, Receipt, StockMovement, StockMovementReason } from "./schema";
+import type {
+  IngredientMovement,
+  Receipt,
+  StockCount,
+  StockCountItemType,
+  StockMovement,
+  StockMovementReason,
+} from "./schema";
 
 export async function createStockMovement(
   db: PrismaClient,
@@ -74,6 +81,18 @@ export async function createIngredientIssueMovement(
   return db.ingredientMovement.create({ data: { ...data, reason: "issued" } });
 }
 
+export async function createIngredientCorrectionMovement(
+  db: PrismaClient,
+  data: {
+    ingredientId: string;
+    locationId: string;
+    quantity: number;
+    staffMemberId: string;
+  },
+): Promise<IngredientMovement> {
+  return db.ingredientMovement.create({ data: { ...data, reason: "corrected" } });
+}
+
 export async function createIngredientConsumptionMovement(
   db: PrismaClient,
   data: {
@@ -121,4 +140,66 @@ export async function findReceiptById(
   const movement = await db.ingredientMovement.findFirst({ where: { receiptId } });
   if (!movement) return null;
   return { receiptId: movement.receiptId as string, locationId: movement.locationId };
+}
+
+export async function sumMovementsByIngredientAtLocation(
+  db: PrismaClient,
+  locationId: string,
+): Promise<{ ingredientId: string; quantityOnHand: number }[]> {
+  const grouped = await db.ingredientMovement.groupBy({
+    by: ["ingredientId"],
+    where: { locationId },
+    _sum: { quantity: true },
+  });
+
+  return grouped.map((g) => ({
+    ingredientId: g.ingredientId,
+    quantityOnHand: g._sum.quantity ?? 0,
+  }));
+}
+
+export async function createStockCount(
+  db: PrismaClient,
+  data: {
+    locationId: string;
+    staffMemberId: string;
+    lines: {
+      itemType: StockCountItemType;
+      itemId: string;
+      countedQuantity: number;
+      expectedQuantity: number;
+    }[];
+  },
+): Promise<StockCount> {
+  const count = await db.stockCount.create({
+    data: {
+      locationId: data.locationId,
+      staffMemberId: data.staffMemberId,
+      lines: { create: data.lines },
+    },
+    include: { lines: true },
+  });
+  return count as StockCount;
+}
+
+export async function findStockCountById(
+  db: PrismaClient,
+  stockCountId: string,
+): Promise<StockCount | null> {
+  const count = await db.stockCount.findUnique({
+    where: { id: stockCountId },
+    include: { lines: true },
+  });
+  return count as StockCount | null;
+}
+
+export async function markStockCountLineCorrected(
+  db: PrismaClient,
+  lineId: string,
+  correctedBy: string,
+): Promise<void> {
+  await db.stockCountLine.update({
+    where: { id: lineId },
+    data: { correctedAt: new Date(), correctedBy },
+  });
 }

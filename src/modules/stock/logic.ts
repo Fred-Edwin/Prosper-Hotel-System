@@ -12,18 +12,25 @@ import {
 } from "@/modules/catalogue";
 import {
   createIngredientConsumptionMovement,
+  createIngredientCorrectionMovement,
   createIngredientIssueMovement,
   createIngredientMovement,
   createProductionMovement,
+  createStockCount,
   createStockMovement,
   findReceiptById,
   findReceiptsAtLocation,
+  findStockCountById,
+  markStockCountLineCorrected,
+  sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
 } from "./queries";
 import type {
   IngredientMovement,
   NonSalesCategory,
   Receipt,
+  StockCount,
+  StockCountItemType,
   StockLevel,
   StockMovement,
   StockMovementReason,
@@ -396,4 +403,143 @@ export async function findReceipt(
   receiptId: string,
 ): Promise<{ receiptId: string; locationId: string } | null> {
   return findReceiptById(db, receiptId);
+}
+
+export type RecordStockCountResult =
+  | { ok: true; count: StockCount }
+  | { ok: false; reason: "forbidden" | "invalid_quantity" | "inactive_item" | "not_found" };
+
+// docs/architecture.md: "the count never changes the record on its own —
+// it records what was counted and shows the gap." Any role that can
+// access the location may record a count, same as receiving/issuing —
+// store manager and attendant per the ticket, owner always.
+export async function recordStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    locationId: string;
+    lines: { itemType: StockCountItemType; itemId: string; countedQuantity: number }[];
+  },
+): Promise<RecordStockCountResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.lines.some((line) => line.countedQuantity < 0)) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  const productIds = input.lines.filter((l) => l.itemType === "product").map((l) => l.itemId);
+  const ingredientIds = input.lines
+    .filter((l) => l.itemType === "ingredient")
+    .map((l) => l.itemId);
+
+  const products = productIds.length > 0 ? await findProductsByIds(db, productIds) : [];
+  const ingredients =
+    ingredientIds.length > 0 ? await findIngredientsByIds(db, ingredientIds) : [];
+  const productById = new Map(products.map((p) => [p.id, p]));
+  const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+  for (const line of input.lines) {
+    if (line.itemType === "product") {
+      const product = productById.get(line.itemId);
+      if (!product) return { ok: false, reason: "not_found" };
+      if (!product.active) return { ok: false, reason: "inactive_item" };
+    } else {
+      const ingredient = ingredientById.get(line.itemId);
+      if (!ingredient) return { ok: false, reason: "not_found" };
+      if (!ingredient.active) return { ok: false, reason: "inactive_item" };
+    }
+  }
+
+  const productSums = await sumMovementsByProductAtLocation(db, input.locationId);
+  const ingredientSums = await sumMovementsByIngredientAtLocation(db, input.locationId);
+  const expectedByProduct = new Map(productSums.map((s) => [s.productId, s.quantityOnHand]));
+  const expectedByIngredient = new Map(
+    ingredientSums.map((s) => [s.ingredientId, s.quantityOnHand]),
+  );
+
+  const count = await createStockCount(db, {
+    locationId: input.locationId,
+    staffMemberId: requester.staff.id,
+    lines: input.lines.map((line) => ({
+      itemType: line.itemType,
+      itemId: line.itemId,
+      countedQuantity: line.countedQuantity,
+      expectedQuantity:
+        (line.itemType === "product"
+          ? expectedByProduct.get(line.itemId)
+          : expectedByIngredient.get(line.itemId)) ?? 0,
+    })),
+  });
+
+  return { ok: true, count };
+}
+
+export type StockCountResult = { ok: true; count: StockCount } | { ok: false; reason: "forbidden" | "not_found" };
+
+// Read is location-scoped the same way as every other stock read — a
+// store-manager-recorded count is visible to anyone who can see that
+// location, not just the owner (only the correct action is owner-only).
+export async function getStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  stockCountId: string,
+): Promise<StockCountResult> {
+  const count = await findStockCountById(db, stockCountId);
+  if (!count) return { ok: false, reason: "not_found" };
+
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, count.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  return { ok: true, count };
+}
+
+export type CorrectStockCountResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "not_found" | "already_corrected" };
+
+// docs/architecture.md: "only the owner may correct" — the person who
+// counts is not the person who adjusts. Writes a `corrected` movement
+// bringing getCurrentStockAtLocation in line with what was counted.
+export async function correctStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { stockCountId: string; lineId: string },
+): Promise<CorrectStockCountResult> {
+  if (requester.staff.role !== "owner") {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const count = await findStockCountById(db, input.stockCountId);
+  if (!count) return { ok: false, reason: "not_found" };
+
+  const line = count.lines.find((l) => l.id === input.lineId);
+  if (!line) return { ok: false, reason: "not_found" };
+  if (line.correctedAt) return { ok: false, reason: "already_corrected" };
+
+  const delta = line.countedQuantity - line.expectedQuantity;
+  if (delta !== 0) {
+    if (line.itemType === "product") {
+      await createStockMovement(db, {
+        productId: line.itemId,
+        locationId: count.locationId,
+        quantity: delta,
+        reason: "corrected",
+        staffMemberId: requester.staff.id,
+      });
+    } else {
+      await createIngredientCorrectionMovement(db, {
+        ingredientId: line.itemId,
+        locationId: count.locationId,
+        quantity: delta,
+        staffMemberId: requester.staff.id,
+      });
+    }
+  }
+
+  await markStockCountLineCorrected(db, line.id, requester.staff.id);
+
+  return { ok: true };
 }
