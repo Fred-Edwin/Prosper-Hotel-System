@@ -2,6 +2,7 @@
 
 **Type:** logic (test-first)
 **Blocked by:** 01 (ingredients and products must exist to be recipe inputs/outputs)
+**Status:** done
 
 ## What this delivers
 

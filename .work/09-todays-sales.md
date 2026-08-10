@@ -2,6 +2,7 @@
 
 **Type:** plumbing (test-after)
 **Blocked by:** 07 (a sale to list)
+**Status:** done
 
 ## What this delivers
 

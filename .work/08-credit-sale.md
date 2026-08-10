@@ -2,6 +2,7 @@
 
 **Type:** logic (test-first)
 **Blocked by:** 06 (Customer record), 07 (sale + payment lines)
+**Status:** done
 
 ## What this delivers
 

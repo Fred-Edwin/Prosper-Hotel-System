@@ -1,13 +1,12 @@
 # 19 — Production: recording kitchen output
 
-**Status:** in-review (Claude Sonnet 5, 2026-08-10)
-
 **Type:** logic (test-first)
 **Blocked by:** 18 (issuing to the kitchen) — production records what
 the kitchen made from ingredients that reached it; building production
 after issuing keeps Stage 3's store→kitchen→plate flow in the order it
 actually happens, even though the two aren't a hard data dependency (see
 below)
+**Status:** done
 
 ## What this delivers
 

@@ -2,6 +2,7 @@
 
 **Type:** logic (test-first)
 **Blocked by:** None
+**Status:** done
 
 ## What this delivers
 

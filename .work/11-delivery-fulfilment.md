@@ -4,6 +4,7 @@
 **Blocked by:** None (07/08/10 already landed — `Sale.fulfilment` already
 carries the `delivery` case in the Prisma enum, anticipated but unused
 until now)
+**Status:** done
 
 ## What this delivers
 

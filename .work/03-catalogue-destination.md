@@ -2,6 +2,7 @@
 
 **Type:** plumbing (test-after)
 **Blocked by:** 01, 02 (every tab needs its underlying CRUD and logic built first)
+**Status:** done
 
 ## What this delivers
 

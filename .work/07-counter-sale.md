@@ -3,6 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** 06 (payment lines will need a customer to exist as a
 concept for ticket 08, though this ticket itself only uses cash/M-Pesa)
+**Status:** done
 
 ## What this delivers
 

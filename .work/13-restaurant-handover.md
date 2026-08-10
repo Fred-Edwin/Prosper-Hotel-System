@@ -3,6 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (Today's sales, ticket 09, already computes the exact
 figure this needs)
+**Status:** done
 
 ## What this delivers
 

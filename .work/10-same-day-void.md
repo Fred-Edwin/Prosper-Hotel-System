@@ -3,6 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** 09 (Today's sales — where a past sale is found and voided
 from)
+**Status:** done
 
 ## What this delivers
 

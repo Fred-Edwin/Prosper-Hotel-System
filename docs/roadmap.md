@@ -32,7 +32,15 @@ redone; each stage extends it.
 
 ## Stage order and why
 
+**Status: Stages 1–3 done. Stage 4 (canteen operations) is current.**
+Tickets 01–20 in `.work/` cover Stages 1–3 in full, all merged to `main`.
+See each stage below for what specifically landed.
+
 ### Stage 1 — Catalogue made real: prices, ingredients, recipes
+
+**Done** — tickets 01 (catalogue reference data: ingredients, product
+CRUD, pricing), 02 (recipes: ingredients to product, effective-dated
+versions, expected yield), 03 (the tabbed Catalogue destination).
 
 **Delivers:** proposal.md §3 ("price paid on that occasion"), §11's
 implicit dependency (pay needs staff, but pricing needs catalogue first),
@@ -50,6 +58,10 @@ does both together rather than splitting them.
 ---
 
 ### Stage 2 — Restaurant sales: the till
+
+**Done** — tickets 06 (customer record), 07 (counter sale, cash/M-Pesa
+split payment lines), 08 (credit sale, inline customer create), 09
+(Today's sales), 10 (same-day void), 11 (delivery fulfilment).
 
 **Delivers:** proposal.md §3 "Sales" and "Credit" — cashiers recording
 counter/delivery sales, split cash/M-Pesa/credit payment lines, named
@@ -84,6 +96,15 @@ granularity wins over the one-line stage description above.
 
 ### Stage 3 — Restaurant stock operations: receiving, issuing, production, transfers, wastage
 
+**Done** — tickets 12 (receiving), 13 (restaurant handover), 14
+(dashboard: today's handovers), 15 (wastage/consumption/complimentary),
+16 (money out, four categories), 17 (staff CRUD), 18 (issuing to the
+kitchen), 19 (production), 20 (stock count, expected vs. counted,
+owner-corrected). Transfers to canteen were not cut as their own
+ticket in this stage — canteen (Stage 4) has no receiving side to send
+to yet, so the transfer mechanic's first ticket slots in as Stage 4's
+opening ticket instead, per this stage's original dependency note below.
+
 **Delivers:** proposal.md §3's remaining operational verbs — receiving
 deliveries (store manager), issuing to kitchen, production output,
 transfers to canteen, wastage/consumption/complimentary recording.
@@ -102,6 +123,10 @@ will mirror).
 ---
 
 ### Stage 4 — Canteen operations: takings, count-derived sales
+
+**Current stage.** Its opening ticket should also cover the transfer-out
+mechanic Stage 3 deferred (see Stage 3's note above) — canteen receiving
+is what makes a transfer demoable end-to-end.
 
 **Delivers:** proposal.md §4 in full — the canteen's structurally
 different recording (daily takings instead of per-sale, weekly

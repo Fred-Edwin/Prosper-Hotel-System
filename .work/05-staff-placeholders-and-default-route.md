@@ -2,6 +2,7 @@
 
 **Type:** plumbing (test-after)
 **Blocked by:** 04 (introduces the shared `NotBuilt` state this ticket reuses)
+**Status:** done
 
 ## What this delivers
 
