@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (a standalone record type; does not read from
 transfers, receiving, or counts)
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done
 
 ## What this delivers
 

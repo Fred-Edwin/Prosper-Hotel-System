@@ -30,6 +30,7 @@ model Location {
   ingredientMovements IngredientMovement[]
   sales               Sale[]
   handovers           Handover[]
+  takings             Takings[]
   expenses            Expense[]
   stockCounts         StockCount[]
 
@@ -397,6 +398,23 @@ model Handover {
   updatedAt          DateTime    @updatedAt
 
   @@map("handovers")
+}
+
+// CONTEXT.md's Takings: the canteen's structural substitute for
+// per-sale recording — cash and M-Pesa totals declared at close, no
+// expected figure to compare against (there's nothing recorded per-sale
+// to expect from). One record per location per day, same-day editable.
+model Takings {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  cashMinor  Int
+  mpesaMinor Int
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("takings")
 }
 
 // CONTEXT.md's Expense: money the owner pays out, one of four categories
