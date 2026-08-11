@@ -58,9 +58,28 @@ async function computeExpected(
   return { expectedCashMinor, expectedMpesaMinor };
 }
 
+// CONTEXT.md's Handover, canteen case: expected is the takings the
+// attendant declared at close (proposal.md §5, formulas.md §10) — not
+// summed sales, since nothing is recorded per-sale at the canteen. If
+// nothing has been recorded yet today, there is no real expected figure
+// to compare against — reported distinctly from a zero takings row,
+// which would silently compare against a false baseline.
+async function computeExpectedFromTakings(
+  db: PrismaClient,
+  locationId: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<
+  { expectedCashMinor: number; expectedMpesaMinor: number } | { takingsNotRecorded: true }
+> {
+  const takings = await findTodaysTakings(db, locationId, dayStart, dayEnd);
+  if (!takings) return { takingsNotRecorded: true };
+  return { expectedCashMinor: takings.cashMinor, expectedMpesaMinor: takings.mpesaMinor };
+}
+
 export type RecordHandoverResult =
   | { ok: true; handover: Handover }
-  | { ok: false; reason: "forbidden" };
+  | { ok: false; reason: "forbidden" | "takings_not_recorded" };
 
 // A second attempt the same day, same staff member, same location edits the
 // existing row in place rather than creating a second one — proposal.md §5 /
@@ -79,10 +98,15 @@ export async function recordHandover(
     return { ok: false, reason: "forbidden" };
   }
 
-  const expected = await computeExpected(db, requester);
-  if ("forbidden" in expected) return { ok: false, reason: "forbidden" };
-
   const { dayStart, dayEnd } = dayBounds();
+
+  const expected =
+    requester.location.code === "canteen"
+      ? await computeExpectedFromTakings(db, locationId, dayStart, dayEnd)
+      : await computeExpected(db, requester);
+  if ("forbidden" in expected) return { ok: false, reason: "forbidden" };
+  if ("takingsNotRecorded" in expected) return { ok: false, reason: "takings_not_recorded" };
+
   const existing = await findTodaysHandover(db, requester.staff.id, locationId, dayStart, dayEnd);
 
   const handover = existing
@@ -103,9 +127,13 @@ export async function recordHandover(
 }
 
 export type GetTodaysHandoverResult =
-  | { ok: true; handover: Handover | null }
+  | { ok: true; handover: Handover | null; takingsRecordedToday: boolean }
   | { ok: false; reason: "forbidden" };
 
+// takingsRecordedToday is only meaningful at the canteen (restaurant has no
+// takings concept, so it's always reported true there) — the UI uses it to
+// show the "record today's takings first" state before the attendant starts
+// a count that has nothing real to be checked against.
 export async function getTodaysHandoverForStaff(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -117,7 +145,13 @@ export async function getTodaysHandoverForStaff(
 
   const { dayStart, dayEnd } = dayBounds();
   const handover = await findTodaysHandover(db, requester.staff.id, locationId, dayStart, dayEnd);
-  return { ok: true, handover };
+
+  const takingsRecordedToday =
+    requester.location.code === "canteen"
+      ? (await findTodaysTakings(db, locationId, dayStart, dayEnd)) !== null
+      : true;
+
+  return { ok: true, handover, takingsRecordedToday };
 }
 
 export type RecordTakingsResult =
