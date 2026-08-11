@@ -6,7 +6,9 @@ transfer movements), 22 (canteen goods need `lastKnownCostMinor` to
 value the own-goods estimate rate), 23 (takings is the revenue figure
 the estimate rate multiplies), 24 (count-derived sales is what a count
 measures the estimate against, and is what "corrects" it)
-**Status:** planned
+**Status:** in-progress
+
+**Claimed:** Claude Code — 2026-08-11.
 
 ## What this delivers
 
