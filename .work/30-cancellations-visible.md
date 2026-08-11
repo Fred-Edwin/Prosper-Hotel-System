@@ -4,7 +4,7 @@
 **Blocked by:** 28 (day-close state — a cancellation only needs special
 handling once post-close cancellation is even possible; before that,
 same-day void already displays correctly per ticket 10)
-**Status:** planned
+**Status:** in-progress (claimed by build session, 2026-08-11)
 
 ## Goal
 
