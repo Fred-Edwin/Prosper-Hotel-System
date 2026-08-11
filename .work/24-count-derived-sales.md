@@ -10,6 +10,46 @@ computation itself only strictly needs 21 and the existing sale/count
 machinery)
 **Status:** done
 
+## Review finding, and its resolution (2026-08-11)
+
+`/review` flagged that `recordCountDerivedSales` in
+`src/modules/stock/logic.ts` imports `creditSaleQuantityByProductAtLocation`
+from `@/modules/sales`, while `sales/logic.ts` already imports
+`recordStockMovement` from `@/modules/stock` — making `stock` and `sales`
+mutually dependent, and suggested moving the join into `reporting` (which
+`docs/architecture.md` names as the seam for cross-module joins).
+
+On closer reading, that suggested fix doesn't fit: `docs/architecture.md`
+is explicit that `reporting` "owns no data" and "reads from everything
+and stores nothing" — but `recordCountDerivedSales` *writes* a
+`sold_derived` `StockMovement`, which is `stock`'s own data. Putting the
+write in `reporting` would violate reporting's read-only character
+exactly as much as the original finding said the bidirectional import
+violated the module-boundary rule.
+
+Re-reading `docs/architecture.md`'s tracer-slice section instead: `stock`
+reading `catalogue` (`findProductsByIds`) is documented as "the first
+real exercise of the cross-module-import rule with two modules that
+actually need each other" — and that relationship is **one-directional**
+(`stock → catalogue`, never the reverse). That's exactly the shape here
+too: `stock → sales` (a count needs to know what credit sales happened)
+mirrors `stock → catalogue` (a movement needs to know what product it
+moves) precisely.
+
+The actual asymmetry is that `sales` *already* depended on `stock`
+(`recordCounterSale` → `recordStockMovement`, pre-existing since well
+before this ticket) — adding `stock → sales` made the pair bidirectional.
+But inverting that pre-existing `sales → stock` dependency is a
+materially larger, riskier change to sale-recording itself, well outside
+this ticket's scope.
+
+**Resolution (confirmed with Edwinfred):** keep `stock → sales` as-is —
+it matches the sanctioned one-directional cross-module-read pattern once
+correctly framed against `catalogue`'s precedent rather than
+`reporting`'s (which doesn't fit, since it can't own a write). Code
+comment in `stock/logic.ts` updated to state this reasoning plainly
+rather than tentatively proposing an alternative it didn't take.
+
 ## What this delivers
 
 CONTEXT.md's `Stock Movement` reason `Sold, derived`: "established at a

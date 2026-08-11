@@ -881,16 +881,18 @@ export async function recordStockCount(
 // skipped, not treated as an error, since a first-ever canteen count is
 // an expected, normal event.
 //
-// Reused directly from the sales module (creditSaleQuantityByProductAtLocation)
+// Reads credit-sale quantities from sales/index.ts (creditSaleQuantityByProductAtLocation)
 // rather than through stock's own movement ledger — credit sales are
-// recorded on the Sale/PaymentLine tables, not as stock movements, so this
-// is the one place stock reads across into sales. sales/logic.ts already
-// imports from stock (recordCounterSale calls recordStockMovement), so
-// this makes the two modules mutually dependent — both directions go
-// through the other's index.ts only, and neither has any module-level
-// side effect that could deadlock on load, so it is safe in practice; a
-// third module implementing "count-derived sales" as an orchestration
-// layer above both would avoid this if it recurs elsewhere.
+// recorded on the Sale/PaymentLine tables, not as stock movements. This is
+// a one-directional stock -> sales read, the same shape as
+// docs/architecture.md's tracer slice: "stock reading catalogue... two
+// modules that actually need each other," never the reverse. sales/logic.ts
+// separately imports recordStockMovement from stock (pre-existing, for
+// recordCounterSale) — that's a different, older relationship this ticket
+// didn't create and isn't in scope to invert. Reviewed and confirmed
+// (ticket 24 review note) that reporting isn't the right home for this
+// instead: reporting "owns no data," but this function writes a
+// sold_derived StockMovement, which is stock's own data.
 async function recordCountDerivedSales(
   db: PrismaClient,
   requester: AuthenticatedStaff,
