@@ -3,7 +3,21 @@
 **Type:** logic (test-first)
 **Blocked by:** None (`StaffMember.dailyRateMinor` already exists;
 ticket 17 explicitly deferred this as its own follow-on)
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done (2026-08-11)
+
+**Scope note (confirmed with Edwinfred during build):** the ticket's
+original "Out" list excluded pay disbursement/"paid" tracking. Edwinfred
+asked mid-build for "mark as paid" to be included after all — a pay
+figure the owner can't distinguish from what's already been paid isn't
+useful standalone. Expanded in place rather than split into a follow-on
+ticket, per explicit direction. Implementation: paying wages creates a
+`running`-category `Expense` (proposal.md §10 already treats wages as a
+running cost) with a new `Expense.payeeStaffMemberId` field distinguishing
+who was paid from who recorded it; `DaysWorked.paidAs` (mirroring
+`Expense.receiptId`'s existing grouping-value pattern) is stamped with
+that Expense's id. Pay period stays current-calendar-month per the
+ticket's original scope — Edwinfred confirmed that's fine for now and
+her actual pay cycle can be revisited later if it turns out to differ.
 
 ## Goal
 
@@ -60,22 +74,24 @@ sentences ticket 17 deliberately left out of staff CRUD.
 
 ## Acceptance criteria
 
-- [ ] A day worked can be recorded for a staff member on a specific
+- [x] A day worked can be recorded for a staff member on a specific
       date, owner-only.
-- [ ] Recording the same staff member/date twice edits in place rather
+- [x] Recording the same staff member/date twice edits in place rather
       than creating a duplicate.
-- [ ] Pay for a staff member over a period equals days worked in that
+- [x] Pay for a staff member over a period equals days worked in that
       period × their `dailyRateMinor`, exactly.
-- [ ] A deactivated staff member's historical days-worked/pay remains
+- [x] A deactivated staff member's historical days-worked/pay remains
       readable (matches the project's deactivate-never-delete rule).
-- [ ] Only the owner can record days worked or view the pay figure.
-- [ ] **Screen:** a new tab/view on the People destination for marking
+- [x] Only the owner can record days worked or view the pay figure.
+- [x] **Screen:** a new tab/view on the People destination for marking
       days worked and reading the computed pay, reached from the
       existing staff list.
-- [ ] Loading, empty (no days recorded yet), and error states via
+- [x] Loading, empty (no days recorded yet), and error states via
       `components/patterns/states.tsx`.
-- [ ] Storybook story covering: empty state, days marked, computed pay
+- [x] Storybook story covering: empty state, days marked, computed pay
       figure.
+- [x] (Added mid-build) Pay can be marked as paid, owner-only, and the
+      figure reflects what's still unpaid — see Scope note above.
 
 ## Verification
 

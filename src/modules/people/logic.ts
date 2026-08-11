@@ -12,11 +12,16 @@ import {
   findStaffMemberById as findStaffMemberByIdQuery,
   listAllStaff,
   listCustomers as listCustomersQuery,
+  listDaysWorked,
+  listDaysWorkedInPeriod,
+  listUnpaidDaysWorkedInPeriod,
+  markDaysWorkedPaid as markDaysWorkedPaidQuery,
   setStaffMemberActive,
   updateCustomerRecord,
   updateStaffMemberRecord,
+  upsertDaysWorked,
 } from "./queries";
-import type { Customer, Location, StaffMember, StaffRole } from "./schema";
+import type { Customer, DaysWorked, Location, StaffMember, StaffRole } from "./schema";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
 
@@ -281,4 +286,124 @@ export async function findCustomerById(
 
 export async function listCustomers(db: PrismaClient): Promise<Customer[]> {
   return listCustomersQuery(db);
+}
+
+// proposal.md §11 is silent on pay period; ticket 35 confirmed the current
+// calendar month as the simplest useful default — Stage 8 owns arbitrary
+// historical periods.
+export function currentMonthBounds(): { periodStart: Date; periodEnd: Date } {
+  const now = new Date();
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return { periodStart, periodEnd };
+}
+
+type DaysWorkedWriteResult =
+  | { ok: true; value: DaysWorked }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// proposal.md §11: "Days worked are recorded" by the owner, directly — not
+// inferred from other activity. Same-day-same-person is an edit in place
+// (queries.ts's upsert on the unique constraint), matching the project's
+// general fast-entry-correction pattern.
+export async function recordDaysWorked(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { staffMemberId: string; date: Date },
+): Promise<DaysWorkedWriteResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const staffMember = await findStaffMemberByIdQuery(db, input.staffMemberId);
+  if (!staffMember) return { ok: false, reason: "not_found" };
+
+  const value = await upsertDaysWorked(db, {
+    staffMemberId: input.staffMemberId,
+    date: input.date,
+    recordedByStaffMemberId: requester.staff.id,
+  });
+  return { ok: true, value };
+}
+
+type DaysWorkedListResult =
+  | { ok: true; value: DaysWorked[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// Owner-only, same gate as listStaffMembers — pay-adjacent data.
+export async function listDaysWorkedForStaff(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  staffMemberId: string,
+): Promise<DaysWorkedListResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const staffMember = await findStaffMemberByIdQuery(db, staffMemberId);
+  if (!staffMember) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await listDaysWorked(db, staffMemberId) };
+}
+
+export type PayForStaff = {
+  daysWorked: number;
+  dailyRateMinor: number;
+  payMinor: number;
+  unpaidDaysWorked: number;
+  unpaidMinor: number;
+};
+
+type GetPayForStaffResult =
+  | { ok: true; value: PayForStaff }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// proposal.md §11: "Pay is calculated as days worked multiplied by the
+// daily rate." Current calendar month only — see currentMonthBounds.
+export async function getPayForStaff(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  staffMemberId: string,
+): Promise<GetPayForStaffResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const staffMember = await findStaffMemberByIdQuery(db, staffMemberId);
+  if (!staffMember) return { ok: false, reason: "not_found" };
+
+  const { periodStart, periodEnd } = currentMonthBounds();
+  const [days, unpaid] = await Promise.all([
+    listDaysWorkedInPeriod(db, staffMemberId, periodStart, periodEnd),
+    listUnpaidDaysWorkedInPeriod(db, staffMemberId, periodStart, periodEnd),
+  ]);
+
+  return {
+    ok: true,
+    value: {
+      daysWorked: days.length,
+      dailyRateMinor: staffMember.dailyRateMinor,
+      payMinor: days.length * staffMember.dailyRateMinor,
+      unpaidDaysWorked: unpaid.length,
+      unpaidMinor: unpaid.length * staffMember.dailyRateMinor,
+    },
+  };
+}
+
+// Ticket 35: called by cash/logic.ts's payWages after it creates the
+// running Expense — cash never reaches past people's index.ts, so this is
+// the one place a wage payment's Expense id gets written onto the
+// DaysWorked rows it covers (paidAs, mirroring Expense.receiptId).
+export async function markDaysWorkedPaid(
+  db: PrismaClient,
+  staffMemberId: string,
+  paidAs: string,
+): Promise<{ ids: string[]; amountMinor: number }> {
+  const { periodStart, periodEnd } = currentMonthBounds();
+  const unpaid = await listUnpaidDaysWorkedInPeriod(db, staffMemberId, periodStart, periodEnd);
+  if (unpaid.length === 0) return { ids: [], amountMinor: 0 };
+
+  const staffMember = await findStaffMemberByIdQuery(db, staffMemberId);
+  const dailyRateMinor = staffMember?.dailyRateMinor ?? 0;
+
+  await markDaysWorkedPaidQuery(
+    db,
+    unpaid.map((d) => d.id),
+    paidAs,
+  );
+  return { ids: unpaid.map((d) => d.id), amountMinor: unpaid.length * dailyRateMinor };
 }

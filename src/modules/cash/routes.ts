@@ -15,6 +15,7 @@ import {
   listDrawingRepaymentsForOwner,
   recordDrawingRepayment,
   reverseDrawingRepayment,
+  payWages,
 } from "./logic";
 import type { ExpenseCategory } from "./schema";
 
@@ -211,6 +212,23 @@ export async function recordExpenseRoute(request: Request): Promise<Response> {
     paymentMethod: body.paymentMethod,
     note: body.note,
     receiptId: body.receiptId,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ expense: result.expense });
+}
+
+export async function payWagesRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await payWages(db, session, {
+    staffMemberId: body.staffMemberId,
+    locationId: session.staff.locationId,
+    paymentMethod: body.paymentMethod,
   });
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });

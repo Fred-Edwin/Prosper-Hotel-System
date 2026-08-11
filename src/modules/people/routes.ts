@@ -5,11 +5,14 @@ import {
   createStaffMember,
   deactivateStaffMember,
   getAuthenticatedStaff,
+  getPayForStaff,
   listCustomers,
+  listDaysWorkedForStaff,
   listStaffMembers,
   login,
   logout,
   reactivateStaffMember,
+  recordDaysWorked,
   updateStaffMember,
 } from "./logic";
 import { listLocations } from "./queries";
@@ -141,6 +144,43 @@ export async function updateStaffMemberRoute(
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
   return Response.json({ staff: result.value });
+}
+
+// Owner-only, per proposal.md's role list — see listStaffMembers.
+export async function daysWorkedRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const [daysResult, payResult] = await Promise.all([
+    listDaysWorkedForStaff(db, session, id),
+    getPayForStaff(db, session, id),
+  ]);
+  if (!daysResult.ok) {
+    return Response.json({ error: daysResult.reason }, { status: writeStatus(daysResult.reason) });
+  }
+  if (!payResult.ok) {
+    return Response.json({ error: payResult.reason }, { status: writeStatus(payResult.reason) });
+  }
+  return Response.json({ daysWorked: daysResult.value, pay: payResult.value });
+}
+
+export async function recordDaysWorkedRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await recordDaysWorked(db, session, {
+    staffMemberId: body.staffMemberId,
+    date: new Date(body.date),
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ daysWorked: result.value });
 }
 
 export async function setStaffMemberActiveRoute(
