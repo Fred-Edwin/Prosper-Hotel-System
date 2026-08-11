@@ -36,3 +36,14 @@ export type Recipe = {
 // null when the product has no recipe at all — distinct from a recipe
 // existing but an ingredient's cost being unknown (also null, per line).
 export type RecipeWithCost = Recipe & { perUnitCostMinor: number | null };
+
+export type Asset = {
+  id: string;
+  name: string;
+  locationId: string;
+  quantity: number;
+  expenseId: string | null;
+  // Filter-only — never surfaced as a visible "Inactive" state. Non-null
+  // means retired.
+  retiredAt: Date | null;
+};

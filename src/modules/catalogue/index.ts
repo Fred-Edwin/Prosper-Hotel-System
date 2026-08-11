@@ -1,6 +1,12 @@
 // Products, ingredients, recipes, prices. See docs/architecture.md.
 
-export { listProducts, findProductsByIds, listIngredients, findIngredientsByIds } from "./queries";
+export {
+  listProducts,
+  findProductsByIds,
+  listIngredients,
+  findIngredientsByIds,
+  listActiveAssets as listAssets,
+} from "./queries";
 export {
   createProduct,
   updateProduct,
@@ -16,8 +22,12 @@ export {
   getCurrentRecipe,
   getRecipeAt,
   listRecipeVersions,
+  createAsset,
+  updateAssetQuantity,
+  linkAssetExpense,
+  retireAsset,
 } from "./logic";
-export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost } from "./schema";
+export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost, Asset } from "./schema";
 export {
   catalogueRoute,
   activeProductsRoute,
@@ -30,4 +40,8 @@ export {
   setIngredientActiveRoute,
   createRecipeRoute,
   recipeVersionsRoute,
+  createAssetRoute,
+  updateAssetQuantityRoute,
+  linkAssetExpenseRoute,
+  retireAssetRoute,
 } from "./routes";

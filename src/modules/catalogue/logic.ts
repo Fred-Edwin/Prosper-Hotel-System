@@ -1,16 +1,24 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { AuthenticatedStaff } from "@/modules/people";
+import { findExpenseById } from "@/modules/cash";
 import {
+  createAssetRecord,
   createIngredientRecord,
   createProductRecord,
   createRecipeRecord,
+  findAssetById,
+  findAssetByNameAndLocation,
   findIngredientById,
   findIngredientByName,
   findIngredientsByIds,
   findProductById,
   findProductByName,
   findRecipeInForceAt,
+  incrementAssetQuantity,
   listRecipeVersionsByProduct,
+  setAssetExpenseId,
+  setAssetQuantity,
+  setAssetRetired,
   setIngredientActive,
   setIngredientLastKnownCost,
   setProductActive,
@@ -18,7 +26,7 @@ import {
   updateIngredientRecord,
   updateProductRecord,
 } from "./queries";
-import type { Ingredient, Product, ProductKind, Recipe, RecipeWithCost } from "./schema";
+import type { Asset, Ingredient, Product, ProductKind, Recipe, RecipeWithCost } from "./schema";
 
 type WriteResult<T> =
   | { ok: true; value: T }
@@ -320,4 +328,91 @@ export async function listRecipeVersions(
   productId: string,
 ): Promise<Recipe[]> {
   return listRecipeVersionsByProduct(db, productId);
+}
+
+type AssetWriteResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: "forbidden" | "not_found" | "invalid_expense" };
+
+// docs/scope.md "Asset register": one register row per asset type per
+// location — a repeat purchase accumulates into the existing row's
+// quantity rather than creating a duplicate.
+export async function createAsset(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { name: string; locationId: string; quantity: number; expenseId?: string | null },
+): Promise<AssetWriteResult<Asset>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  if (input.expenseId) {
+    const expense = await findExpenseById(db, input.expenseId);
+    if (!expense || expense.category !== "asset") {
+      return { ok: false, reason: "invalid_expense" };
+    }
+  }
+
+  const existing = await findAssetByNameAndLocation(db, input.name, input.locationId);
+  if (existing) {
+    return { ok: true, value: await incrementAssetQuantity(db, existing.id, input.quantity) };
+  }
+
+  const asset = await createAssetRecord(db, {
+    name: input.name,
+    locationId: input.locationId,
+    quantity: input.quantity,
+    expenseId: input.expenseId ?? null,
+  });
+  return { ok: true, value: asset };
+}
+
+// Sets quantity to the given value directly — distinct from createAsset's
+// accumulate-on-repeat-purchase behavior, which only applies when
+// recording a new purchase, not when correcting the figure on an edit.
+export async function updateAssetQuantity(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+  quantity: number,
+): Promise<AssetWriteResult<Asset>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findAssetById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await setAssetQuantity(db, id, quantity) };
+}
+
+export async function linkAssetExpense(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+  expenseId: string,
+): Promise<AssetWriteResult<Asset>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findAssetById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  const expense = await findExpenseById(db, expenseId);
+  if (!expense || expense.category !== "asset") {
+    return { ok: false, reason: "invalid_expense" };
+  }
+
+  return { ok: true, value: await setAssetExpenseId(db, id, expenseId) };
+}
+
+// Filter-only soft delete — deliberately not the visible active/dimmed
+// pattern deactivateIngredient/deactivateProduct use. The row is kept, but
+// listAssets excludes it and there is no reactivation path (not asked for).
+export async function retireAsset(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+): Promise<AssetWriteResult<Asset>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findAssetById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await setAssetRetired(db, id) };
 }

@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { Ingredient, Product, ProductKind, Recipe } from "./schema";
+import type { Asset, Ingredient, Product, ProductKind, Recipe } from "./schema";
 
 export async function listProducts(db: PrismaClient): Promise<Product[]> {
   return db.product.findMany({ orderBy: { name: "asc" } });
@@ -154,4 +154,57 @@ export async function findRecipeInForceAt(
     include: { lines: true },
     orderBy: { effectiveFrom: "desc" },
   });
+}
+
+// Excludes retired assets — the ticket's filter-only soft delete, applied
+// at the query layer so no caller can accidentally see a retired row.
+export async function listActiveAssets(db: PrismaClient): Promise<Asset[]> {
+  return db.asset.findMany({ where: { retiredAt: null }, orderBy: { name: "asc" } });
+}
+
+export async function findAssetById(db: PrismaClient, id: string): Promise<Asset | null> {
+  return db.asset.findUnique({ where: { id } });
+}
+
+export async function findAssetByNameAndLocation(
+  db: PrismaClient,
+  name: string,
+  locationId: string,
+): Promise<Asset | null> {
+  return db.asset.findUnique({ where: { name_locationId: { name, locationId } } });
+}
+
+export async function createAssetRecord(
+  db: PrismaClient,
+  data: { name: string; locationId: string; quantity: number; expenseId: string | null },
+): Promise<Asset> {
+  return db.asset.create({ data });
+}
+
+export async function incrementAssetQuantity(
+  db: PrismaClient,
+  id: string,
+  by: number,
+): Promise<Asset> {
+  return db.asset.update({ where: { id }, data: { quantity: { increment: by } } });
+}
+
+export async function setAssetQuantity(
+  db: PrismaClient,
+  id: string,
+  quantity: number,
+): Promise<Asset> {
+  return db.asset.update({ where: { id }, data: { quantity } });
+}
+
+export async function setAssetExpenseId(
+  db: PrismaClient,
+  id: string,
+  expenseId: string,
+): Promise<Asset> {
+  return db.asset.update({ where: { id }, data: { expenseId } });
+}
+
+export async function setAssetRetired(db: PrismaClient, id: string): Promise<Asset> {
+  return db.asset.update({ where: { id }, data: { retiredAt: new Date() } });
 }

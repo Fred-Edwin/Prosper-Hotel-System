@@ -4,7 +4,7 @@
 **Blocked by:** None (extends `catalogue`, reads optionally from
 `cash`'s existing `Expense` records — a one-directional read, same
 shape as `stock → catalogue`'s existing precedent)
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done
 
 ## Goal
 

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { CatalogueDestinationView } from "./catalogue-destination";
-import type { Product, Ingredient, RecipeWithCost } from "../schema";
+import type { Asset, Product, Ingredient, RecipeWithCost } from "../schema";
+import type { Location } from "@/modules/people";
 
 const products: Product[] = [
   { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, active: true },
@@ -14,6 +15,17 @@ const ingredients: Ingredient[] = [
   { id: "i1", name: "Maize flour", unitOfMeasure: "kg", lastKnownCostMinor: 120, active: true },
   { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 280, active: true },
   { id: "i3", name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 80, active: true },
+];
+
+const locations: Location[] = [
+  { id: "l1", code: "restaurant", name: "Restaurant" },
+  { id: "l2", code: "canteen", name: "Canteen" },
+];
+
+const assets: Asset[] = [
+  { id: "a1", name: "Chest freezer", locationId: "l1", quantity: 1, expenseId: null, retiredAt: null },
+  { id: "a2", name: "Dining chairs", locationId: "l1", quantity: 24, expenseId: null, retiredAt: null },
+  { id: "a3", name: "Spoons", locationId: "l2", quantity: 40, expenseId: null, retiredAt: null },
 ];
 
 const mukimoRecipe: RecipeWithCost = {
@@ -46,6 +58,8 @@ export const Default: Story = {
         { productId: "p2", recipe: null },
         { productId: "p3", recipe: null },
       ],
+      assets,
+      locations,
     },
   },
 };
