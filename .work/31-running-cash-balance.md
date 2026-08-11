@@ -5,7 +5,22 @@
 `Handover`, `Expense` — ticket 16's four categories are already stored
 with enough shape to compute this)
 
-**Status:** done (2026-08-11)
+**Status:** done (2026-08-11 — review fix applied)
+
+**Review finding (fixed):** `RunningBalanceStrip` in
+`money-out-destination.tsx` previously only mounted when the expense
+list's own `state.status === "ready"`, since `MoneyOutContentView`
+early-returned `LoadingTable`/`ErrorState`/`PermissionDenied` for the
+list before reaching the JSX that rendered the balance strip — hiding the
+balance whenever the list was loading, erroring, or denied, even if the
+balance itself had already resolved. Fixed by restructuring
+`MoneyOutContentView` to compute the list's `content` (loading skeleton,
+error, denied, or the real toolbar+list) as a variable first, then always
+render `<RunningBalanceStrip>` above `{content}` in a single return —
+so the balance strip now reflects `balanceState` independently of
+whatever the expense list is doing. Verified via Storybook screenshots
+of the Loading and Error State stories: the balance figures now render
+above the list's own skeleton/error state in both.
 
 **Scope note:** `Expense` had no payment-method field — confirmed against
 `prisma/schema.prisma` before writing acceptance criteria, per the Context

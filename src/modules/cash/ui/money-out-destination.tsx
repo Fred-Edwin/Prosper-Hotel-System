@@ -282,60 +282,69 @@ export function MoneyOutContentView({
         e.staffMemberName.toLowerCase().includes(query.trim().toLowerCase())),
   );
 
-  if (state.status === "loading") return <LoadingTable summary={3} rows={8} columns={8} />;
-  if (state.status === "error") return <ErrorState what="money out" onRetry={onRetry} />;
-  if (state.status === "denied")
-    return (
+  let content: React.ReactNode;
+  if (state.status === "loading") {
+    content = <LoadingTable summary={3} rows={8} columns={8} />;
+  } else if (state.status === "error") {
+    content = <ErrorState what="money out" onRetry={onRetry} />;
+  } else if (state.status === "denied") {
+    content = (
       <PermissionDenied
         title="Money out is owner-only"
         body="Only the owner records what the business pays out."
       />
     );
+  } else {
+    content = (
+      <>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <TableToolbar
+            query={query}
+            onQuery={setQuery}
+            placeholder="Search what for, or who recorded it"
+            noun="payments"
+            count={filtered.length}
+            total={expenses.length}
+            filters={[
+              {
+                key: "category",
+                value: category,
+                onChange: setCategory,
+                allLabel: "All categories",
+                options: (Object.keys(categoryLabel) as ExpenseView["category"][]).map((k) => ({
+                  value: k,
+                  label: categoryLabel[k],
+                })),
+                width: "10rem",
+              },
+            ]}
+          />
+          <div className="shrink-0">
+            <RecordExpenseSheet
+              receipts={receipts}
+              receiptsLoading={receiptsLoading}
+              saving={saving}
+              error={saveError}
+              onSave={handleSave}
+            />
+          </div>
+        </div>
+
+        <MoneyOutList
+          expenses={expenses}
+          filtered={filtered}
+          onClearFilters={clear}
+          onReverse={handleReverse}
+          reversingId={reversingId}
+        />
+      </>
+    );
+  }
 
   return (
     <div>
       <RunningBalanceStrip state={balanceState} onRetry={loadBalance} />
-
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <TableToolbar
-          query={query}
-          onQuery={setQuery}
-          placeholder="Search what for, or who recorded it"
-          noun="payments"
-          count={filtered.length}
-          total={expenses.length}
-          filters={[
-            {
-              key: "category",
-              value: category,
-              onChange: setCategory,
-              allLabel: "All categories",
-              options: (Object.keys(categoryLabel) as ExpenseView["category"][]).map((k) => ({
-                value: k,
-                label: categoryLabel[k],
-              })),
-              width: "10rem",
-            },
-          ]}
-        />
-        <div className="shrink-0">
-          <RecordExpenseSheet
-            receipts={receipts}
-            receiptsLoading={receiptsLoading}
-            saving={saving}
-            error={saveError}
-            onSave={handleSave}
-          />
-        </div>
-      </div>
-
-      <MoneyOutList
-        expenses={expenses}
-        filtered={filtered}
-        onClearFilters={clear}
-        onReverse={handleReverse}
-        reversingId={reversingId}
-      />
+      {content}
     </div>
   );
 }
