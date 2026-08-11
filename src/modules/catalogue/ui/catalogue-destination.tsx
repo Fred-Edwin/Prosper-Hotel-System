@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * The Catalogue destination — Products, Ingredients, Recipes tabs behind
- * one admin nav link. Ported from the locked design round (round.tsx),
- * minus the Assets tab (belongs to `cash`, a later stage — see
- * .work/03-catalogue-destination.md) and minus fixtures, replaced with the
- * real fetch/mutation layer.
+ * The Catalogue destination — Products, Ingredients, Recipes, Assets tabs
+ * behind one admin nav link. Ported from the locked design round
+ * (round.tsx), minus fixtures, replaced with the real fetch/mutation
+ * layer. Assets (ticket 34) landed later than the other three, once
+ * docs/scope.md added the asset register to this module.
  *
  * Owner-only: the /catalogue route denies non-owners before this ever
  * mounts, so this component assumes an owner session.
@@ -17,6 +17,7 @@ import { LoadingTable, ErrorState, PermissionDenied } from "@/components/pattern
 import { ProductsTab } from "./products-tab";
 import { IngredientsTab } from "./ingredients-tab";
 import { RecipesTab } from "./recipes-tab";
+import { AssetsTab } from "./assets-tab";
 import { fetchCatalogue, parseRecipeVersions, type CatalogueState } from "./catalogue-data";
 import type { Recipe } from "../schema";
 
@@ -24,6 +25,7 @@ const tabs = [
   { key: "products", label: "Products" },
   { key: "ingredients", label: "Ingredients" },
   { key: "recipes", label: "Recipes" },
+  { key: "assets", label: "Assets" },
 ];
 
 async function postJson(url: string, method: string, body: unknown) {
@@ -90,7 +92,7 @@ function CatalogueTabs({ initial }: { initial: Extract<CatalogueState, { status:
   const [versionsByProduct, setVersionsByProduct] = useState<Record<string, Recipe[] | undefined>>({});
   const [versionsLoading, setVersionsLoading] = useState(false);
 
-  const { products, ingredients, recipes } = data;
+  const { products, ingredients, recipes, assets, locations } = data;
   const cookedFoodProducts = products.filter((p) => p.kind === "cooked_food" && p.active);
 
   async function refresh() {
@@ -186,6 +188,22 @@ function CatalogueTabs({ initial }: { initial: Extract<CatalogueState, { status:
               if (result.ok) await loadVersions(productId);
               return result;
             })
+          }
+        />
+      </TabsContent>
+
+      <TabsContent value="assets">
+        <AssetsTab
+          assets={assets}
+          locations={locations}
+          saving={saving}
+          error={error}
+          onCreate={(input) => withSaving(() => postJson("/api/catalogue/assets", "POST", input))}
+          onUpdateQuantity={(id, quantity) =>
+            withSaving(() => postJson(`/api/catalogue/assets/${id}/quantity`, "PATCH", { quantity }))
+          }
+          onRetire={(id) =>
+            withSaving(() => postJson(`/api/catalogue/assets/${id}/retire`, "PATCH", {}))
           }
         />
       </TabsContent>

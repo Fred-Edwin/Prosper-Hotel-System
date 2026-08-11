@@ -1,13 +1,15 @@
 "use client";
 
 /**
- * Fetch layer for the Catalogue destination. One GET populates all three
- * tabs — products, ingredients and every cooked-food product's current
- * recipe — because they are read together on landing and a single owner-
- * gated round trip is cheaper than three.
+ * Fetch layer for the Catalogue destination. One GET populates all four
+ * tabs — products, ingredients, every cooked-food product's current
+ * recipe, and assets (plus the locations an asset can belong to) — because
+ * they are read together on landing and a single owner-gated round trip is
+ * cheaper than four.
  */
 
-import type { Ingredient, Product, Recipe, RecipeWithCost } from "../schema";
+import type { Asset, Ingredient, Product, Recipe, RecipeWithCost } from "../schema";
+import type { Location } from "@/modules/people";
 
 export type RecipeRow = { productId: string; recipe: RecipeWithCost | null };
 
@@ -15,7 +17,14 @@ export type CatalogueState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "denied" }
-  | { status: "ready"; products: Product[]; ingredients: Ingredient[]; recipes: RecipeRow[] };
+  | {
+      status: "ready";
+      products: Product[];
+      ingredients: Ingredient[];
+      recipes: RecipeRow[];
+      assets: Asset[];
+      locations: Location[];
+    };
 
 // JSON has no Date type — fetch().json() leaves effectiveFrom/createdAt as
 // strings, but every caller (VersionHistory, RecipeBuilder) expects a real
@@ -38,7 +47,12 @@ export async function fetchCatalogue(): Promise<CatalogueState> {
     if (response.status === 403) return { status: "denied" };
     if (!response.ok) return { status: "error" };
     const body = await response.json();
-    if (!Array.isArray(body?.products) || !Array.isArray(body?.ingredients)) {
+    if (
+      !Array.isArray(body?.products) ||
+      !Array.isArray(body?.ingredients) ||
+      !Array.isArray(body?.assets) ||
+      !Array.isArray(body?.locations)
+    ) {
       return { status: "error" };
     }
     const recipes: RecipeRow[] = (body.recipes ?? []).map(
@@ -52,6 +66,8 @@ export async function fetchCatalogue(): Promise<CatalogueState> {
       products: body.products,
       ingredients: body.ingredients,
       recipes,
+      assets: body.assets,
+      locations: body.locations,
     };
   } catch {
     return { status: "error" };

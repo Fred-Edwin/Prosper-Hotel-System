@@ -1,19 +1,23 @@
 import { db } from "@/shared/db";
-import { getSession } from "@/modules/people";
+import { getSession, listLocations } from "@/modules/people";
 import {
+  createAsset,
   createIngredient,
   createProduct,
   createRecipe,
   deactivateIngredient,
   deactivateProduct,
   getCurrentRecipe,
+  linkAssetExpense,
   listRecipeVersions,
   reactivateIngredient,
   reactivateProduct,
+  retireAsset,
+  updateAssetQuantity,
   updateIngredient,
   updateProduct,
 } from "./logic";
-import { listIngredients, listProducts } from "./queries";
+import { listActiveAssets, listIngredients, listProducts } from "./queries";
 import type { Ingredient, Product } from "./schema";
 
 function writeStatus(reason: string): number {
@@ -29,9 +33,11 @@ export async function catalogueRoute(): Promise<Response> {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const [products, ingredients] = await Promise.all([
+  const [products, ingredients, assets, locations] = await Promise.all([
     listProducts(db),
     listIngredients(db),
+    listActiveAssets(db),
+    listLocations(db),
   ]);
 
   const cookedFood = products.filter((p: Product) => p.kind === "cooked_food");
@@ -42,7 +48,7 @@ export async function catalogueRoute(): Promise<Response> {
     })),
   );
 
-  return Response.json({ products, ingredients, recipes });
+  return Response.json({ products, ingredients, recipes, assets, locations });
 }
 
 // Every staff member needs to pick a product and its price when recording a
@@ -190,4 +196,60 @@ export async function recipeVersionsRoute(
   const { productId } = await params;
   const versions = await listRecipeVersions(db, productId);
   return Response.json({ versions });
+}
+
+export async function createAssetRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await createAsset(db, session, {
+    name: body.name,
+    locationId: body.locationId,
+    quantity: body.quantity,
+    expenseId: body.expenseId ?? null,
+  });
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ asset: result.value });
+}
+
+export async function updateAssetQuantityRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const body = await request.json();
+  const result = await updateAssetQuantity(db, session, id, body.quantity);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ asset: result.value });
+}
+
+export async function linkAssetExpenseRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const body = await request.json();
+  const result = await linkAssetExpense(db, session, id, body.expenseId);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ asset: result.value });
+}
+
+export async function retireAssetRoute(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const result = await retireAsset(db, session, id);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ asset: result.value });
 }

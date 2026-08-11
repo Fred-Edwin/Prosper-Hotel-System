@@ -33,6 +33,7 @@ model Location {
   takings             Takings[]
   expenses            Expense[]
   stockCounts         StockCount[]
+  assets              Asset[]
 
   @@map("locations")
 }
@@ -111,6 +112,31 @@ model Ingredient {
   movements          IngredientMovement[]
 
   @@map("ingredients")
+}
+
+// docs/scope.md "Asset register": the durable things the business owns
+// (equipment, furniture, plates, spoons), distinct from stock's consumable
+// inventory. Never individually serialized — one row per asset type per
+// location, quantity accumulates on repeat purchase. Retirement is a
+// filter-only soft delete (retiredAt), deliberately not the visible
+// active/dimmed pattern money-touching records use — a retired asset must
+// not appear in the owner's UI at all, per the confirmed divergence from
+// deactivateIngredient/deactivateProduct.
+model Asset {
+  id         String    @id @default(cuid())
+  name       String
+  locationId String
+  location   Location  @relation(fields: [locationId], references: [id])
+  quantity   Int
+  // Optional: assets already owned before the system existed can be
+  // recorded without a fabricated historical Expense.
+  expenseId  String?   @unique
+  expense    Expense?  @relation(fields: [expenseId], references: [id])
+  retiredAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([name, locationId])
+  @@map("assets")
 }
 
 // docs/architecture.md "Records that must not move silently": a recipe
@@ -465,6 +491,7 @@ model Expense {
   reversedAt    DateTime?
   reversedBy    String?
   drawingDebt   DrawingDebt?
+  asset         Asset?
 
   @@map("expenses")
 }

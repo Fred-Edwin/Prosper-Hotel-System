@@ -47,6 +47,7 @@ export {
   runningCashBalanceRoute,
 } from "./routes";
 export type { Expense, ExpenseCategory, ExpensePaymentMethod, DrawingDebt } from "./schema";
+export { findExpenseById } from "./queries";
 
 export {
   recordDrawingRepayment,
