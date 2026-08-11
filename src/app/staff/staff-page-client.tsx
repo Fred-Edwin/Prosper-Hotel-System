@@ -14,6 +14,7 @@ import { TransferHistoryView } from "@/modules/stock/ui/transfer-history";
 import { NewSale } from "@/modules/sales/ui/new-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
 import { Handover } from "@/modules/cash/ui/handover";
+import { Takings } from "@/modules/cash/ui/takings";
 import { NotBuilt } from "@/components/patterns/states";
 
 export function StaffPageClient({
@@ -55,6 +56,7 @@ export function StaffPageClient({
       {active === "transfer" && <TransferStock />}
       {active === "transfer-history" && <TransferHistoryView />}
       {active === "handover" && <Handover />}
+      {active === "takings" && <Takings />}
       {active !== null &&
         active !== "stock" &&
         active !== "sell" &&
@@ -65,7 +67,9 @@ export function StaffPageClient({
         active !== "wastage" &&
         active !== "count" &&
         active !== "transfer" &&
-        active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
+        active !== "transfer-history" &&
+        active !== "handover" &&
+        active !== "takings" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>
   );
 }

@@ -6,18 +6,21 @@ import {
   createDrawingDebt,
   createExpense,
   createHandoverRecord,
+  createTakingsRecord,
   findDrawingDebtByExpenseId,
   findExpenseById,
   findTodaysHandover,
   findTodaysHandoversAtLocation,
+  findTodaysTakings,
   listExpensesAtLocation,
   markDrawingDebtReversed,
   markExpenseReversed,
   sumUnreversedDrawingDebt,
   updateHandoverActuals,
+  updateTakingsAmounts,
   type HandoverWithStaffName,
 } from "./queries";
-import type { Expense, ExpenseCategory, Handover } from "./schema";
+import type { Expense, ExpenseCategory, Handover, Takings } from "./schema";
 
 function dayBounds(): { dayStart: Date; dayEnd: Date } {
   const dayStart = new Date();
@@ -113,6 +116,64 @@ export async function getTodaysHandoverForStaff(
   const { dayStart, dayEnd } = dayBounds();
   const handover = await findTodaysHandover(db, requester.staff.id, locationId, dayStart, dayEnd);
   return { ok: true, handover };
+}
+
+export type RecordTakingsResult =
+  | { ok: true; takings: Takings }
+  | { ok: false; reason: "forbidden" | "invalid_amount" };
+
+// CONTEXT.md's Takings: the canteen's structural substitute for per-sale
+// recording — no expected figure to compute or compare against, unlike
+// recordHandover. Same upsert-if-exists-today shape though: a miscount is
+// corrected by re-entry, not a reversing entry (ticket 13's reasoning for
+// handover actuals applies the same way here).
+export async function recordTakings(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { cashMinor: number; mpesaMinor: number },
+): Promise<RecordTakingsResult> {
+  const locationId = requester.staff.locationId;
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.cashMinor < 0 || input.mpesaMinor < 0) {
+    return { ok: false, reason: "invalid_amount" };
+  }
+
+  const { dayStart, dayEnd } = dayBounds();
+  const existing = await findTodaysTakings(db, locationId, dayStart, dayEnd);
+
+  const takings = existing
+    ? await updateTakingsAmounts(db, existing.id, {
+        cashMinor: input.cashMinor,
+        mpesaMinor: input.mpesaMinor,
+      })
+    : await createTakingsRecord(db, {
+        locationId,
+        cashMinor: input.cashMinor,
+        mpesaMinor: input.mpesaMinor,
+      });
+
+  return { ok: true, takings };
+}
+
+export type GetTodaysTakingsResult =
+  | { ok: true; takings: Takings | null }
+  | { ok: false; reason: "forbidden" };
+
+export async function getTodaysTakingsForStaff(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+): Promise<GetTodaysTakingsResult> {
+  const locationId = requester.staff.locationId;
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const { dayStart, dayEnd } = dayBounds();
+  const takings = await findTodaysTakings(db, locationId, dayStart, dayEnd);
+  return { ok: true, takings };
 }
 
 export type RecordExpenseResult =

@@ -27,6 +27,17 @@ export type Expense = {
   reversedBy: string | null;
 };
 
+// CONTEXT.md's Takings: cash and M-Pesa totals declared at close, the
+// canteen's substitute for per-sale recording — no expected figure, since
+// nothing was recorded per-sale to expect against.
+export type Takings = {
+  id: string;
+  locationId: string;
+  cashMinor: number;
+  mpesaMinor: number;
+  occurredAt: Date;
+};
+
 // CONTEXT.md's Cash Movement: a drawing is "recorded as a cash movement
 // out and a debt owed back to the business." One row per drawing-category
 // Expense.

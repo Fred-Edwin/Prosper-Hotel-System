@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { DrawingDebt, Expense, ExpenseCategory, Handover } from "./schema";
+import type { DrawingDebt, Expense, ExpenseCategory, Handover, Takings } from "./schema";
 
 export async function findTodaysHandover(
   db: PrismaClient,
@@ -37,6 +37,35 @@ export async function updateHandoverActuals(
   data: { actualCashMinor: number; actualMpesaMinor: number },
 ): Promise<Handover> {
   return db.handover.update({ where: { id }, data });
+}
+
+export async function findTodaysTakings(
+  db: PrismaClient,
+  locationId: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<Takings | null> {
+  return db.takings.findFirst({
+    where: {
+      locationId,
+      occurredAt: { gte: dayStart, lt: dayEnd },
+    },
+  });
+}
+
+export async function createTakingsRecord(
+  db: PrismaClient,
+  data: { locationId: string; cashMinor: number; mpesaMinor: number },
+): Promise<Takings> {
+  return db.takings.create({ data });
+}
+
+export async function updateTakingsAmounts(
+  db: PrismaClient,
+  id: string,
+  data: { cashMinor: number; mpesaMinor: number },
+): Promise<Takings> {
+  return db.takings.update({ where: { id }, data });
 }
 
 export async function createExpense(
