@@ -8,7 +8,7 @@ is checked against in a later stage, and both need to exist for the
 canteen's revenue/cost story to be demoable together, though the
 computation itself only strictly needs 21 and the existing sale/count
 machinery)
-**Status:** planned
+**Status:** in-progress (claimed by build session, 2026-08-11)
 
 ## What this delivers
 
