@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends the existing `Product` model and
 `recordIngredientReceipt`'s pattern; does not depend on ticket 21)
-**Status:** in-review
+**Status:** done
 
 ## What this delivers
 
