@@ -95,6 +95,7 @@ export async function createExpense(
     paymentMethod: ExpensePaymentMethod;
     note: string | null;
     receiptId: string | null;
+    payeeStaffMemberId?: string | null;
   },
 ): Promise<Expense> {
   const row = await db.expense.create({ data });

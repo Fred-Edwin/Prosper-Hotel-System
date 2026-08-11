@@ -60,7 +60,10 @@ model StaffMember {
   sales               Sale[]
   handovers           Handover[]
   expenses            Expense[]
+  expensesPaidTo      Expense[]            @relation("ExpensePayee")
   stockCounts         StockCount[]
+  daysWorked          DaysWorked[]         @relation("DaysWorkedByStaff")
+  daysWorkedRecorded  DaysWorked[]         @relation("DaysWorkedRecordedBy")
 
   @@map("staff_members")
 }
@@ -76,12 +79,12 @@ enum ProductKind {
 }
 
 model Product {
-  id         String          @id @default(cuid())
-  name       String          @unique
-  kind       ProductKind
+  id                 String          @id @default(cuid())
+  name               String          @unique
+  kind               ProductKind
   // Minor units (e.g. cents), never float — avoids rounding drift in money
   // figures. Null means no price set, distinct from priced-at-zero.
-  priceMinor Int?
+  priceMinor         Int?
   // Convenience figure only, not the authoritative cost history (that's
   // stock's movement ledger). Null until a delivery is received. Same
   // running-average update as Ingredient.lastKnownCostMinor (formulas.md
@@ -89,11 +92,11 @@ model Product {
   lastKnownCostMinor Int?
   // docs/architecture.md: deactivated, never deleted — a sold product must
   // stay attributed on historical sales even after withdrawal from sale.
-  active     Boolean         @default(true)
-  createdAt  DateTime        @default(now())
-  movements  StockMovement[]
-  recipes    Recipe[]
-  saleLines  SaleLine[]
+  active             Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  movements          StockMovement[]
+  recipes            Recipe[]
+  saleLines          SaleLine[]
 
   @@map("products")
 }
@@ -292,30 +295,30 @@ model PaymentLine {
 }
 
 model StockMovement {
-  id            String              @id @default(cuid())
-  productId     String
-  product       Product             @relation(fields: [productId], references: [id])
-  locationId    String
-  location      Location            @relation(fields: [locationId], references: [id])
+  id                 String              @id @default(cuid())
+  productId          String
+  product            Product             @relation(fields: [productId], references: [id])
+  locationId         String
+  location           Location            @relation(fields: [locationId], references: [id])
   // Signed: positive for stock arriving, negative for stock leaving.
   // docs/architecture.md: a stock level is not a stored number, it is the
   // sum of the movements.
-  quantity      Int
-  reason        StockMovementReason
+  quantity           Int
+  reason             StockMovementReason
   // Populated only for wasted/consumed/given_away (ticket 15) — the two
   // ways CONTEXT.md's Non-sales Stock Consumption is valued, snapshotted
   // at record time same as SaleLine.priceMinor, so a later price/cost
   // change never reshapes a past entry. Null for every other reason.
-  costBasisMinor    Int?
-  sellingValueMinor Int?
-  isEstimated       Boolean?
-  staffMemberId String
-  staffMember   StaffMember         @relation(fields: [staffMemberId], references: [id])
-  occurredAt    DateTime            @default(now())
+  costBasisMinor     Int?
+  sellingValueMinor  Int?
+  isEstimated        Boolean?
+  staffMemberId      String
+  staffMember        StaffMember         @relation(fields: [staffMemberId], references: [id])
+  occurredAt         DateTime            @default(now())
   // Shared by the outgoing and incoming rows of one transfer (ticket 21).
   // Unlike a receipt this spans product and ingredient movement tables, so
   // it remains a grouping value rather than a relation to a new record.
-  transferId    String?
+  transferId         String?
   // Set on a reversal's own rows to the transferId of the transfer it
   // undoes (ticket 21) — lets the history view mark the original as
   // reversed and refuse to reverse it twice, without a relation table.
@@ -324,7 +327,7 @@ model StockMovement {
   // same convention as IngredientMovement.receiptId — a delivery may mix
   // product and ingredient lines under one receipt id. Null for every
   // other reason.
-  receiptId     String?
+  receiptId          String?
 
   @@map("stock_movements")
 }
@@ -335,33 +338,33 @@ model StockMovement {
 // table, per ticket 12's decision — the two families are read as genuinely
 // separate records by the client.
 model IngredientMovement {
-  id            String              @id @default(cuid())
-  ingredientId  String
-  ingredient    Ingredient          @relation(fields: [ingredientId], references: [id])
-  locationId    String
-  location      Location            @relation(fields: [locationId], references: [id])
+  id                 String              @id @default(cuid())
+  ingredientId       String
+  ingredient         Ingredient          @relation(fields: [ingredientId], references: [id])
+  locationId         String
+  location           Location            @relation(fields: [locationId], references: [id])
   // Unsigned in this ticket — receiving is the only reason written so far.
   // A future issuing/wastage ticket may need this signed, same as
   // StockMovement.quantity; revisit then rather than guessing the sign
   // convention now.
-  quantity      Int
-  reason        StockMovementReason
+  quantity           Int
+  reason             StockMovementReason
   // Price paid per unit on this occasion — proposal.md: "prices are
   // entered per delivery rather than held as a fixed figure." Required for
   // `received`; unused for wasted/consumed/given_away (ticket 15), which
   // use costBasisMinor/sellingValueMinor below instead — an ingredient's
   // per-unit purchase cost doesn't change when some of it is wasted.
-  unitCostMinor Int?
+  unitCostMinor      Int?
   // Populated only for wasted/consumed/given_away (ticket 15), same
   // convention as StockMovement. Ingredients have no selling price
   // (CONTEXT.md: never sold on their own), so sellingValueMinor is always
   // null here — only costBasisMinor/isEstimated apply.
-  costBasisMinor    Int?
-  sellingValueMinor Int?
-  isEstimated       Boolean?
-  staffMemberId String
-  staffMember   StaffMember         @relation(fields: [staffMemberId], references: [id])
-  occurredAt    DateTime            @default(now())
+  costBasisMinor     Int?
+  sellingValueMinor  Int?
+  isEstimated        Boolean?
+  staffMemberId      String
+  staffMember        StaffMember         @relation(fields: [staffMemberId], references: [id])
+  occurredAt         DateTime            @default(now())
   // Shared by every line recorded in the same recordIngredientReceipt call
   // — ticket 16's Stock-category Expense references this, not an individual
   // line, so "the receipt this payment pays for" means the whole delivery.
@@ -370,9 +373,9 @@ model IngredientMovement {
   // Null for wasted/consumed/given_away (ticket 15): those movements have
   // no delivery to group under, and nothing reads receiptId off them —
   // findReceiptsAtLocation filters to reason = "received" already.
-  receiptId     String?
+  receiptId          String?
   // Shared by the outgoing and incoming rows of one transfer (ticket 21).
-  transferId    String?
+  transferId         String?
   // Set on a reversal's own rows to the transferId of the transfer it
   // undoes (ticket 21) — lets the history view mark the original as
   // reversed and refuse to reverse it twice, without a relation table.
@@ -390,6 +393,28 @@ model Session {
   createdAt     DateTime    @default(now())
 
   @@map("sessions")
+}
+
+// proposal.md §11: "Days worked are recorded" — one row per staff member
+// per date, owner-recorded. The unique constraint is what makes recording
+// the same date twice an edit in place rather than a duplicate (ticket 35),
+// the same enforcement style as Handover's same-day rule but as a DB
+// constraint since there's no "expected figure" here to recompute.
+// paidAs mirrors Expense.receiptId's grouping-value pattern: set to the
+// paying Expense's id once a wage payment covers this day, null until then.
+model DaysWorked {
+  id                      String      @id @default(cuid())
+  staffMemberId           String
+  staffMember             StaffMember @relation("DaysWorkedByStaff", fields: [staffMemberId], references: [id])
+  date                    DateTime
+  recordedByStaffMemberId String
+  recordedByStaffMember   StaffMember @relation("DaysWorkedRecordedBy", fields: [recordedByStaffMemberId], references: [id])
+  paidAs                  String?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  @@unique([staffMemberId, date])
+  @@map("days_worked")
 }
 
 // CONTEXT.md: a named person the business deals with by name rather than
@@ -466,32 +491,37 @@ enum ExpenseCategory {
 // Owner-only, per architecture.md ("only the owner pays money out").
 // Reversal, not deletion — same principle as Sale.voided.
 model Expense {
-  id            String          @id @default(cuid())
-  locationId    String
-  location      Location        @relation(fields: [locationId], references: [id])
-  staffMemberId String
-  staffMember   StaffMember     @relation(fields: [staffMemberId], references: [id])
-  category      ExpenseCategory
+  id                 String          @id @default(cuid())
+  locationId         String
+  location           Location        @relation(fields: [locationId], references: [id])
+  staffMemberId      String
+  staffMember        StaffMember     @relation(fields: [staffMemberId], references: [id])
+  category           ExpenseCategory
+  // Set only for a wages payment (category = running): who was paid, as
+  // distinct from staffMemberId above (who — the owner — recorded the
+  // payment). Ticket 35.
+  payeeStaffMemberId String?
+  payeeStaffMember   StaffMember?    @relation("ExpensePayee", fields: [payeeStaffMemberId], references: [id])
   // Cash or M-Pesa only — never credit, which is a sales-side concept for
   // money coming in, not a way the business pays money out. Ticket 31's
   // running balance needs this to split money-out the same way money-in
   // (Handover) already is. Defaulted to cash for rows recorded before
   // this field existed, since there is no real record of which method
   // they used.
-  paymentMethod PaymentMethod   @default(cash)
-  amountMinor   Int
-  note          String?
+  paymentMethod      PaymentMethod   @default(cash)
+  amountMinor        Int
+  note               String?
   // Required only for category = stock — the IngredientMovement.receiptId
   // group this payment pays for. Not a Prisma relation: receiptId is a
   // grouping value shared by several IngredientMovement rows, not a row's
   // own id, so there is nothing singular to point a foreign key at.
-  receiptId     String?
-  occurredAt    DateTime        @default(now())
-  reversed      Boolean         @default(false)
-  reversedAt    DateTime?
-  reversedBy    String?
-  drawingDebt   DrawingDebt?
-  asset         Asset?
+  receiptId          String?
+  occurredAt         DateTime        @default(now())
+  reversed           Boolean         @default(false)
+  reversedAt         DateTime?
+  reversedBy         String?
+  drawingDebt        DrawingDebt?
+  asset              Asset?
 
   @@map("expenses")
 }
@@ -502,11 +532,11 @@ model Expense {
 // of unreversed rows (ticket 16 — no "settled" concept exists yet, so this
 // is deliberately the simplest honest shape: an ever-growing figure).
 model DrawingDebt {
-  id          String   @id @default(cuid())
-  expenseId   String   @unique
-  expense     Expense  @relation(fields: [expenseId], references: [id])
+  id          String    @id @default(cuid())
+  expenseId   String    @unique
+  expense     Expense   @relation(fields: [expenseId], references: [id])
   amountMinor Int
-  reversed    Boolean  @default(false)
+  reversed    Boolean   @default(false)
   reversedAt  DateTime?
 
   @@map("drawing_debts")
@@ -531,12 +561,12 @@ model DrawingRepayment {
 // together, same shape as IngredientMovement.receiptId grouping a
 // delivery. Ticket 20.
 model StockCount {
-  id            String          @id @default(cuid())
+  id            String           @id @default(cuid())
   locationId    String
-  location      Location        @relation(fields: [locationId], references: [id])
+  location      Location         @relation(fields: [locationId], references: [id])
   staffMemberId String
-  staffMember   StaffMember     @relation(fields: [staffMemberId], references: [id])
-  occurredAt    DateTime        @default(now())
+  staffMember   StaffMember      @relation(fields: [staffMemberId], references: [id])
+  occurredAt    DateTime         @default(now())
   lines         StockCountLine[]
 
   @@map("stock_counts")
@@ -548,18 +578,18 @@ model StockCount {
 // snapshotted at count time per the ticket — later movements must not
 // reshape a past count's comparison.
 model StockCountLine {
-  id                String      @id @default(cuid())
-  stockCountId      String
-  stockCount        StockCount  @relation(fields: [stockCountId], references: [id])
-  itemType          String
-  itemId            String
-  countedQuantity   Int
-  expectedQuantity  Int
+  id               String     @id @default(cuid())
+  stockCountId     String
+  stockCount       StockCount @relation(fields: [stockCountId], references: [id])
+  itemType         String
+  itemId           String
+  countedQuantity  Int
+  expectedQuantity Int
   // Set only once the owner applies the correction from this line's
   // difference — ticket's "correcting an already-corrected line is
   // rejected" rule reads off this being non-null.
-  correctedAt       DateTime?
-  correctedBy       String?
+  correctedAt      DateTime?
+  correctedBy      String?
 
   @@map("stock_count_lines")
 }

@@ -77,15 +77,19 @@ new destinations get added here as tickets that build them land, per
 | Story | Path | Status |
 |---|---|---|
 | Modules/People/StaffDestination | `src/modules/people/ui/staff-destination.stories.tsx` | approved |
+| Modules/People/DaysWorkedTab | `src/modules/people/ui/days-worked-tab.stories.tsx` | approved |
 
 ## Not yet built
 
 Per `docs/roadmap.md`'s stage order — canteen operations (stage 4),
-handover/close-of-day beyond restaurant (stage 5 remainder), full people
-management (days worked, pay — stage 7) have no screens yet. Reporting
-(stage 8) has its Profit panel (ticket 25); stock valuation, amounts
-owed and profit-by-arbitrary-period remain unbuilt. Added to this file
-as their tickets land, not speculatively ahead of them.
+handover/close-of-day beyond restaurant (stage 5 remainder) have no
+screens yet. Days worked and the pay figure (stage 7) landed via ticket
+35; pay disbursement tracking ("mark as paid") landed as part of the same
+ticket rather than deferred, since a pay figure with no record of what
+was already paid wasn't useful on its own — see ticket 35's notes.
+Reporting (stage 8) has its Profit panel (ticket 25); stock valuation,
+amounts owed and profit-by-arbitrary-period remain unbuilt. Added to
+this file as their tickets land, not speculatively ahead of them.
 
 ## Note on naming
 

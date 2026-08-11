@@ -1,5 +1,10 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import { canAccessLocation, type AuthenticatedStaff } from "@/modules/people";
+import {
+  canAccessLocation,
+  getPayForStaff,
+  markDaysWorkedPaid,
+  type AuthenticatedStaff,
+} from "@/modules/people";
 import { listTodaysSalesForStaff } from "@/modules/sales";
 import { findReceipt } from "@/modules/stock";
 import {
@@ -308,6 +313,45 @@ export async function recordExpense(
   if (input.category === "drawing") {
     await createDrawingDebt(db, { expenseId: expense.id, amountMinor: input.amountMinor });
   }
+
+  return { ok: true, expense };
+}
+
+export type PayWagesResult =
+  | { ok: true; expense: Expense }
+  | { ok: false; reason: "forbidden" | "not_found" | "nothing_to_pay" };
+
+// proposal.md §11's pay figure, disbursed: pays out every unpaid day
+// worked this month for one staff member as a single running-cost expense
+// (proposal.md §10: wages are a running cost) — the same category and
+// profit treatment as gas, charcoal, electricity, rent. staffMemberId on
+// the Expense stays "who recorded it" (the owner); payeeStaffMemberId is
+// who was paid. people/logic.ts's markDaysWorkedPaid tags the covered
+// DaysWorked rows with this Expense's id, mirroring receiptId's grouping
+// pattern — cash never reaches past people's index.ts to write them itself.
+export async function payWages(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { staffMemberId: string; locationId: string; paymentMethod: ExpensePaymentMethod },
+): Promise<PayWagesResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const pay = await getPayForStaff(db, requester, input.staffMemberId);
+  if (!pay.ok) return { ok: false, reason: pay.reason === "forbidden" ? "forbidden" : "not_found" };
+  if (pay.value.unpaidMinor <= 0) return { ok: false, reason: "nothing_to_pay" };
+
+  const expense = await createExpense(db, {
+    locationId: input.locationId,
+    staffMemberId: requester.staff.id,
+    category: "running",
+    amountMinor: pay.value.unpaidMinor,
+    paymentMethod: input.paymentMethod,
+    note: null,
+    receiptId: null,
+    payeeStaffMemberId: input.staffMemberId,
+  });
+
+  await markDaysWorkedPaid(db, input.staffMemberId, expense.id);
 
   return { ok: true, expense };
 }

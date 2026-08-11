@@ -1,17 +1,20 @@
 "use client";
 
 /**
- * The People destination's Staff tab content — list, create, edit,
- * deactivate/reactivate. Customers (ticket 06's own record) are a
- * separate tab, out of scope for ticket 17.
+ * The People destination's Staff area — Staff and Days worked tabs.
+ * Customers (ticket 06's own record) are a separate destination tab, out
+ * of scope here. Days worked (ticket 35) reuses the CatalogueDestination
+ * tabs shape.
  *
  * Owner-only: the /people route denies non-owners before this ever
  * mounts, same as CatalogueDestination assumes an owner session.
  */
 
 import { useEffect, useState } from "react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { LoadingTable, ErrorState, PermissionDenied } from "@/components/patterns/states";
 import { StaffTab } from "./staff-tab";
+import { DaysWorkedTab, type DaysWorkedState } from "./days-worked-tab";
 import { fetchStaff, type StaffState } from "./staff-data";
 
 async function postJson(url: string, method: string, body: unknown) {
@@ -23,6 +26,18 @@ async function postJson(url: string, method: string, body: unknown) {
   const data = await response.json();
   if (!response.ok) return { ok: false as const, reason: data.error as string };
   return { ok: true as const, data };
+}
+
+async function fetchDaysWorked(staffMemberId: string): Promise<DaysWorkedState> {
+  try {
+    const response = await fetch(`/api/people/staff/${staffMemberId}/days-worked`);
+    if (!response.ok) return { status: "error" };
+    const body = await response.json();
+    if (!Array.isArray(body?.daysWorked) || !body?.pay) return { status: "error" };
+    return { status: "ready", daysWorked: body.daysWorked, pay: body.pay };
+  } catch {
+    return { status: "error" };
+  }
 }
 
 export function StaffDestination() {
@@ -75,6 +90,7 @@ function StaffDestinationReady({
 }: {
   initial: Extract<StaffState, { status: "ready" }>;
 }) {
+  const [tab, setTab] = useState("staff");
   const [data, setData] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -103,18 +119,38 @@ function StaffDestinationReady({
   }
 
   return (
-    <StaffTab
-      staff={data.staff}
-      locations={data.locations}
-      saving={saving}
-      error={error}
-      onCreate={(input) => withSaving(() => postJson("/api/people/staff", "POST", input))}
-      onUpdate={(id, input) =>
-        withSaving(() => postJson(`/api/people/staff/${id}`, "PATCH", input))
-      }
-      onSetActive={(id, active) =>
-        withSaving(() => postJson(`/api/people/staff/${id}/active`, "PATCH", { active }))
-      }
-    />
+    <Tabs value={tab} onValueChange={setTab}>
+      <TabsList className="mb-3">
+        <TabsTrigger value="staff">Staff</TabsTrigger>
+        <TabsTrigger value="days-worked">Days worked</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="staff">
+        <StaffTab
+          staff={data.staff}
+          locations={data.locations}
+          saving={saving}
+          error={error}
+          onCreate={(input) => withSaving(() => postJson("/api/people/staff", "POST", input))}
+          onUpdate={(id, input) =>
+            withSaving(() => postJson(`/api/people/staff/${id}`, "PATCH", input))
+          }
+          onSetActive={(id, active) =>
+            withSaving(() => postJson(`/api/people/staff/${id}/active`, "PATCH", { active }))
+          }
+        />
+      </TabsContent>
+
+      <TabsContent value="days-worked">
+        <DaysWorkedTab
+          staff={data.staff}
+          onFetch={fetchDaysWorked}
+          onRecord={(staffMemberId, date) =>
+            postJson("/api/people/days-worked", "POST", { staffMemberId, date })
+          }
+          onPay={(staffMemberId) => postJson("/api/cash/wages", "POST", { staffMemberId, paymentMethod: "cash" })}
+        />
+      </TabsContent>
+    </Tabs>
   );
 }

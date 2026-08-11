@@ -25,6 +25,9 @@ export type Expense = {
   paymentMethod: ExpensePaymentMethod;
   note: string | null;
   receiptId: string | null;
+  // Set only for a wages payment (category = running): who was paid, as
+  // distinct from staffMemberId (who recorded the payment). Ticket 35.
+  payeeStaffMemberId: string | null;
   occurredAt: Date;
   reversed: boolean;
   reversedAt: Date | null;

@@ -23,3 +23,11 @@ export type Customer = {
   name: string;
   phone: string | null;
 };
+
+export type DaysWorked = {
+  id: string;
+  staffMemberId: string;
+  date: Date;
+  recordedByStaffMemberId: string;
+  paidAs: string | null;
+};

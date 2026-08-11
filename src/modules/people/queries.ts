@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { Customer, Location, StaffMember } from "./schema";
+import type { Customer, DaysWorked, Location, StaffMember } from "./schema";
 
 export async function findLocationByCode(
   db: PrismaClient,
@@ -144,4 +144,67 @@ export async function findCustomerById(
 
 export async function listCustomers(db: PrismaClient): Promise<Customer[]> {
   return db.customer.findMany({ orderBy: { name: "asc" } });
+}
+
+// proposal.md §11 / ticket 35: recording the same staff member/date twice
+// is an edit in place, enforced by DaysWorked's @@unique([staffMemberId,
+// date]) — upsert is the natural fit for that constraint.
+export async function upsertDaysWorked(
+  db: PrismaClient,
+  data: { staffMemberId: string; date: Date; recordedByStaffMemberId: string },
+): Promise<DaysWorked> {
+  return db.daysWorked.upsert({
+    where: { staffMemberId_date: { staffMemberId: data.staffMemberId, date: data.date } },
+    create: data,
+    update: { recordedByStaffMemberId: data.recordedByStaffMemberId },
+  });
+}
+
+export async function listDaysWorked(
+  db: PrismaClient,
+  staffMemberId: string,
+): Promise<DaysWorked[]> {
+  return db.daysWorked.findMany({
+    where: { staffMemberId },
+    orderBy: { date: "desc" },
+  });
+}
+
+export async function listDaysWorkedInPeriod(
+  db: PrismaClient,
+  staffMemberId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<DaysWorked[]> {
+  return db.daysWorked.findMany({
+    where: { staffMemberId, date: { gte: periodStart, lt: periodEnd } },
+    orderBy: { date: "asc" },
+  });
+}
+
+// Ticket 35: the unpaid days a wage payment will cover — paidAs mirrors
+// Expense.receiptId's grouping-value pattern, set once a payment covers a
+// day and left null until then.
+export async function listUnpaidDaysWorkedInPeriod(
+  db: PrismaClient,
+  staffMemberId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<DaysWorked[]> {
+  return db.daysWorked.findMany({
+    where: {
+      staffMemberId,
+      paidAs: null,
+      date: { gte: periodStart, lt: periodEnd },
+    },
+    orderBy: { date: "asc" },
+  });
+}
+
+export async function markDaysWorkedPaid(
+  db: PrismaClient,
+  ids: string[],
+  paidAs: string,
+): Promise<void> {
+  await db.daysWorked.updateMany({ where: { id: { in: ids } }, data: { paidAs } });
 }

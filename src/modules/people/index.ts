@@ -6,16 +6,20 @@ export {
   createStaffMember,
   deactivateStaffMember,
   findCustomerById,
+  getPayForStaff,
   hashPin,
   listCustomers,
+  listDaysWorkedForStaff,
   listStaffMembers,
   login,
   logout,
+  markDaysWorkedPaid,
   reactivateStaffMember,
+  recordDaysWorked,
   updateCustomer,
   updateStaffMember,
 } from "./logic";
-export type { LoginResult, AuthenticatedStaff } from "./logic";
+export type { LoginResult, AuthenticatedStaff, PayForStaff } from "./logic";
 export {
   loginRoute,
   logoutRoute,
@@ -26,6 +30,8 @@ export {
   createStaffMemberRoute,
   updateStaffMemberRoute,
   setStaffMemberActiveRoute,
+  daysWorkedRoute,
+  recordDaysWorkedRoute,
 } from "./routes";
 export {
   listActiveStaffAtLocation,
@@ -34,4 +40,4 @@ export {
   listLocations,
   findStaffMembersByIds,
 } from "./queries";
-export type { StaffMember, Location, StaffRole, LocationCode, Customer } from "./schema";
+export type { StaffMember, Location, StaffRole, LocationCode, Customer, DaysWorked } from "./schema";

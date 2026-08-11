@@ -31,6 +31,7 @@ export {
   drawingDebtOwed,
   getRunningCosts,
   getRunningCashBalance,
+  payWages,
 } from "./logic";
 export type {
   RecordExpenseResult,
@@ -38,6 +39,7 @@ export type {
   ListExpensesResult,
   RunningCostsResult,
   GetRunningCashBalanceResult,
+  PayWagesResult,
 } from "./logic";
 export {
   listExpensesRoute,
@@ -45,6 +47,7 @@ export {
   recordExpenseRoute,
   reverseExpenseRoute,
   runningCashBalanceRoute,
+  payWagesRoute,
 } from "./routes";
 export type { Expense, ExpenseCategory, ExpensePaymentMethod, DrawingDebt } from "./schema";
 export { findExpenseById } from "./queries";
