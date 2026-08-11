@@ -517,11 +517,16 @@ export async function recordIngredientReceipt(
         receiptId,
       });
       movements.push(movement);
+      const quantityOnHand = productQuantityOnHand.get(line.itemId) ?? 0;
       await recordProductCost(db, requester, line.itemId, {
-        quantityOnHand: productQuantityOnHand.get(line.itemId) ?? 0,
+        quantityOnHand,
         quantityBought: line.quantity,
         unitCostMinor: line.unitCostMinor,
       });
+      // A second line for the same product later in this call must see
+      // this line's delivery as already on hand — same as two sequential
+      // recordIngredientReceipt calls would (review finding, PR #6).
+      productQuantityOnHand.set(line.itemId, quantityOnHand + line.quantity);
       continue;
     }
 
@@ -535,11 +540,14 @@ export async function recordIngredientReceipt(
       receiptId,
     });
     movements.push(movement);
+    const quantityOnHand = ingredientQuantityOnHand.get(line.itemId) ?? 0;
     await recordIngredientCost(db, requester, line.itemId, {
-      quantityOnHand: ingredientQuantityOnHand.get(line.itemId) ?? 0,
+      quantityOnHand,
       quantityBought: line.quantity,
       unitCostMinor: line.unitCostMinor,
     });
+    // Same reasoning as the product branch above.
+    ingredientQuantityOnHand.set(line.itemId, quantityOnHand + line.quantity);
   }
 
   return { ok: true, movements };

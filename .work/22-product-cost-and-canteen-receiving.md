@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends the existing `Product` model and
 `recordIngredientReceipt`'s pattern; does not depend on ticket 21)
-**Status:** in-progress
+**Status:** in-review
 
 ## What this delivers
 
@@ -93,20 +93,20 @@ and, later (ticket 25), the canteen's own-goods cost-estimate rate.
 - [x] Storybook: extend `ReceiveDelivery`'s story with a canteen/product
       variant (product-only delivery, and a mixed delivery).
 
-## Review findings (rejected — see PR #6)
+## Review findings (rejected — see PR #6) — addressed
 
-- **Blocking.** `recordIngredientReceipt` (`src/modules/stock/logic.ts`)
-  computes each item's quantity-on-hand once, up front, before the write
+- **Blocking, fixed.** `recordIngredientReceipt` (`src/modules/stock/logic.ts`)
+  computed each item's quantity-on-hand once, up front, before the write
   loop. Two lines for the *same* product/ingredient within one delivery
   call both read the same stale pre-delivery quantity, so the second
-  line's running average is wrong (it ignores the first line's delivery
-  entirely). The built screen can't trigger this (its `add()` already
-  dedupes by `itemId`), but the logic function is a public module export
-  and `routes.ts` passes `body.lines` straight through with no dedup, so
-  it's reachable directly via `/api/stock/receive`. Fix: recompute (or
-  incrementally track) quantity-on-hand per item as each line is written,
-  not once before the loop — and add a test with two lines for the same
-  item in one call proving the average matches two sequential calls.
+  line's running average was wrong (it ignored the first line's delivery
+  entirely). Fixed by updating `productQuantityOnHand`/
+  `ingredientQuantityOnHand` in place after each line is written, so a
+  later line for the same item sees the accumulated on-hand quantity —
+  matching what two sequential `recordIngredientReceipt` calls produce.
+  Two regression tests added to `receiving.integration.test.ts` (one
+  product, one ingredient): two lines for the same item in one call, now
+  asserting the same result as the existing sequential-calls test.
 - **Non-blocking, noted for awareness.** `findReceiptsAtLocation`
   (`src/modules/stock/queries.ts`) values a historical product line using
   the product's *current* `lastKnownCostMinor`, not the price paid on

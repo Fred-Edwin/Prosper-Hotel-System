@@ -267,6 +267,46 @@ describe("recordIngredientReceipt", () => {
     expect(product?.lastKnownCostMinor).toBe(9000);
   });
 
+  // Review finding (PR #6): quantity-on-hand was read once, up front, for
+  // the whole call — a second line for the same item saw the same stale
+  // pre-delivery quantity as the first, instead of accounting for what the
+  // first line had just delivered. Two lines for the same item in one call
+  // must produce the same result as two sequential calls.
+  test("two lines for the same product in one call apply the running average sequentially, matching two separate calls", async () => {
+    const requester = staffAt("store_manager", restaurantId, storeManagerId);
+
+    // 0 on hand, buy 10 at 80, then buy 20 at 95 -> 90 (same worked example
+    // as the sequential-calls test above, but both lines in one call).
+    const result = await recordIngredientReceipt(testDb, requester, {
+      locationId: restaurantId,
+      lines: [
+        { itemType: "product", itemId: sodaId, quantity: 10, unitCostMinor: 8000 },
+        { itemType: "product", itemId: sodaId, quantity: 20, unitCostMinor: 9500 },
+      ],
+    });
+    expect(result.ok).toBe(true);
+
+    const product = await testDb.product.findUnique({ where: { id: sodaId } });
+    expect(product?.lastKnownCostMinor).toBe(9000);
+  });
+
+  test("two lines for the same ingredient in one call apply the running average sequentially", async () => {
+    const requester = staffAt("store_manager", restaurantId, storeManagerId);
+
+    // Flour starts at 0 on hand. Buy 10 at 80, then buy 20 at 95 -> 90.
+    const result = await recordIngredientReceipt(testDb, requester, {
+      locationId: restaurantId,
+      lines: [
+        { itemType: "ingredient", itemId: flourId, quantity: 10, unitCostMinor: 8000 },
+        { itemType: "ingredient", itemId: flourId, quantity: 20, unitCostMinor: 9500 },
+      ],
+    });
+    expect(result.ok).toBe(true);
+
+    const ingredient = await testDb.ingredient.findUnique({ where: { id: flourId } });
+    expect(ingredient?.lastKnownCostMinor).toBe(9000);
+  });
+
   test("rejects a line for an inactive product", async () => {
     const inactive = await testDb.product.create({
       data: { name: "Discontinued snack", kind: "goods", active: false },
