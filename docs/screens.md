@@ -64,6 +64,12 @@ new destinations get added here as tickets that build them land, per
 | Cash/MoneyOutDestination | `src/modules/cash/ui/money-out-destination.stories.tsx` | approved |
 | Modules/Cash/Takings | `src/modules/cash/ui/takings.stories.tsx` | approved |
 
+## Reporting
+
+| Story | Path | Status |
+|---|---|---|
+| Modules/Reporting/DashboardProfit | `src/modules/reporting/ui/dashboard-profit.stories.tsx` | approved |
+
 ## People
 
 | Story | Path | Status |
@@ -74,9 +80,10 @@ new destinations get added here as tickets that build them land, per
 
 Per `docs/roadmap.md`'s stage order — canteen operations (stage 4),
 handover/close-of-day beyond restaurant (stage 5 remainder), full people
-management (days worked, pay — stage 7), and all of reporting (stage 8)
-have no screens yet. Added to this file as their tickets land, not
-speculatively ahead of them.
+management (days worked, pay — stage 7) have no screens yet. Reporting
+(stage 8) has its Profit panel (ticket 25); stock valuation, amounts
+owed and profit-by-arbitrary-period remain unbuilt. Added to this file
+as their tickets land, not speculatively ahead of them.
 
 ## Note on naming
 

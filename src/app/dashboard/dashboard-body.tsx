@@ -7,18 +7,20 @@
  * side, Handover full-width, then Stock movements + Store movements side by
  * side.
  *
- * Ticket 14 is handover-only — every other section's module doesn't exist
- * yet (profit and cash position need `reporting`, low stock needs `stock`'s
- * valuation shape, which architecture.md notes already came out smaller
- * than this same prototype once). Each of those sections keeps its locked
- * position and card chrome but renders `SectionNotBuilt` instead of content,
- * so the eventual shape is visible now and each later ticket only has to
- * replace one card's body — never re-derive the layout.
+ * Ticket 14 wired Handover; ticket 25 wires Profit (revenue, cost of goods
+ * sold — both locations — running costs, net profit). Every remaining
+ * section's module doesn't exist yet (cash position needs `cash`'s own
+ * dashboard reads, low stock needs `stock`'s valuation shape, which
+ * architecture.md notes already came out smaller than this same prototype
+ * once). Each of those sections keeps its locked position and card chrome
+ * but renders `SectionNotBuilt` instead of content, so the eventual shape
+ * is visible now and each later ticket only has to replace one card's
+ * body — never re-derive the layout.
  */
 
 import { SectionHeader, SectionNotBuilt } from "@/components/patterns/states";
-import { Badge } from "@/components/ui/badge";
 import { DashboardHandovers } from "@/modules/cash/ui/dashboard-handovers";
+import { DashboardProfit } from "@/modules/reporting/ui/dashboard-profit";
 
 function Card({
   title,
@@ -38,15 +40,7 @@ function Card({
 export function DashboardBody() {
   return (
     <>
-      <div className="mb-4 overflow-hidden rounded-xl border bg-card">
-        <div className="flex items-center justify-between px-5 pt-4 pb-3">
-          <h2 className="text-sm font-medium">Profit</h2>
-          <Badge variant="outline" className="text-[10px] font-normal">
-            not built yet
-          </Badge>
-        </div>
-        <SectionNotBuilt section="Profit" />
-      </div>
+      <DashboardProfit />
 
       <div className="mb-4 grid gap-px overflow-hidden rounded-lg border bg-border md:grid-cols-2 xl:grid-cols-4">
         <div className="bg-card">
