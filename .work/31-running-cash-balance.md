@@ -5,7 +5,20 @@
 `Handover`, `Expense` — ticket 16's four categories are already stored
 with enough shape to compute this)
 
-**Status:** done (2026-08-11)
+**Status:** in-progress (rejected by /review, 2026-08-11 — see finding below)
+
+**Review finding (blocking):** `RunningBalanceStrip` in
+`money-out-destination.tsx` only ever mounts when the expense list's own
+`state.status === "ready"`, because `MoneyOutContentView` early-returns
+`LoadingTable`/`ErrorState`/`PermissionDenied` for the list before
+reaching the JSX that renders the balance strip. This means the balance's
+own loading/error states are unreachable, and its `denied` branch is dead
+code — contradicting the component's own comment ("independent of the
+expense list, since one failing to load shouldn't hide the other") and
+the acceptance criterion that the balance have its own loading/error
+states. Fix: render `<RunningBalanceStrip>` before/outside the expense
+list's early-return branches so it always reflects `balanceState`
+regardless of the list's state.
 
 **Scope note:** `Expense` had no payment-method field — confirmed against
 `prisma/schema.prisma` before writing acceptance criteria, per the Context
