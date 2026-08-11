@@ -10,6 +10,7 @@ import {
   findProductsByIds,
   getCurrentRecipe,
   recordIngredientCost,
+  recordProductCost,
 } from "@/modules/catalogue";
 import {
   createIngredientConsumptionMovement,
@@ -429,8 +430,15 @@ export async function listTransfersAtLocation(
   return { ok: true, transfers };
 }
 
+export type ReceiptLine = {
+  itemType: "product" | "ingredient";
+  itemId: string;
+  quantity: number;
+  unitCostMinor: number;
+};
+
 export type RecordIngredientReceiptResult =
-  | { ok: true; movements: IngredientMovement[] }
+  | { ok: true; movements: (StockMovement | IngredientMovement)[] }
   | { ok: false; reason: "forbidden" | "invalid_quantity" | "invalid_cost" | "inactive_ingredient" };
 
 // architecture.md: receiving is a store-manager/attendant capability, each
@@ -439,12 +447,19 @@ function canReceive(role: string): boolean {
   return role === "owner" || role === "store_manager" || role === "attendant";
 }
 
+// Ticket 22: a supplier drop-off may include both ingredients and products
+// in one visit (e.g. the canteen receiving printer paper and airtime
+// scratch cards together) — every line, of either family, shares one
+// receipt id, per the pattern recordIngredientReceipt established (ticket
+// 12). "inactive_ingredient" is kept as the shared reason for an inactive
+// line of either type — no separate reason exists for products, since the
+// two families are validated identically here.
 export async function recordIngredientReceipt(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   input: {
     locationId: string;
-    lines: { ingredientId: string; quantity: number; unitCostMinor: number }[];
+    lines: ReceiptLine[];
   },
 ): Promise<RecordIngredientReceiptResult> {
   if (
@@ -462,22 +477,61 @@ export async function recordIngredientReceipt(
     return { ok: false, reason: "invalid_cost" };
   }
 
-  const ingredients = await findIngredientsByIds(
-    db,
-    input.lines.map((line) => line.ingredientId),
-  );
+  const productLines = input.lines.filter((line) => line.itemType === "product");
+  const ingredientLines = input.lines.filter((line) => line.itemType === "ingredient");
+
+  const [products, ingredients] = await Promise.all([
+    findProductsByIds(db, productLines.map((line) => line.itemId)),
+    findIngredientsByIds(db, ingredientLines.map((line) => line.itemId)),
+  ]);
+  const productById = new Map(products.map((p) => [p.id, p]));
   const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
-  const allActive = input.lines.every((line) => ingredientById.get(line.ingredientId)?.active);
+
+  const allActive =
+    productLines.every((line) => productById.get(line.itemId)?.active) &&
+    ingredientLines.every((line) => ingredientById.get(line.itemId)?.active);
   if (!allActive) return { ok: false, reason: "inactive_ingredient" };
+
+  const [productSums, ingredientSums] = await Promise.all([
+    sumMovementsByProductAtLocation(db, input.locationId),
+    sumMovementsByIngredientAtLocation(db, input.locationId),
+  ]);
+  const productQuantityOnHand = new Map(productSums.map((s) => [s.productId, s.quantityOnHand]));
+  const ingredientQuantityOnHand = new Map(
+    ingredientSums.map((s) => [s.ingredientId, s.quantityOnHand]),
+  );
 
   // Shared by every line in this call — what a Stock-category Expense
   // (cash module) references as "the receipt it pays for."
   const receiptId = crypto.randomUUID();
 
-  const movements: IngredientMovement[] = [];
+  const movements: (StockMovement | IngredientMovement)[] = [];
   for (const line of input.lines) {
+    if (line.itemType === "product") {
+      const movement = await createStockMovement(db, {
+        productId: line.itemId,
+        locationId: input.locationId,
+        quantity: line.quantity,
+        reason: "received",
+        staffMemberId: requester.staff.id,
+        receiptId,
+      });
+      movements.push(movement);
+      const quantityOnHand = productQuantityOnHand.get(line.itemId) ?? 0;
+      await recordProductCost(db, requester, line.itemId, {
+        quantityOnHand,
+        quantityBought: line.quantity,
+        unitCostMinor: line.unitCostMinor,
+      });
+      // A second line for the same product later in this call must see
+      // this line's delivery as already on hand — same as two sequential
+      // recordIngredientReceipt calls would (review finding, PR #6).
+      productQuantityOnHand.set(line.itemId, quantityOnHand + line.quantity);
+      continue;
+    }
+
     const movement = await createIngredientMovement(db, {
-      ingredientId: line.ingredientId,
+      ingredientId: line.itemId,
       locationId: input.locationId,
       quantity: line.quantity,
       reason: "received",
@@ -486,7 +540,14 @@ export async function recordIngredientReceipt(
       receiptId,
     });
     movements.push(movement);
-    await recordIngredientCost(db, requester, line.ingredientId, line.unitCostMinor);
+    const quantityOnHand = ingredientQuantityOnHand.get(line.itemId) ?? 0;
+    await recordIngredientCost(db, requester, line.itemId, {
+      quantityOnHand,
+      quantityBought: line.quantity,
+      unitCostMinor: line.unitCostMinor,
+    });
+    // Same reasoning as the product branch above.
+    ingredientQuantityOnHand.set(line.itemId, quantityOnHand + line.quantity);
   }
 
   return { ok: true, movements };

@@ -14,6 +14,7 @@ import {
   setIngredientActive,
   setIngredientLastKnownCost,
   setProductActive,
+  setProductLastKnownCost,
   updateIngredientRecord,
   updateProductRecord,
 } from "./queries";
@@ -170,6 +171,25 @@ export async function reactivateIngredient(
   return { ok: true, value: await setIngredientActive(db, id, true) };
 }
 
+// formulas.md §3: "flour was bought three times at three prices — what is
+// it worth now?" — a running average recalculated on every delivery:
+//   new average = (qty on hand × current average + qty bought × price paid)
+//                 ÷ (qty on hand + qty bought)
+// Where nothing is on hand yet (or no average is known), the new average is
+// simply the price just paid.
+function runningAverageMinor(input: {
+  quantityOnHand: number;
+  currentAverageMinor: number | null;
+  quantityBought: number;
+  unitCostMinor: number;
+}): number {
+  const { quantityOnHand, currentAverageMinor, quantityBought, unitCostMinor } = input;
+  if (quantityOnHand <= 0 || currentAverageMinor == null) return unitCostMinor;
+
+  const totalValue = quantityOnHand * currentAverageMinor + quantityBought * unitCostMinor;
+  return Math.round(totalValue / (quantityOnHand + quantityBought));
+}
+
 // Deliberately not owner-gated, unlike updateIngredient: this only records
 // the price paid on a delivery (a frequent store-manager/attendant action,
 // like createCustomer), never the ingredient's name or unit of measure —
@@ -178,12 +198,42 @@ export async function recordIngredientCost(
   db: PrismaClient,
   _requester: AuthenticatedStaff,
   id: string,
-  unitCostMinor: number,
+  input: { quantityOnHand: number; quantityBought: number; unitCostMinor: number },
 ): Promise<WriteResult<Ingredient>> {
   const current = await findIngredientById(db, id);
   if (!current) return { ok: false, reason: "not_found" };
 
-  return { ok: true, value: await setIngredientLastKnownCost(db, id, unitCostMinor) };
+  const newAverage = runningAverageMinor({
+    quantityOnHand: input.quantityOnHand,
+    currentAverageMinor: current.lastKnownCostMinor,
+    quantityBought: input.quantityBought,
+    unitCostMinor: input.unitCostMinor,
+  });
+
+  return { ok: true, value: await setIngredientLastKnownCost(db, id, newAverage) };
+}
+
+// Mirrors recordIngredientCost — same running average (formulas.md §3),
+// same not-owner-gated reasoning, applied to purchased goods (Product)
+// instead of Ingredient. Cooked food's cost still comes from Recipe, never
+// this path.
+export async function recordProductCost(
+  db: PrismaClient,
+  _requester: AuthenticatedStaff,
+  id: string,
+  input: { quantityOnHand: number; quantityBought: number; unitCostMinor: number },
+): Promise<WriteResult<Product>> {
+  const current = await findProductById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  const newAverage = runningAverageMinor({
+    quantityOnHand: input.quantityOnHand,
+    currentAverageMinor: current.lastKnownCostMinor,
+    quantityBought: input.quantityBought,
+    unitCostMinor: input.unitCostMinor,
+  });
+
+  return { ok: true, value: await setProductLastKnownCost(db, id, newAverage) };
 }
 
 export async function createRecipe(

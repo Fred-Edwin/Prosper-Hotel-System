@@ -3,11 +3,11 @@ import { CatalogueDestinationView } from "./catalogue-destination";
 import type { Product, Ingredient, RecipeWithCost } from "../schema";
 
 const products: Product[] = [
-  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, active: true },
-  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, active: true },
-  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, active: true },
-  { id: "p4", name: "Soda 500ml", kind: "goods", priceMinor: 80, active: true },
-  { id: "p5", name: "Photocopy (per page)", kind: "service", priceMinor: 5, active: true },
+  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, active: true },
+  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, active: true },
+  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, lastKnownCostMinor: null, active: true },
+  { id: "p4", name: "Soda 500ml", kind: "goods", priceMinor: 80, lastKnownCostMinor: 50, active: true },
+  { id: "p5", name: "Photocopy (per page)", kind: "service", priceMinor: 5, lastKnownCostMinor: null, active: true },
 ];
 
 const ingredients: Ingredient[] = [

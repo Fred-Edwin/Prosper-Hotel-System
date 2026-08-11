@@ -13,6 +13,8 @@ import {
   listRecipeVersions,
   reactivateIngredient,
   reactivateProduct,
+  recordIngredientCost,
+  recordProductCost,
   updateIngredient,
   updateProduct,
 } from "../index";
@@ -199,6 +201,91 @@ describe("ingredients", () => {
     const result = await deactivateIngredient(testDb, cashier, created.value.id);
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+// formulas.md §3: "flour was bought three times at three prices — what is
+// it worth now?" — a running average recalculated on every delivery, not a
+// plain overwrite of the last price paid.
+describe("cost recording — running average (formulas.md §3)", () => {
+  test("recordIngredientCost applies the worked example: 10kg@80 on hand, buy 20kg@95 -> 90/kg", async () => {
+    const created = await createIngredient(testDb, owner, {
+      name: "Flour",
+      unitOfMeasure: "kg",
+      lastKnownCostMinor: 8000,
+    });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const result = await recordIngredientCost(testDb, owner, created.value.id, {
+      quantityOnHand: 10,
+      quantityBought: 20,
+      unitCostMinor: 9500,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.lastKnownCostMinor).toBe(9000);
+  });
+
+  test("recordIngredientCost with no prior stock (quantityOnHand 0) sets the cost to the price just paid", async () => {
+    const created = await createIngredient(testDb, owner, { name: "Sugar", unitOfMeasure: "kg" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const result = await recordIngredientCost(testDb, owner, created.value.id, {
+      quantityOnHand: 0,
+      quantityBought: 5,
+      unitCostMinor: 12000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.lastKnownCostMinor).toBe(12000);
+  });
+
+  test("recordProductCost applies the same worked example to a product", async () => {
+    const created = await createProduct(testDb, owner, { name: "Soda (500ml)", kind: "goods" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    // Seed the starting average — createProduct has no cost field, so the
+    // first delivery establishes it (same as an ingredient created without
+    // lastKnownCostMinor), and the second is the one the worked example
+    // actually verifies against 10kg-on-hand @ 80.
+    const seeded = await recordProductCost(testDb, owner, created.value.id, {
+      quantityOnHand: 0,
+      quantityBought: 10,
+      unitCostMinor: 8000,
+    });
+    if (!seeded.ok) throw new Error("expected seed to succeed");
+
+    const result = await recordProductCost(testDb, owner, created.value.id, {
+      quantityOnHand: 10,
+      quantityBought: 20,
+      unitCostMinor: 9500,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.lastKnownCostMinor).toBe(9000);
+  });
+
+  test("recordProductCost is not owner-gated, same reasoning as recordIngredientCost", async () => {
+    const created = await createProduct(testDb, owner, { name: "Biscuits", kind: "goods" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const result = await recordProductCost(testDb, cashier, created.value.id, {
+      quantityOnHand: 0,
+      quantityBought: 10,
+      unitCostMinor: 5000,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("recordProductCost on an unknown product is not_found", async () => {
+    const result = await recordProductCost(testDb, owner, "missing-id", {
+      quantityOnHand: 0,
+      quantityBought: 10,
+      unitCostMinor: 5000,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "not_found" });
   });
 });
 

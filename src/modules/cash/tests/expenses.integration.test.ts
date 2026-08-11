@@ -114,7 +114,7 @@ describe("recordExpense", () => {
   test("records a stock payment referencing a real receipt", async () => {
     const receipt = await recordIngredientReceipt(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
-      lines: [{ ingredientId: flourId, quantity: 10, unitCostMinor: 8000 }],
+      lines: [{ itemType: "ingredient", itemId: flourId, quantity: 10, unitCostMinor: 8000 }],
     });
     if (!receipt.ok) throw new Error("setup failed");
     const receiptId = receipt.movements[0].receiptId;
@@ -265,7 +265,7 @@ describe("reverseExpense", () => {
   test("reversing a stock payment does not touch the paired receipt's stock movement", async () => {
     const receipt = await recordIngredientReceipt(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
-      lines: [{ ingredientId: flourId, quantity: 5, unitCostMinor: 8000 }],
+      lines: [{ itemType: "ingredient", itemId: flourId, quantity: 5, unitCostMinor: 8000 }],
     });
     if (!receipt.ok) throw new Error("setup failed");
     const receiptId = receipt.movements[0].receiptId;

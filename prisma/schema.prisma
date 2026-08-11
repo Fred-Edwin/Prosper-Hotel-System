@@ -80,6 +80,11 @@ model Product {
   // Minor units (e.g. cents), never float — avoids rounding drift in money
   // figures. Null means no price set, distinct from priced-at-zero.
   priceMinor Int?
+  // Convenience figure only, not the authoritative cost history (that's
+  // stock's movement ledger). Null until a delivery is received. Same
+  // running-average update as Ingredient.lastKnownCostMinor (formulas.md
+  // §3) — applies to purchased goods, not recipe-costed cooked food.
+  lastKnownCostMinor Int?
   // docs/architecture.md: deactivated, never deleted — a sold product must
   // stay attributed on historical sales even after withdrawal from sale.
   active     Boolean         @default(true)
@@ -278,6 +283,11 @@ model StockMovement {
   // undoes (ticket 21) — lets the history view mark the original as
   // reversed and refuse to reverse it twice, without a relation table.
   reversedTransferId String?
+  // Shared by every line recorded in the same receiving call (ticket 22),
+  // same convention as IngredientMovement.receiptId — a delivery may mix
+  // product and ingredient lines under one receipt id. Null for every
+  // other reason.
+  receiptId     String?
 
   @@map("stock_movements")
 }
