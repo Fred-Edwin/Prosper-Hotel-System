@@ -116,9 +116,12 @@ front, check each off the moment it's done. Don't defer this to the end.
 5. **Self-verify** using the ticket's Verification section: run tests,
    lint, and typecheck — all must pass before moving on.
 
-   **If the ticket touches UI**, also check the rendered result against
-   `references/ui-rules.md` item by item, visually, not just by reading
-   the code:
+   **If the ticket touches UI**, remember `/design` already built,
+   self-critiqued, and got approval for this screen's composition against
+   `references/ui-rules.md` — that work is done and committed. Don't
+   redo a full ui-rules.md audit here. Instead check the narrower thing
+   `/design` couldn't have: that the already-approved screen still
+   renders as approved now that real data/logic is wired behind it.
 
    1. Start Storybook (`pnpm storybook`) and note the port it prints.
    2. Fetch `http://localhost:<port>/index.json` and read the real story
@@ -145,10 +148,17 @@ front, check each off the moment it's done. Don't defer this to the end.
    5. If the MCP server seems to hang or stall on first connect, that's
       usually `npx` resolving the package fresh, not a missing
       dependency — give it a moment before concluding it's broken.
-   6. Screenshots confirm layout/tokens/states, not underlying
-      correctness (e.g. that a total actually equals quantity × cost) —
-      reason about that from the code together with the screenshot, not
-      the screenshot alone.
+   6. Load the story/route with real data flowing through it and confirm
+      it still matches the approved story's shape — no layout shift, no
+      missing/misrendered state, no error. Screenshots confirm this, not
+      underlying correctness (e.g. that a total actually equals quantity
+      × cost) — reason about that from the code together with the
+      screenshot, not the screenshot alone.
+   7. **Only fall back to a full `references/ui-rules.md` item-by-item
+      audit if the ticket introduced markup `/design` didn't cover** — a
+      new state, a genuinely new composition not in the approved story.
+      That's new UI surface, not re-verification of existing surface, and
+      needs the same rigor `/design` would have applied.
 
    This is mechanical verification; it is not a substitute for `/review`,
    which checks things a machine can't and is optional per the merge step
