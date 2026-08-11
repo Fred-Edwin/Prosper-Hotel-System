@@ -28,9 +28,13 @@ import {
   findReceiptsAtLocation,
   findStockCountById,
   markStockCountLineCorrected,
+  sumIngredientMovementsAtLocationAsOf,
+  sumIngredientsBoughtMinorAtLocationInPeriod,
+  sumIngredientsIssuedByIngredientAtLocationInPeriod,
   sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
   sumMovementsByProductReasonAtLocationInPeriod,
+  sumProductMovementsByReasonAtLocationInPeriod,
 } from "./queries";
 import type {
   DerivedSaleLine,
@@ -1085,13 +1089,45 @@ export async function getStockCount(
 // same "not yet available" messaging either way rather than distinguishing
 // them, since the ticket only asks the detail be absent/labelled
 // unavailable, not that the two reasons read differently.
+// sincePreviousCountAt (ticket 25): the previous count's own occurredAt —
+// the period the derived lines were measured over began strictly after
+// this. Reporting's own-goods rate (formulas.md §6) needs to classify
+// which of these products were restaurant-supplied vs. the canteen's own
+// goods *within that same period*, which needs the period's start.
 export type DerivedSalesDetail =
   | { available: false }
-  | { available: true; lines: DerivedSaleLine[] };
+  | { available: true; lines: DerivedSaleLine[]; sincePreviousCountAt: Date };
 
 export type LatestStockCountResult =
   | { ok: true; count: StockCountForReader | null; derivedSales: DerivedSalesDetail }
   | { ok: false; reason: "forbidden" };
+
+async function derivedSalesDetailForCount(
+  db: PrismaClient,
+  locationId: string,
+  count: StockCount,
+): Promise<DerivedSalesDetail> {
+  const location = await findLocationById(db, locationId);
+  if (location?.code !== "canteen") return { available: false };
+
+  const previousCount = await findPreviousStockCountAtLocation(db, locationId, count.occurredAt);
+  if (!previousCount) return { available: false };
+
+  const derived = await findDerivedSalesAtOccurredAt(db, locationId, count.occurredAt);
+  const products = derived.length > 0 ? await findProductsByIds(db, derived.map((d) => d.productId)) : [];
+  const nameById = new Map(products.map((p) => [p.id, p.name]));
+
+  return {
+    available: true,
+    lines: derived.map((d) => ({
+      productId: d.productId,
+      itemName: nameById.get(d.productId) ?? "Unknown product",
+      quantity: d.quantity,
+      revenueMinor: d.sellingValueMinor,
+    })),
+    sincePreviousCountAt: previousCount.occurredAt,
+  };
+}
 
 // The owner's review/correct table under the admin Stock destination —
 // shows the current/most recent count at a location, not a full history
@@ -1112,32 +1148,39 @@ export async function getLatestStockCount(
   const count = await findLatestStockCountAtLocation(db, locationId);
   if (!count) return { ok: true, count: null, derivedSales: { available: false } };
 
-  const location = await findLocationById(db, locationId);
-  if (location?.code !== "canteen") {
-    return { ok: true, count: await withItemNames(db, count), derivedSales: { available: false } };
+  return {
+    ok: true,
+    count: await withItemNames(db, count),
+    derivedSales: await derivedSalesDetailForCount(db, locationId, count),
+  };
+}
+
+// Ticket 25 — formulas.md's count-correction figure ("estimated since
+// last count" vs. "measured at the count") needs the rate in force
+// *before* the latest count, i.e. the count immediately before it, with
+// its own derived-sales detail computed the same way. Same shape and
+// gating as getLatestStockCount, parameterised by "before this count"
+// instead of "most recent."
+export async function getPreviousStockCount(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  beforeOccurredAt: Date,
+): Promise<LatestStockCountResult> {
+  if (
+    requester.staff.role !== "owner" ||
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)
+  ) {
+    return { ok: false, reason: "forbidden" };
   }
 
-  const previousCount = await findPreviousStockCountAtLocation(db, locationId, count.occurredAt);
-  if (!previousCount) {
-    return { ok: true, count: await withItemNames(db, count), derivedSales: { available: false } };
-  }
-
-  const derived = await findDerivedSalesAtOccurredAt(db, locationId, count.occurredAt);
-  const products = derived.length > 0 ? await findProductsByIds(db, derived.map((d) => d.productId)) : [];
-  const nameById = new Map(products.map((p) => [p.id, p.name]));
+  const count = await findPreviousStockCountAtLocation(db, locationId, beforeOccurredAt);
+  if (!count) return { ok: true, count: null, derivedSales: { available: false } };
 
   return {
     ok: true,
     count: await withItemNames(db, count),
-    derivedSales: {
-      available: true,
-      lines: derived.map((d) => ({
-        productId: d.productId,
-        itemName: nameById.get(d.productId) ?? "Unknown product",
-        quantity: d.quantity,
-        revenueMinor: d.sellingValueMinor,
-      })),
-    },
+    derivedSales: await derivedSalesDetailForCount(db, locationId, count),
   };
 }
 
@@ -1229,4 +1272,122 @@ export async function correctStockCount(
   await markStockCountLineCorrected(db, line.id, requester.staff.id);
 
   return { ok: true };
+}
+
+// --- Ticket 25: reads reporting composes for the dashboard's Profit
+// panel. Owner-gated like every other location-scoped read here — the
+// dashboard itself is owner-only, but the gate belongs on the read, not
+// assumed from the caller.
+
+export type IngredientStockValueResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// formulas.md §12 valuation (quantity × unit cost), at a point in time —
+// used for §6's restaurant "opening ingredients" / "closing ingredients"
+// terms. Valued at each ingredient's *current* running-average cost
+// (formulas.md §3 keeps no historical batch cost), same simplification
+// correctStockCount already makes for a count correction's cost basis.
+export async function getIngredientStockValueAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  asOf: Date,
+): Promise<IngredientStockValueResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const sums = await sumIngredientMovementsAtLocationAsOf(db, locationId, asOf);
+  const ingredients = await findIngredientsByIds(db, sums.map((s) => s.ingredientId));
+  const costById = new Map(ingredients.map((i) => [i.id, i.lastKnownCostMinor ?? 0]));
+  const totalMinor = sums.reduce(
+    (sum, s) => sum + s.quantityOnHand * (costById.get(s.ingredientId) ?? 0),
+    0,
+  );
+  return { ok: true, totalMinor };
+}
+
+export type IngredientsBoughtResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// formulas.md §6's "ingredients bought" term — money actually paid on
+// deliveries received in the period, not a re-valuation.
+export async function getIngredientsBoughtMinor(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<IngredientsBoughtResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const totalMinor = await sumIngredientsBoughtMinorAtLocationInPeriod(
+    db,
+    locationId,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, totalMinor };
+}
+
+export type IngredientsConsumedResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// formulas.md §5's transfer rate — "ingredients the kitchen consumed" is
+// what was issued to production in the period, valued at each
+// ingredient's current running-average cost.
+export async function getIngredientsIssuedMinor(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<IngredientsConsumedResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const sums = await sumIngredientsIssuedByIngredientAtLocationInPeriod(
+    db,
+    locationId,
+    periodStart,
+    periodEnd,
+  );
+  const ingredients = await findIngredientsByIds(db, sums.map((s) => s.ingredientId));
+  const costById = new Map(ingredients.map((i) => [i.id, i.lastKnownCostMinor ?? 0]));
+  const totalMinor = sums.reduce(
+    (sum, s) => sum + s.quantity * (costById.get(s.ingredientId) ?? 0),
+    0,
+  );
+  return { ok: true, totalMinor };
+}
+
+export type ProductMovementByReasonResult =
+  | { ok: true; lines: { productId: string; quantity: number }[] }
+  | { ok: false; reason: "forbidden" };
+
+// formulas.md §5/§6 — product movements of one reason at a location in a
+// period, e.g. `transferred`-in at the canteen (food sent from the
+// restaurant) or `wasted` (canteen's counted-daily restaurant food).
+export async function getProductMovementByReasonInPeriod(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  reason: StockMovementReason,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<ProductMovementByReasonResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const lines = await sumProductMovementsByReasonAtLocationInPeriod(
+    db,
+    locationId,
+    reason,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, lines };
 }

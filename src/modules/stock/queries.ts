@@ -229,6 +229,88 @@ export async function sumMovementsByProductReasonAtLocationInPeriod(
   }));
 }
 
+// Ticket 25: formulas.md §6's restaurant formula needs ingredient stock
+// *as of a point in time* (opening/closing), not the running total —
+// distinct from sumMovementsByIngredientAtLocation, which sums forever.
+export async function sumIngredientMovementsAtLocationAsOf(
+  db: PrismaClient,
+  locationId: string,
+  asOf: Date,
+): Promise<{ ingredientId: string; quantityOnHand: number }[]> {
+  const grouped = await db.ingredientMovement.groupBy({
+    by: ["ingredientId"],
+    where: { locationId, occurredAt: { lte: asOf } },
+    _sum: { quantity: true },
+  });
+
+  return grouped.map((g) => ({
+    ingredientId: g.ingredientId,
+    quantityOnHand: g._sum.quantity ?? 0,
+  }));
+}
+
+// Ticket 25: formulas.md §6's "ingredients bought" term is the money
+// actually paid on each delivery (unitCostMinor at the time), not a
+// re-valuation at today's running average.
+export async function sumIngredientsBoughtMinorAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<number> {
+  const received = await db.ingredientMovement.findMany({
+    where: {
+      locationId,
+      reason: "received",
+      occurredAt: { gt: periodStart, lte: periodEnd },
+    },
+    select: { quantity: true, unitCostMinor: true },
+  });
+  return received.reduce((sum, r) => sum + r.quantity * (r.unitCostMinor ?? 0), 0);
+}
+
+// Ticket 25: formulas.md §5's transfer rate needs "ingredients the
+// kitchen consumed" — issued-to-production ingredient movements at a
+// location in a period, valued at each ingredient's current running
+// average (formulas.md §3 — no batch/historical cost tracking).
+export async function sumIngredientsIssuedByIngredientAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ ingredientId: string; quantity: number }[]> {
+  const grouped = await db.ingredientMovement.groupBy({
+    by: ["ingredientId"],
+    where: {
+      locationId,
+      reason: "issued",
+      occurredAt: { gt: periodStart, lte: periodEnd },
+    },
+    _sum: { quantity: true },
+  });
+  return grouped.map((g) => ({ ingredientId: g.ingredientId, quantity: -(g._sum.quantity ?? 0) }));
+}
+
+// Ticket 25: formulas.md §6's canteen restaurant-food half and §5's
+// transfer valuation both need product `transferred`-in movements at a
+// location in a period, per product — reusing the existing
+// reason-grouped-by-product-and-reason primitive is overkill for a single
+// reason, so this is a narrower, single-reason query.
+export async function sumProductMovementsByReasonAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  reason: StockMovementReason,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ productId: string; quantity: number }[]> {
+  const grouped = await db.stockMovement.groupBy({
+    by: ["productId"],
+    where: { locationId, reason, occurredAt: { gt: periodStart, lte: periodEnd } },
+    _sum: { quantity: true },
+  });
+  return grouped.map((g) => ({ productId: g.productId, quantity: g._sum.quantity ?? 0 }));
+}
+
 // The count immediately before a given one at the same location — the
 // "previous count" formulas.md's derived-sales formula reads from. None
 // for the first-ever count at a location.

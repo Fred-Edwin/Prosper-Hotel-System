@@ -129,6 +129,45 @@ export async function listExpensesAtLocation(
   });
 }
 
+// Ticket 25 — formulas.md §7's running costs (gas, charcoal, electricity,
+// rent, wages): business-wide, not per-location, so no locationId filter
+// — Expense.locationId is always one real location, never "both", so a
+// rent payment recorded at either location still counts once here.
+// Cancelled entries count nowhere (formulas.md's opening rule) — reversed
+// excluded.
+export async function sumRunningCostsMinorInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<number> {
+  const result = await db.expense.aggregate({
+    where: {
+      category: "running",
+      reversed: false,
+      occurredAt: { gt: periodStart, lte: periodEnd },
+    },
+    _sum: { amountMinor: true },
+  });
+  return result._sum.amountMinor ?? 0;
+}
+
+// Ticket 25 — formulas.md §5/§6's takings figure at an arbitrary
+// location/period, for the owner's dashboard (distinct from
+// findTodaysTakings, which is scoped to "today" only and used by the
+// declaring staff member's own read).
+export async function sumTakingsMinorAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ cashMinor: number; mpesaMinor: number }> {
+  const result = await db.takings.aggregate({
+    where: { locationId, occurredAt: { gt: periodStart, lte: periodEnd } },
+    _sum: { cashMinor: true, mpesaMinor: true },
+  });
+  return { cashMinor: result._sum.cashMinor ?? 0, mpesaMinor: result._sum.mpesaMinor ?? 0 };
+}
+
 export async function sumUnreversedDrawingDebt(db: PrismaClient): Promise<number> {
   const result = await db.drawingDebt.aggregate({
     where: { reversed: false },

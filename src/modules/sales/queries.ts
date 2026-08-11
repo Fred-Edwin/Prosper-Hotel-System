@@ -98,6 +98,23 @@ export async function sumCreditSaleQuantityByProductAtLocation(
   }));
 }
 
+// Ticket 25: formulas.md §5's transfer rate ("what its food sold for")
+// and §7's restaurant revenue both need total recorded sales value at a
+// location in a period, not scoped to one staff member. Non-void only —
+// "cancelled entries count nowhere" (formulas.md's opening rule).
+export async function sumSalesRevenueMinorAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<number> {
+  const result = await db.sale.aggregate({
+    where: { locationId, voided: false, occurredAt: { gt: periodStart, lte: periodEnd } },
+    _sum: { totalMinor: true },
+  });
+  return result._sum.totalMinor ?? 0;
+}
+
 export async function findSalesForStaffToday(
   db: PrismaClient,
   staffMemberId: string,

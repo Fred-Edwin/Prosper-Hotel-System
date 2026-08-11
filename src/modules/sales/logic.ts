@@ -9,6 +9,7 @@ import {
   markSaleVoided,
   sumCreditForCustomer,
   sumCreditSaleQuantityByProductAtLocation,
+  sumSalesRevenueMinorAtLocationInPeriod,
 } from "./queries";
 import type { PaymentMethod, Sale, SaleFulfilment } from "./schema";
 
@@ -204,4 +205,31 @@ export async function voidSale(
 
   const voided = await markSaleVoided(db, saleId, requester.staff.id);
   return { ok: true, sale: voided };
+}
+
+export type SalesRevenueResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 25 — formulas.md §5's transfer rate ("what its food sold for")
+// and §7's restaurant revenue ("recorded sales at the restaurant").
+// Owner-gated like every other location-scoped read here; owner passes
+// canAccessLocation for any location.
+export async function getSalesRevenueAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<SalesRevenueResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const totalMinor = await sumSalesRevenueMinorAtLocationInPeriod(
+    db,
+    locationId,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, totalMinor };
 }

@@ -10,16 +10,21 @@ export { recordHandoverRoute, todaysHandoverRoute, todaysHandoversAtRestaurantRo
 export type { Handover } from "./schema";
 export type { HandoverWithStaffName } from "./queries";
 
-export { getTodaysTakingsForStaff, recordTakings } from "./logic";
-export type { GetTodaysTakingsResult, RecordTakingsResult } from "./logic";
+export { getTodaysTakingsForStaff, recordTakings, getTakingsAtLocation } from "./logic";
+export type {
+  GetTodaysTakingsResult,
+  RecordTakingsResult,
+  TakingsAtLocationResult,
+} from "./logic";
 export { recordTakingsRoute, todaysTakingsRoute } from "./routes";
 export type { Takings } from "./schema";
 
-export { recordExpense, reverseExpense, listExpenses, drawingDebtOwed } from "./logic";
+export { recordExpense, reverseExpense, listExpenses, drawingDebtOwed, getRunningCosts } from "./logic";
 export type {
   RecordExpenseResult,
   ReverseExpenseResult,
   ListExpensesResult,
+  RunningCostsResult,
 } from "./logic";
 export {
   listExpensesRoute,

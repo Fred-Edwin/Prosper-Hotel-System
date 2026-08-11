@@ -80,6 +80,19 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   the repo). If a script needs to live outside the repo (e.g. a session
   scratchpad), either run it via `cd` into the repo first, or copy it into
   the repo temporarily and delete it after.
+- **"Chromium is cached but the MCP server still fails to launch a
+  browser" — check what browser it's actually asking for, not just
+  whether chromium exists.** `@playwright/mcp` defaults to **system
+  Chrome**, not Playwright's bundled chromium — the opposite of
+  `@playwright/test`'s default. If system Chrome isn't installed, the
+  MCP server fails even with a fully-populated `~/.cache/ms-playwright/`.
+  `.mcp.json` is gitignored (local machine config, not shared) — each
+  session sets it up independently, so this can recur on a fresh
+  machine. Fix it by adding `--browser chromium` to the server's `args`
+  in `.mcp.json` and restarting the MCP connection, rather than
+  installing system Chrome. If you don't want to touch `.mcp.json`, the
+  throwaway-script fallback below already launches bundled chromium
+  explicitly and is unaffected either way.
 - **"Chromium isn't installed" — check the shared cache before installing
   anything.** `~/.cache/ms-playwright/` is a home-directory cache, shared
   by every git worktree on the machine (they share one home directory).

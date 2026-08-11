@@ -6,7 +6,7 @@ transfer movements), 22 (canteen goods need `lastKnownCostMinor` to
 value the own-goods estimate rate), 23 (takings is the revenue figure
 the estimate rate multiplies), 24 (count-derived sales is what a count
 measures the estimate against, and is what "corrects" it)
-**Status:** in-progress
+**Status:** done
 
 **Claimed:** Claude Code — 2026-08-11.
 
@@ -83,40 +83,58 @@ a new screen.
 **Out:**
 - Any new screen or nav link — this ticket only fills existing dashboard
   slots.
-- Full reporting module build-out (profit by period, stock valuation,
-  amounts owed — Stage 8). This ticket computes only what the dashboard's
-  existing canteen slots need.
-- Business-wide profit assembly beyond what the dashboard already shows
-  (restaurant COGS wiring, if not already real, stays out — check
-  whether ticket 14 or another already-landed ticket wired restaurant
-  COGS before assuming this ticket must do it too).
+- Full reporting module build-out beyond the dashboard's Profit panel
+  (stock valuation, amounts owed, profit by arbitrary period — Stage 8
+  remainder).
+
+**Scope expanded 2026-08-11, by user decision:** restaurant COGS wiring
+was confirmed *not* already real anywhere in the codebase (`reporting/`
+was still `export {}`; no function computed formulas.md §6's restaurant
+formula, running costs, or a location-wide revenue total). The user
+wants the full Profit waterfall (`dashboard-r3.tsx`'s revenue / cost of
+goods sold / running costs / net profit strip) live with real data, not
+partially placeholder — so this ticket now also computes:
+- Restaurant cost of goods sold (formulas.md §6, restaurant formula:
+  opening ingredients + bought − closing − food sent to canteen).
+- Running costs total (sum of unreversed `Expense` rows, category
+  `running`, for the period).
+- Restaurant revenue (today's non-void recorded sales at the restaurant
+  location) and business-total revenue (restaurant + canteen takings).
+- Gross and net profit assembly (formulas.md §7) from the above plus
+  this ticket's own canteen COGS work.
 
 ## Acceptance criteria
 
-- [ ] Transfer cost matches formulas.md §5's worked example exactly when
+- [x] Transfer cost matches formulas.md §5's worked example exactly when
       given equivalent inputs (kitchen consumption, food's selling
       value, transferred food's selling value).
-- [ ] Restaurant-supplied canteen food cost matches formulas.md §6's
+- [x] Restaurant-supplied canteen food cost matches formulas.md §6's
       worked example (opening + transferred in − closing − wasted).
-- [ ] Canteen own-goods estimated cost matches formulas.md §6's worked
+- [x] Canteen own-goods estimated cost matches formulas.md §6's worked
       example (today's takings from those goods × last-measured rate).
-- [ ] Where a recipe exists for a transferred item, its recipe cost is
+- [x] Where a recipe exists for a transferred item, its recipe cost is
       used instead of the derived rate (formulas.md §5's note).
-- [ ] The count-correction figure (estimated vs. measured vs.
+- [x] The count-correction figure (estimated vs. measured vs.
       difference) is computed and exposed for display once ticket 24
       data exists for a period.
-- [ ] Business total is unaffected by the transfer rate chosen (same
+- [x] Business total is unaffected by the transfer rate chosen (same
       figure subtracted from restaurant, added to canteen) — assert this
       invariant directly in a test.
-- [ ] **Screen:** the dashboard's existing canteen revenue/cost slots
+- [x] **Screen:** the dashboard's existing canteen revenue/cost slots
       (design-reference `dashboard-body.tsx`'s revenue and cogs detail
       panels) show real computed figures instead of fixtures; provisional
       figures carry a visible provisional label/badge.
-- [ ] Loading and error states for the newly-wired slots follow
+- [x] Loading and error states for the newly-wired slots follow
       `components/patterns/states.tsx`, matching ticket 14's precedent.
-- [ ] Storybook: update the dashboard's story (or the relevant panel's,
+- [x] Storybook: update the dashboard's story (or the relevant panel's,
       if split out as its own component per ticket 14's pattern) to
       cover a provisional state and a just-corrected-by-count state.
+
+**Scope expanded 2026-08-11, by user decision:** restaurant cost of
+goods sold, running costs and net profit assembly were added to this
+ticket's scope (see the Out-of-scope note above) — the full Profit
+waterfall (`dashboard-r3.tsx`'s revenue / cost of goods sold / running
+costs / net profit strip) is real end to end, not partially placeholder.
 
 ## Verification
 
