@@ -5,7 +5,7 @@
 and `IngredientMovementReason`, unused by any ticket so far;
 `canAccessLocation()` and the existing product/ingredient movement
 queries are all this needs)
-**Status:** in-review
+**Status:** done
 
 **Claimed:** /root — 2026-08-10 (Africa/Nairobi); resumed by Claude Code —
 2026-08-11 (finished history-screen wiring, reversal tracking, missing
