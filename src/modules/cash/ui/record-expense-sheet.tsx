@@ -28,6 +28,7 @@ export function RecordExpenseSheet({
   onSave: (input: {
     category: ExpenseView["category"];
     amountMinor: number;
+    paymentMethod: ExpenseView["paymentMethod"];
     note: string | null;
     receiptId: string | null;
   }) => Promise<{ ok: boolean }>;
@@ -35,12 +36,14 @@ export function RecordExpenseSheet({
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState<ExpenseView["category"]>("running");
   const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<ExpenseView["paymentMethod"]>("cash");
   const [note, setNote] = useState("");
   const [receiptId, setReceiptId] = useState<string | null>(null);
 
   const reset = () => {
     setCategory("running");
     setAmount("");
+    setPaymentMethod("cash");
     setNote("");
     setReceiptId(null);
   };
@@ -76,6 +79,7 @@ export function RecordExpenseSheet({
             const result = await onSave({
               category,
               amountMinor: Number(amount),
+              paymentMethod,
               note: note.trim() || null,
               receiptId: category === "stock" ? receiptId : null,
             });
@@ -93,6 +97,8 @@ export function RecordExpenseSheet({
             }}
             amount={amount}
             onAmountChange={setAmount}
+            paymentMethod={paymentMethod}
+            onPaymentMethodChange={setPaymentMethod}
             note={note}
             onNoteChange={setNote}
             receiptId={receiptId}

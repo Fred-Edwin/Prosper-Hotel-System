@@ -80,6 +80,7 @@ describe("recordExpense", () => {
     const result = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "running",
+      paymentMethod: "cash",
       amountMinor: 50000,
       note: "Gas refill",
     });
@@ -95,6 +96,7 @@ describe("recordExpense", () => {
     const result = await recordExpense(testDb, staffAt("cashier", restaurantId), {
       locationId: restaurantId,
       category: "running",
+      paymentMethod: "cash",
       amountMinor: 5000,
     });
 
@@ -105,6 +107,7 @@ describe("recordExpense", () => {
     const result = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "running",
+      paymentMethod: "cash",
       amountMinor: 0,
     });
 
@@ -122,6 +125,7 @@ describe("recordExpense", () => {
     const result = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "stock",
+      paymentMethod: "cash",
       amountMinor: 80000,
       receiptId,
     });
@@ -135,6 +139,7 @@ describe("recordExpense", () => {
     const result = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "stock",
+      paymentMethod: "cash",
       amountMinor: 80000,
     });
 
@@ -145,6 +150,7 @@ describe("recordExpense", () => {
     const result = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "stock",
+      paymentMethod: "cash",
       amountMinor: 80000,
       receiptId: "does-not-exist",
     });
@@ -158,6 +164,7 @@ describe("recordExpense", () => {
     const result = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "drawing",
+      paymentMethod: "cash",
       amountMinor: 20000,
     });
 
@@ -172,6 +179,7 @@ describe("recordExpense", () => {
     await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "asset",
+      paymentMethod: "cash",
       amountMinor: 15000,
     });
 
@@ -185,6 +193,7 @@ describe("reverseExpense", () => {
     const recorded = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "running",
+      paymentMethod: "cash",
       amountMinor: 3000,
     });
     if (!recorded.ok) throw new Error("setup failed");
@@ -201,6 +210,7 @@ describe("reverseExpense", () => {
     const recorded = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "running",
+      paymentMethod: "cash",
       amountMinor: 3000,
     });
     if (!recorded.ok) throw new Error("setup failed");
@@ -220,6 +230,7 @@ describe("reverseExpense", () => {
     const recorded = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "running",
+      paymentMethod: "cash",
       amountMinor: 3000,
     });
     if (!recorded.ok) throw new Error("setup failed");
@@ -234,6 +245,7 @@ describe("reverseExpense", () => {
     const recorded = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "running",
+      paymentMethod: "cash",
       amountMinor: 3000,
     });
     if (!recorded.ok) throw new Error("setup failed");
@@ -251,6 +263,7 @@ describe("reverseExpense", () => {
     const recorded = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "drawing",
+      paymentMethod: "cash",
       amountMinor: 7000,
     });
     if (!recorded.ok) throw new Error("setup failed");
@@ -273,6 +286,7 @@ describe("reverseExpense", () => {
     const recorded = await recordExpense(testDb, staffAt("owner", restaurantId), {
       locationId: restaurantId,
       category: "stock",
+      paymentMethod: "cash",
       amountMinor: 40000,
       receiptId,
     });
