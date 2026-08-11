@@ -5,7 +5,7 @@
 schema, adds no new payment/customer behaviour), 23 (takings — not a
 data dependency, but the canteen's other Stage 4 recording surface;
 `staff-nav.ts`'s attendant array already sits next to it)
-**Status:** planned
+**Status:** in-progress (claude, 2026-08-11)
 
 ## Goal
 
