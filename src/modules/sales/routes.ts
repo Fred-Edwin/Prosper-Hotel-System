@@ -1,7 +1,7 @@
 import { db } from "@/shared/db";
 import { getSession, listCustomers } from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
-import { recordCounterSale, listTodaysSalesForStaff, voidSale } from "./logic";
+import { recordCounterSale, listTodaysSalesForStaff, voidSale, getTotalCustomerBalance } from "./logic";
 
 function writeStatus(reason: string): number {
   if (reason === "forbidden" || reason === "day_closed") return 403;
@@ -85,4 +85,17 @@ export async function voidSaleRoute(
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
   return Response.json({ sale: result.sale });
+}
+
+// Ticket 33 — Dashboard's "Owed to you". Owner-only, same access pattern
+// as cash's runningCashBalanceRoute.
+export async function totalCustomerBalanceRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const result = await getTotalCustomerBalance(db, session);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ totalMinor: result.totalMinor });
 }

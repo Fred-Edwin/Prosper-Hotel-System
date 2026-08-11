@@ -8,6 +8,7 @@ import {
   findSaleById,
   findSalesForStaffToday,
   markSaleVoided,
+  sumCreditAcrossAllCustomers,
   sumCreditForCustomer,
   sumCreditSaleQuantityByProductAtLocation,
   sumSalesRevenueMinorAtLocationInPeriod,
@@ -240,5 +241,27 @@ export async function getSalesRevenueAtLocation(
     periodStart,
     periodEnd,
   );
+  return { ok: true, totalMinor };
+}
+
+function requireOwner(requester: AuthenticatedStaff): boolean {
+  return requester.staff.role === "owner";
+}
+
+export type TotalCustomerBalanceResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 33 — Dashboard's "Owed to you": the sum across all customers,
+// both locations, per formulas.md §11. Owner-only, same access pattern as
+// cash's getRunningCashBalance.
+export async function getTotalCustomerBalance(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+): Promise<TotalCustomerBalanceResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const totalMinor = await sumCreditAcrossAllCustomers(db);
   return { ok: true, totalMinor };
 }

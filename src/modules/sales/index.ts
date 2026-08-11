@@ -7,12 +7,19 @@ export {
   voidSale,
   creditSaleQuantityByProductAtLocation,
   getSalesRevenueAtLocation,
+  getTotalCustomerBalance,
 } from "./logic";
 export type {
   RecordSaleResult,
   ListTodaysSalesResult,
   VoidSaleResult,
   SalesRevenueResult,
+  TotalCustomerBalanceResult,
 } from "./logic";
-export { recordCounterSaleRoute, todaysSalesRoute, voidSaleRoute } from "./routes";
+export {
+  recordCounterSaleRoute,
+  todaysSalesRoute,
+  voidSaleRoute,
+  totalCustomerBalanceRoute,
+} from "./routes";
 export type { Sale, SaleLine, PaymentLine, PaymentMethod, SaleFulfilment } from "./schema";
