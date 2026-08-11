@@ -4,7 +4,7 @@
 **Blocked by:** 27 (canteen handover — this ticket needs both locations'
 handover recording to be real, since closing is defined by handover
 being recorded)
-**Status:** planned
+**Status:** in-progress (claimed by build session, 2026-08-11)
 
 ## Goal
 
