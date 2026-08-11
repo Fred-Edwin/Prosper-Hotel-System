@@ -62,6 +62,7 @@ new destinations get added here as tickets that build them land, per
 | Modules/Cash/Handover | `src/modules/cash/ui/handover.stories.tsx` | approved |
 | Modules/Cash/DashboardHandovers | `src/modules/cash/ui/dashboard-handovers.stories.tsx` | approved |
 | Cash/MoneyOutDestination | `src/modules/cash/ui/money-out-destination.stories.tsx` | approved |
+| Modules/Cash/Takings | `src/modules/cash/ui/takings.stories.tsx` | approved |
 
 ## People
 
