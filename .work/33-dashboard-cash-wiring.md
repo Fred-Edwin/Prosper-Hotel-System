@@ -5,7 +5,23 @@
 slots this ticket wires), 32 (drawing repayment — the "Your drawings"
 slot should reflect the netted balance, not just the raw debt total)
 
-**Status:** in-progress (2026-08-11, claimed by build session)
+**Status:** done (2026-08-11)
+
+**Implementation note:** "Owed to you" needed the thin new query the
+Context section anticipated — `sumCreditAcrossAllCustomers` in
+`sales/queries.ts` plus an owner-gated `getTotalCustomerBalance` in
+`sales/logic.ts` (mirrors `cash`'s `getRunningCashBalance` gating), since
+no summed-across-all-customers variant existed (only
+`sumCreditForCustomer(customerId)`). Cash position and M-Pesa balance
+needed no new backend — ticket 31 already built and exported
+`getRunningCashBalance` with a live route; Your drawings needed none
+either — ticket 32's `drawingDebtOwed`/`/api/cash/drawing-debt` already
+existed. Cash position and M-Pesa balance share one fetch of
+`getRunningCashBalance` (`dashboard-cash-figures.tsx`) rather than two,
+since they're the same underlying call. No sparkline or ledger link on
+any of the four cards, unlike the design-reference prototype's richer
+treatment — both need capabilities (trend history, a new nav
+destination) explicitly ruled out of scope by tickets 31/32.
 
 ## Goal
 
@@ -63,17 +79,17 @@ chrome but renders `SectionNotBuilt` instead of content").
 
 ## Acceptance criteria
 
-- [ ] "Cash position" and "M-Pesa balance" slots show ticket 31's real
+- [x] "Cash position" and "M-Pesa balance" slots show ticket 31's real
       running balance, kept as two separate figures.
-- [ ] "Owed to you" shows the real total customer debt across both
+- [x] "Owed to you" shows the real total customer debt across both
       locations.
-- [ ] "Your drawings" shows the real, netted outstanding drawings
+- [x] "Your drawings" shows the real, netted outstanding drawings
       balance (debt minus repayments).
-- [ ] The other five dashboard sections remain untouched
+- [x] The other five dashboard sections remain untouched
       (`SectionNotBuilt`, same as before this ticket).
-- [ ] Loading and error states are present for all four slots, consistent
+- [x] Loading and error states are present for all four slots, consistent
       with ticket 25's Profit-panel convention.
-- [ ] No layout/grid changes — a visual diff of the dashboard shows only
+- [x] No layout/grid changes — a visual diff of the dashboard shows only
       the four cards' inner content changing.
 
 ## Verification

@@ -62,6 +62,16 @@ export async function sumCreditForCustomer(db: PrismaClient, customerId: string)
   return result._sum.amountMinor ?? 0;
 }
 
+// Ticket 33: "Owed to you" on the Dashboard — the sum across all
+// customers, both locations, per formulas.md §11.
+export async function sumCreditAcrossAllCustomers(db: PrismaClient): Promise<number> {
+  const result = await db.paymentLine.aggregate({
+    where: { method: "credit" },
+    _sum: { amountMinor: true },
+  });
+  return result._sum.amountMinor ?? 0;
+}
+
 // Ticket 24: count-derived sales at the canteen subtracts recorded credit
 // sales from the formula — only credit is individually recorded there
 // (CONTEXT.md's Sale entry). Non-void lines only, per formulas.md's rule
