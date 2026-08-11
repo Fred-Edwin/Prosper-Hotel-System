@@ -53,6 +53,7 @@ new destinations get added here as tickets that build them land, per
 | Story | Path | Status |
 |---|---|---|
 | Modules/Sales/NewSale | `src/modules/sales/ui/new-sale.stories.tsx` | approved |
+| Modules/Sales/CreditSale | `src/modules/sales/ui/credit-sale.stories.tsx` | approved |
 | Modules/Sales/TodaysSales | `src/modules/sales/ui/todays-sales.stories.tsx` | approved |
 
 ## Cash
