@@ -17,7 +17,12 @@ export {
   recordStockCount,
   getStockCount,
   getLatestStockCount,
+  getPreviousStockCount,
   correctStockCount,
+  getIngredientStockValueAtLocation,
+  getIngredientsBoughtMinor,
+  getIngredientsIssuedMinor,
+  getProductMovementByReasonInPeriod,
 } from "./logic";
 export type {
   StockAccessResult,
@@ -39,6 +44,10 @@ export type {
   LatestStockCountResult,
   DerivedSalesDetail,
   CorrectStockCountResult,
+  IngredientStockValueResult,
+  IngredientsBoughtResult,
+  IngredientsConsumedResult,
+  ProductMovementByReasonResult,
 } from "./logic";
 export {
   stockAtLocationRoute,

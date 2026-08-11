@@ -83,13 +83,25 @@ a new screen.
 **Out:**
 - Any new screen or nav link — this ticket only fills existing dashboard
   slots.
-- Full reporting module build-out (profit by period, stock valuation,
-  amounts owed — Stage 8). This ticket computes only what the dashboard's
-  existing canteen slots need.
-- Business-wide profit assembly beyond what the dashboard already shows
-  (restaurant COGS wiring, if not already real, stays out — check
-  whether ticket 14 or another already-landed ticket wired restaurant
-  COGS before assuming this ticket must do it too).
+- Full reporting module build-out beyond the dashboard's Profit panel
+  (stock valuation, amounts owed, profit by arbitrary period — Stage 8
+  remainder).
+
+**Scope expanded 2026-08-11, by user decision:** restaurant COGS wiring
+was confirmed *not* already real anywhere in the codebase (`reporting/`
+was still `export {}`; no function computed formulas.md §6's restaurant
+formula, running costs, or a location-wide revenue total). The user
+wants the full Profit waterfall (`dashboard-r3.tsx`'s revenue / cost of
+goods sold / running costs / net profit strip) live with real data, not
+partially placeholder — so this ticket now also computes:
+- Restaurant cost of goods sold (formulas.md §6, restaurant formula:
+  opening ingredients + bought − closing − food sent to canteen).
+- Running costs total (sum of unreversed `Expense` rows, category
+  `running`, for the period).
+- Restaurant revenue (today's non-void recorded sales at the restaurant
+  location) and business-total revenue (restaurant + canteen takings).
+- Gross and net profit assembly (formulas.md §7) from the above plus
+  this ticket's own canteen COGS work.
 
 ## Acceptance criteria
 

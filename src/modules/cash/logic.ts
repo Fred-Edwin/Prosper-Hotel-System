@@ -15,6 +15,8 @@ import {
   listExpensesAtLocation,
   markDrawingDebtReversed,
   markExpenseReversed,
+  sumRunningCostsMinorInPeriod,
+  sumTakingsMinorAtLocationInPeriod,
   sumUnreversedDrawingDebt,
   updateHandoverActuals,
   updateTakingsAmounts,
@@ -314,4 +316,44 @@ export async function getTodaysHandoversAtLocation(
   const { dayStart, dayEnd } = dayBounds();
   const handovers = await findTodaysHandoversAtLocation(db, locationId, dayStart, dayEnd);
   return { ok: true, handovers };
+}
+
+export type RunningCostsResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 25 — formulas.md §7's running costs, owner-only same as every
+// other dashboard-feeding read here.
+export async function getRunningCosts(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<RunningCostsResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const totalMinor = await sumRunningCostsMinorInPeriod(db, periodStart, periodEnd);
+  return { ok: true, totalMinor };
+}
+
+export type TakingsAtLocationResult =
+  | { ok: true; cashMinor: number; mpesaMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 25 — formulas.md §5/§6's takings figure at an arbitrary
+// location/period, gated the same way as every other location-scoped
+// read (owner passes canAccessLocation for any location).
+export async function getTakingsAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<TakingsAtLocationResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const totals = await sumTakingsMinorAtLocationInPeriod(db, locationId, periodStart, periodEnd);
+  return { ok: true, ...totals };
 }
