@@ -1,0 +1,105 @@
+# 22 — Product cost tracking and canteen direct-delivery receiving
+
+**Type:** logic (test-first)
+**Blocked by:** None (extends the existing `Product` model and
+`recordIngredientReceipt`'s pattern; does not depend on ticket 21)
+**Status:** in-progress (claimed by claude-code build session, 2026-08-11)
+
+## What this delivers
+
+proposal.md §4: "records deliveries made directly to the canteen by
+suppliers." Today, `receive` (ticket 12) only records ingredient
+deliveries at any location — there is no path to receive **products**
+(the canteen's own goods: sodas, biscuits, stationery, bought and
+resold as-is) anywhere in the system.
+
+Closing that requires a schema addition first: `Product` currently has
+no purchase-cost field, only `priceMinor` (selling price). Ingredient
+already has `lastKnownCostMinor`, updated by a running weighted average
+each time more is bought (formulas.md §3). Product needs the same field
+and the same update rule — canteen goods need a cost to compute margin
+and, later (ticket 25), the canteen's own-goods cost-estimate rate.
+
+## Context
+
+- Relevant modules: `src/modules/catalogue/` (schema change, cost
+  recording), `src/modules/stock/` (receiving logic, extends ticket 12's
+  `recordIngredientReceipt`).
+- Precedent: `Ingredient.lastKnownCostMinor` in `prisma/schema.prisma`;
+  `recordIngredientCost` and `setIngredientLastKnownCost` in
+  `src/modules/catalogue/logic.ts` / `queries.ts` for the running-average
+  update; `recordIngredientReceipt` in `src/modules/stock/logic.ts` for
+  the receiving-flow shape (location gate via `canReceive`/
+  `canAccessLocation`, per-line active check, shared receipt id across
+  lines in one call).
+- formulas.md §3 ("What an ingredient costs") — same formula applies to
+  products of kind `goods` (and any other stocked, purchased product).
+- Storybook precedent: `src/modules/stock/ui/receive-delivery.stories.tsx`
+  (ticket 12's screen) — this ticket extends it, not duplicates it.
+- Conventions: `docs/conventions.md#data-access`.
+
+## Scope
+
+**In:**
+- Migration: add `lastKnownCostMinor Int?` to `Product` in
+  `prisma/schema.prisma`, mirroring `Ingredient`'s field (nullable,
+  minor units, convenience figure not authoritative history — same
+  comment precedent).
+- A `recordProductCost` logic function mirroring `recordIngredientCost`:
+  not owner-gated (frequent store-manager/attendant action, matches the
+  existing `recordIngredientCost` reasoning), applies the same
+  running-average formula from §3 using current
+  `lastKnownCostMinor`/quantity-on-hand and the new delivery's quantity
+  and price.
+- Extend `recordIngredientReceipt`'s screen and underlying route to
+  accept **either** ingredients or products in one delivery (a supplier
+  drop-off may include both, e.g. the canteen receiving printer paper
+  (ingredient) and airtime scratch cards (product) in one visit) —
+  writes `received` movements down the appropriate family
+  (`StockMovement` for products, `IngredientMovement` for ingredients),
+  same shared receipt id.
+- Reject: non-positive quantity, negative cost, inactive item — same
+  validation `recordIngredientReceipt` already applies.
+
+**Out:**
+- Transfers (ticket 21 — a different reason and a different screen).
+- The canteen's own-goods cost-estimate rate used in the provisional
+  daily cost calc (ticket 25 — this ticket only makes the *unit* cost
+  recordable; the estimate formula is a separate concern).
+- Recipe-based costing for cooked food — unaffected, still uses
+  `Recipe.perUnitCostMinor`, not this field.
+
+## Acceptance criteria
+
+- [ ] `Product.lastKnownCostMinor` exists, nullable, minor units.
+- [ ] `recordProductCost` recalculates the running average correctly
+      given existing quantity-on-hand at the location and the new
+      delivery's quantity/price (same worked-example arithmetic as
+      formulas.md §3, applied to a product instead of an ingredient).
+- [ ] Receiving a delivery accepts a mix of product and ingredient lines
+      in one call, all sharing one receipt id.
+- [ ] Each product line writes a `received` `StockMovement` and updates
+      `Product.lastKnownCostMinor` via the running average; each
+      ingredient line behaves exactly as ticket 12 already does
+      (unchanged).
+- [ ] Rejected: non-positive quantity, negative cost, inactive product
+      or ingredient — per line, in a mixed delivery.
+- [ ] `canAccessLocation()` + the existing `canReceive` role gate apply
+      unchanged (owner, store manager, attendant).
+- [ ] **Screen:** the existing `receive` screen (ticket 12) gains an
+      item-type toggle or combined picker so a canteen attendant can add
+      product lines alongside (or instead of) ingredient lines in the
+      same delivery form.
+- [ ] Storybook: extend `ReceiveDelivery`'s story with a canteen/product
+      variant (product-only delivery, and a mixed delivery).
+
+## Verification
+
+- Integration tests, test-first: running-average correctness (including
+  the exact formulas.md §3 worked example, applied to a product),
+  mixed-line delivery, per-line rejection cases.
+- `pnpm lint`, `pnpm exec tsc --noEmit`.
+- Prisma migration runs cleanly against `TEST_DATABASE_URL`.
+- Manual check against `references/ui-rules.md` for the extended screen.
+- Update `docs/screens.md`'s `ReceiveDelivery` row status/description if
+  the story file name changes; otherwise no new row needed.
