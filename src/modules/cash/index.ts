@@ -1,6 +1,11 @@
 // Handovers, expenses, the running balance, drawings. See docs/architecture.md.
 
-export { getTodaysHandoverForStaff, getTodaysHandoversAtLocation, recordHandover } from "./logic";
+export {
+  getTodaysHandoverForStaff,
+  getTodaysHandoversAtLocation,
+  recordHandover,
+  isDayClosedFor,
+} from "./logic";
 export type {
   GetTodaysHandoverResult,
   GetTodaysHandoversAtLocationResult,

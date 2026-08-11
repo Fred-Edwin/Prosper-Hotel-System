@@ -87,6 +87,24 @@ export const SubmitFails: Story = {
 };
 
 /**
+ * Ticket 28: a non-owner's second edit after their own handover already
+ * closed the day. The staff member can still see and re-enter their count,
+ * but submitting is rejected with a clear reason.
+ */
+export const DayClosed: Story = {
+  name: "Day closed — edit rejected",
+  args: {
+    state: {
+      status: "ready",
+      handover: { actualCashMinor: 8150, actualMpesaMinor: 6200 },
+      locationCode: "restaurant",
+      takingsRecordedToday: true,
+    },
+    onSubmit: async () => ({ ok: false as const, error: "day_closed" }),
+  },
+};
+
+/**
  * Canteen, ticket 27 — same blind count, only the confirm step's copy
  * changes ("today's takings" instead of "what the till recorded").
  */

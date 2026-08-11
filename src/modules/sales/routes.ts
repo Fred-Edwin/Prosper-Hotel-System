@@ -4,7 +4,7 @@ import { findProductsByIds } from "@/modules/catalogue";
 import { recordCounterSale, listTodaysSalesForStaff, voidSale } from "./logic";
 
 function writeStatus(reason: string): number {
-  if (reason === "forbidden") return 403;
+  if (reason === "forbidden" || reason === "day_closed") return 403;
   if (reason === "not_found") return 404;
   return 400;
 }

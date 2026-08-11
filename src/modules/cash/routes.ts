@@ -14,7 +14,8 @@ import {
 import type { ExpenseCategory } from "./schema";
 
 function writeStatus(reason: string): number {
-  return reason === "forbidden" ? 403 : reason === "not_found" ? 404 : 400;
+  if (reason === "forbidden" || reason === "day_closed") return 403;
+  return reason === "not_found" ? 404 : 400;
 }
 
 // The blind-count decision (docs/design.md via the design-reference

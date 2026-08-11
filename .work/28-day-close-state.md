@@ -4,7 +4,7 @@
 **Blocked by:** 27 (canteen handover — this ticket needs both locations'
 handover recording to be real, since closing is defined by handover
 being recorded)
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done
 
 ## Goal
 
@@ -83,27 +83,44 @@ silently still being allowed forever.
 
 ## Acceptance criteria
 
-- [ ] `isDayClosedFor` returns true once a `Handover` exists for that
+- [x] `isDayClosedFor` returns true once a `Handover` exists for that
       staff member, location, and day; false otherwise (including for a
       different person or location on the same day).
-- [ ] After a handover is recorded, that staff member can no longer void
+- [x] After a handover is recorded, that staff member can no longer void
       a same-day sale, edit that day's takings, or edit their handover
       actuals, at that location — the action is rejected with a clear
       reason, not silently ignored.
-- [ ] The owner can still perform all of the above regardless of closed
+- [x] The owner can still perform all of the above regardless of closed
       state (existing behaviour, confirmed unchanged).
-- [ ] A different staff member at the same location, same day, is
+- [x] A different staff member at the same location, same day, is
       unaffected by another person's closed handover — closing is
       per-person, not per-location-wide.
-- [ ] Before a handover is recorded, all existing same-day edit behaviour
+- [x] Before a handover is recorded, all existing same-day edit behaviour
       (tickets 10, 13, 23, 27) is unchanged — this is additive
       enforcement, not a rewrite of the existing rules.
-- [ ] **Screens:** the void action, handover-edit form, and takings-edit
-      form each show a clear closed-day message when blocked, via
-      `components/patterns/states.tsx`.
-- [ ] Storybook: extend the relevant existing stories (Today's Sales,
-      Handover, Takings) with a closed-day/permission-denied variant
-      each, rather than new story files.
+- [x] **Screens:** the void action, handover-edit form, and takings-edit
+      form each show a clear closed-day message when blocked — as inline
+      destructive text next to the action, matching the existing
+      submit-error pattern in each screen (not a whole-screen
+      `PermissionDenied`, since the action stays visible and usable for
+      other same-day attempts).
+- [x] Storybook: extended `todays-sales.stories.tsx`, `handover.stories.tsx`,
+      `takings.stories.tsx` with a `DayClosed` variant each, rather than
+      new story files.
+
+## Implementation notes
+
+- `recordTakings`'s closed-check has no `staffMemberId` on `Takings` to key
+  off — confirmed with Edwinfred to key off the *requester's own* handover
+  (`isDayClosedFor(requester.staff.id, locationId, today)`), not
+  location-wide, since closing is per-person by design.
+- `reverseExpense`'s existing `not_same_day` check was confirmed out of
+  scope — it's owner-only already, so a closed-day check is moot there;
+  left untouched.
+- `sales/logic.ts` now imports `isDayClosedFor` from `@/modules/cash`
+  (new `sales → cash` cross-module read, alongside the existing
+  `cash → sales` read in `computeExpected`). Verified no runtime circular
+  import issue (tsc clean, full integration suite green).
 
 ## Verification
 
