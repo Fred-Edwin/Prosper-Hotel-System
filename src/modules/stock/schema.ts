@@ -95,3 +95,15 @@ export type StockCountLineForReader = Omit<StockCountLine, "expectedQuantity"> &
 export type StockCountForReader = Omit<StockCount, "lines"> & {
   lines: StockCountLineForReader[];
 };
+
+// Ticket 24: one line of the owner-only "since last count" detail on the
+// review screen — the derived-sold quantity and revenue per item at the
+// canteen. Distinct from StockCountLine because it has no counted/expected
+// pair of its own; it is read from the sold_derived movements the count
+// triggered, not from the count's own recorded lines.
+export type DerivedSaleLine = {
+  productId: string;
+  itemName: string;
+  quantity: number;
+  revenueMinor: number | null;
+};

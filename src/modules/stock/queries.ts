@@ -21,6 +21,11 @@ export async function createStockMovement(
     isEstimated?: boolean;
     transferId?: string;
     receiptId?: string;
+    // Ticket 24: sold_derived rows are stamped with the triggering count's
+    // own occurredAt rather than a fresh now(), so the owner's review
+    // screen can look them back up by (location, reason, occurredAt) —
+    // the same value written here — without a stored count-id link.
+    occurredAt?: Date;
   },
 ): Promise<StockMovement> {
   return db.stockMovement.create({ data });
@@ -196,6 +201,50 @@ export async function sumMovementsByIngredientAtLocation(
   }));
 }
 
+// Ticket 24: the count-derived-sales formula reads each reason's movements
+// for the period between two counts, one reason at a time (rather than one
+// query per product) — grouped by product and reason so the caller sums
+// whichever reasons the formula needs per item.
+export async function sumMovementsByProductReasonAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  reasons: StockMovementReason[],
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ productId: string; reason: StockMovementReason; quantity: number }[]> {
+  const grouped = await db.stockMovement.groupBy({
+    by: ["productId", "reason"],
+    where: {
+      locationId,
+      reason: { in: reasons },
+      occurredAt: { gt: periodStart, lte: periodEnd },
+    },
+    _sum: { quantity: true },
+  });
+
+  return grouped.map((g) => ({
+    productId: g.productId,
+    reason: g.reason,
+    quantity: g._sum.quantity ?? 0,
+  }));
+}
+
+// The count immediately before a given one at the same location — the
+// "previous count" formulas.md's derived-sales formula reads from. None
+// for the first-ever count at a location.
+export async function findPreviousStockCountAtLocation(
+  db: PrismaClient,
+  locationId: string,
+  beforeOccurredAt: Date,
+): Promise<StockCount | null> {
+  const count = await db.stockCount.findFirst({
+    where: { locationId, occurredAt: { lt: beforeOccurredAt } },
+    orderBy: { occurredAt: "desc" },
+    include: { lines: true },
+  });
+  return count as StockCount | null;
+}
+
 export async function createStockCount(
   db: PrismaClient,
   data: {
@@ -244,6 +293,28 @@ export async function findLatestStockCountAtLocation(
     include: { lines: true },
   });
   return count as StockCount | null;
+}
+
+// Ticket 24: the "since last count" detail on the owner's review screen —
+// sold_derived movements are attributed to the count that produced them by
+// occurring at the same instant (createStockMovement is called
+// immediately after createStockCount within recordCountDerivedSales, no
+// other write happens at that location in between), so the read side finds
+// them by product + location + reason in the same narrow window rather
+// than a stored count-id link on the movement.
+export async function findDerivedSalesAtOccurredAt(
+  db: PrismaClient,
+  locationId: string,
+  occurredAt: Date,
+): Promise<{ productId: string; quantity: number; sellingValueMinor: number | null }[]> {
+  const movements = await db.stockMovement.findMany({
+    where: { locationId, reason: "sold_derived", occurredAt },
+  });
+  return movements.map((m) => ({
+    productId: m.productId,
+    quantity: -m.quantity,
+    sellingValueMinor: m.sellingValueMinor,
+  }));
 }
 
 export async function markStockCountLineCorrected(

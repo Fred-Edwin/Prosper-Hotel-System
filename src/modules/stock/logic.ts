@@ -12,6 +12,7 @@ import {
   recordIngredientCost,
   recordProductCost,
 } from "@/modules/catalogue";
+import { creditSaleQuantityByProductAtLocation } from "@/modules/sales";
 import {
   createIngredientConsumptionMovement,
   createIngredientCorrectionMovement,
@@ -20,15 +21,19 @@ import {
   createProductionMovement,
   createStockCount,
   createStockMovement,
+  findDerivedSalesAtOccurredAt,
   findLatestStockCountAtLocation,
+  findPreviousStockCountAtLocation,
   findReceiptById,
   findReceiptsAtLocation,
   findStockCountById,
   markStockCountLineCorrected,
   sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
+  sumMovementsByProductReasonAtLocationInPeriod,
 } from "./queries";
 import type {
+  DerivedSaleLine,
   IngredientMovement,
   NonSalesCategory,
   Receipt,
@@ -852,7 +857,154 @@ export async function recordStockCount(
     })),
   });
 
+  // CONTEXT.md's "Sold, derived" / formulas.md §2: the canteen's only
+  // source of item-by-item trading detail is worked out at a count, since
+  // individual sales aren't recorded there. Restaurant-only counts never
+  // trigger this — the restaurant records every sale directly.
+  const location = await findLocationById(db, input.locationId);
+  if (location?.code === "canteen") {
+    await recordCountDerivedSales(db, requester, count);
+  }
+
   return { ok: true, count };
+}
+
+// formulas.md §2's canteen formula:
+//   sold = previous count + received + transferred in
+//        − recorded credit sales − wasted − consumed − given away
+//        − transferred out − this count
+// Reads every reason's movements in the period strictly after the
+// previous count and up to (inclusive of) this one, per product, then
+// writes one `sold_derived` movement per item where the result is
+// non-zero. Nothing is written for a product with no previous count to
+// compare against ("the first period has no measured rate") — silently
+// skipped, not treated as an error, since a first-ever canteen count is
+// an expected, normal event.
+//
+// Reused directly from the sales module (creditSaleQuantityByProductAtLocation)
+// rather than through stock's own movement ledger — credit sales are
+// recorded on the Sale/PaymentLine tables, not as stock movements, so this
+// is the one place stock reads across into sales. sales/logic.ts already
+// imports from stock (recordCounterSale calls recordStockMovement), so
+// this makes the two modules mutually dependent — both directions go
+// through the other's index.ts only, and neither has any module-level
+// side effect that could deadlock on load, so it is safe in practice; a
+// third module implementing "count-derived sales" as an orchestration
+// layer above both would avoid this if it recurs elsewhere.
+async function recordCountDerivedSales(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  count: StockCount,
+): Promise<void> {
+  const previousCount = await findPreviousStockCountAtLocation(
+    db,
+    count.locationId,
+    count.occurredAt,
+  );
+  if (!previousCount) return;
+
+  const previousByProduct = new Map(
+    previousCount.lines
+      .filter((line) => line.itemType === "product")
+      .map((line) => [line.itemId, line.countedQuantity]),
+  );
+
+  const productIds = count.lines
+    .filter((line) => line.itemType === "product" && previousByProduct.has(line.itemId))
+    .map((line) => line.itemId);
+  if (productIds.length === 0) return;
+
+  const [movementSums, creditSales, products] = await Promise.all([
+    sumMovementsByProductReasonAtLocationInPeriod(
+      db,
+      count.locationId,
+      ["received", "transferred", "wasted", "consumed", "given_away"],
+      previousCount.occurredAt,
+      count.occurredAt,
+    ),
+    creditSaleQuantityByProductAtLocation(
+      db,
+      count.locationId,
+      previousCount.occurredAt,
+      count.occurredAt,
+    ),
+    findProductsByIds(db, productIds),
+  ]);
+
+  const productById = new Map(products.map((p) => [p.id, p]));
+  const creditQuantityByProduct = new Map(creditSales.map((s) => [s.productId, s.quantity]));
+
+  // transferred is signed (positive in, negative out) — split it back into
+  // its two named terms rather than summing it once, since the formula
+  // treats "transferred in" and "transferred out" as separate lines.
+  const sumsByProduct = new Map<string, { transferredIn: number; transferredOut: number; wasted: number; consumed: number; givenAway: number }>();
+  for (const sum of movementSums) {
+    const entry = sumsByProduct.get(sum.productId) ?? {
+      transferredIn: 0,
+      transferredOut: 0,
+      wasted: 0,
+      consumed: 0,
+      givenAway: 0,
+    };
+    if (sum.reason === "received") {
+      // received is folded into the formula as its own positive term below.
+    } else if (sum.reason === "transferred") {
+      if (sum.quantity > 0) entry.transferredIn += sum.quantity;
+      else entry.transferredOut += -sum.quantity;
+    } else if (sum.reason === "wasted") {
+      entry.wasted += -sum.quantity;
+    } else if (sum.reason === "consumed") {
+      entry.consumed += -sum.quantity;
+    } else if (sum.reason === "given_away") {
+      entry.givenAway += -sum.quantity;
+    }
+    sumsByProduct.set(sum.productId, entry);
+  }
+  const receivedByProduct = new Map(
+    movementSums.filter((s) => s.reason === "received").map((s) => [s.productId, s.quantity]),
+  );
+
+  for (const line of count.lines) {
+    if (line.itemType !== "product") continue;
+    const previousCounted = previousByProduct.get(line.itemId);
+    if (previousCounted === undefined) continue;
+
+    const sums = sumsByProduct.get(line.itemId) ?? {
+      transferredIn: 0,
+      transferredOut: 0,
+      wasted: 0,
+      consumed: 0,
+      givenAway: 0,
+    };
+    const received = receivedByProduct.get(line.itemId) ?? 0;
+    const creditSold = creditQuantityByProduct.get(line.itemId) ?? 0;
+
+    const sold =
+      previousCounted +
+      received +
+      sums.transferredIn -
+      creditSold -
+      sums.wasted -
+      sums.consumed -
+      sums.givenAway -
+      sums.transferredOut -
+      line.countedQuantity;
+
+    if (sold === 0) continue;
+
+    const product = productById.get(line.itemId);
+    const sellingValueMinor = product?.priceMinor != null ? product.priceMinor * sold : null;
+
+    await createStockMovement(db, {
+      productId: line.itemId,
+      locationId: count.locationId,
+      quantity: -sold,
+      reason: "sold_derived",
+      staffMemberId: requester.staff.id,
+      sellingValueMinor,
+      occurredAt: count.occurredAt,
+    });
+  }
 }
 
 async function withItemNames(
@@ -923,8 +1075,20 @@ export async function getStockCount(
   return { ok: true, count: counted };
 }
 
+// Ticket 24: "since last count" is only ever meaningful at the canteen
+// (the restaurant records every sale directly, per CONTEXT.md) and only
+// once a previous count exists to derive against — formulas.md's "the
+// first period has no measured rate" caveat. `available: false` covers
+// both a restaurant count and a canteen first count; the UI shows the
+// same "not yet available" messaging either way rather than distinguishing
+// them, since the ticket only asks the detail be absent/labelled
+// unavailable, not that the two reasons read differently.
+export type DerivedSalesDetail =
+  | { available: false }
+  | { available: true; lines: DerivedSaleLine[] };
+
 export type LatestStockCountResult =
-  | { ok: true; count: StockCountForReader | null }
+  | { ok: true; count: StockCountForReader | null; derivedSales: DerivedSalesDetail }
   | { ok: false; reason: "forbidden" };
 
 // The owner's review/correct table under the admin Stock destination —
@@ -944,9 +1108,35 @@ export async function getLatestStockCount(
   }
 
   const count = await findLatestStockCountAtLocation(db, locationId);
-  if (!count) return { ok: true, count: null };
+  if (!count) return { ok: true, count: null, derivedSales: { available: false } };
 
-  return { ok: true, count: await withItemNames(db, count) };
+  const location = await findLocationById(db, locationId);
+  if (location?.code !== "canteen") {
+    return { ok: true, count: await withItemNames(db, count), derivedSales: { available: false } };
+  }
+
+  const previousCount = await findPreviousStockCountAtLocation(db, locationId, count.occurredAt);
+  if (!previousCount) {
+    return { ok: true, count: await withItemNames(db, count), derivedSales: { available: false } };
+  }
+
+  const derived = await findDerivedSalesAtOccurredAt(db, locationId, count.occurredAt);
+  const products = derived.length > 0 ? await findProductsByIds(db, derived.map((d) => d.productId)) : [];
+  const nameById = new Map(products.map((p) => [p.id, p.name]));
+
+  return {
+    ok: true,
+    count: await withItemNames(db, count),
+    derivedSales: {
+      available: true,
+      lines: derived.map((d) => ({
+        productId: d.productId,
+        itemName: nameById.get(d.productId) ?? "Unknown product",
+        quantity: d.quantity,
+        revenueMinor: d.sellingValueMinor,
+      })),
+    },
+  };
 }
 
 export type CorrectStockCountResult =

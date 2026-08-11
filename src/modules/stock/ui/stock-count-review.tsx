@@ -19,6 +19,13 @@
  * composition, kept to the same Table primitives stock-count-detail.tsx
  * already used rather than RecordTable, because RecordTable's Column.cell
  * has no room for a stateful per-row input.
+ *
+ * Ticket 24 extends this screen with a "since last count" section: the
+ * canteen's derived-sold quantity and revenue per item, computed when the
+ * count was recorded (stock/logic.ts's recordCountDerivedSales). Owner-only
+ * like the rest of this screen — it's financial detail, same footing as the
+ * expected/difference comparison above. Absent for a restaurant count or a
+ * canteen's first-ever count (nothing to derive against yet).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -34,7 +41,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingTable, ErrorState, EmptyFirstUse } from "@/components/patterns/states";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, TrendingUp } from "lucide-react";
+import { money } from "@/shared/money";
 
 export type ReviewLine = {
   id: string;
@@ -45,10 +53,24 @@ export type ReviewLine = {
   correctedAt: string | null;
 };
 
+export type DerivedSaleLine = {
+  productId: string;
+  itemName: string;
+  quantity: number;
+  revenueMinor: number | null;
+};
+
+export type DerivedSalesDetail = { available: false } | { available: true; lines: DerivedSaleLine[] };
+
 export type LoadState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ready"; countId: string | null; lines: ReviewLine[] | null };
+  | {
+      status: "ready";
+      countId: string | null;
+      lines: ReviewLine[] | null;
+      derivedSales: DerivedSalesDetail;
+    };
 
 async function fetchLatestCount(locationId: string): Promise<LoadState> {
   try {
@@ -59,6 +81,7 @@ async function fetchLatestCount(locationId: string): Promise<LoadState> {
       status: "ready",
       countId: body.count?.id ?? null,
       lines: body.count?.lines ?? null,
+      derivedSales: body.derivedSales ?? { available: false },
     };
   } catch {
     return { status: "error" };
@@ -316,6 +339,68 @@ export function StockCountReviewView({
                 </TableRow>
               );
             })}
+          </TableBody>
+        </Table>
+      </div>
+
+      <DerivedSalesSection detail={state.derivedSales} />
+    </div>
+  );
+}
+
+/** The canteen's only source of item-by-item trading detail — worked out
+ * at this count, not recorded at the moment of sale (CONTEXT.md's "Sold,
+ * derived"). Renders nothing for a restaurant count; shows an explicit
+ * "not yet available" message for a canteen's first-ever count, per
+ * formulas.md's "first period has no measured rate" caveat, rather than a
+ * false zero-baseline figure. */
+function DerivedSalesSection({ detail }: { detail: DerivedSalesDetail }) {
+  if (!detail.available) return null;
+
+  if (detail.lines.length === 0) {
+    return (
+      <div className="mt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <TrendingUp className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-medium">Since last count</h2>
+        </div>
+        <p className="text-[12px] text-muted-foreground">
+          Nothing sold since the last count.
+        </p>
+      </div>
+    );
+  }
+
+  const totalRevenueMinor = detail.lines.reduce((sum, l) => sum + (l.revenueMinor ?? 0), 0);
+
+  return (
+    <div className="mt-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="size-4 text-muted-foreground" />
+          <h2 className="text-sm font-medium">Since last count</h2>
+        </div>
+        <span className="text-[12px] text-muted-foreground">{money(totalRevenueMinor)} derived</span>
+      </div>
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Item</TableHead>
+              <TableHead className="w-24 text-right">Sold</TableHead>
+              <TableHead className="w-32 text-right">Revenue</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {detail.lines.map((l) => (
+              <TableRow key={l.productId} data-testid="derived-sales-row">
+                <TableCell className="font-medium">{l.itemName}</TableCell>
+                <TableCell className="tabular-nums text-right">{l.quantity}</TableCell>
+                <TableCell className="tabular-nums text-right">
+                  {l.revenueMinor == null ? "—" : money(l.revenueMinor)}
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </div>

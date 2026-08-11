@@ -37,6 +37,7 @@ export type {
   RecordStockCountResult,
   StockCountResult,
   LatestStockCountResult,
+  DerivedSalesDetail,
   CorrectStockCountResult,
 } from "./logic";
 export {
@@ -66,4 +67,5 @@ export type {
   StockCountItemType,
   StockCountForReader,
   StockCountLineForReader,
+  DerivedSaleLine,
 } from "./schema";

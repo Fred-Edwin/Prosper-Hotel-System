@@ -200,7 +200,7 @@ export async function latestStockCountRoute(
     return Response.json({ error: result.reason }, { status: 403 });
   }
 
-  return Response.json({ count: result.count });
+  return Response.json({ count: result.count, derivedSales: result.derivedSales });
 }
 
 export async function correctStockCountRoute(
