@@ -62,6 +62,42 @@ export async function sumCreditForCustomer(db: PrismaClient, customerId: string)
   return result._sum.amountMinor ?? 0;
 }
 
+// Ticket 24: count-derived sales at the canteen subtracts recorded credit
+// sales from the formula — only credit is individually recorded there
+// (CONTEXT.md's Sale entry). Non-void lines only, per formulas.md's rule
+// that cancelled entries count nowhere.
+export async function sumCreditSaleQuantityByProductAtLocation(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ productId: string; quantity: number }[]> {
+  const sales = await db.sale.findMany({
+    where: {
+      locationId,
+      voided: false,
+      occurredAt: { gt: periodStart, lte: periodEnd },
+      paymentLines: { some: { method: "credit" } },
+    },
+    include: { lines: true },
+  });
+
+  const quantityByProduct = new Map<string, number>();
+  for (const sale of sales) {
+    for (const line of sale.lines) {
+      quantityByProduct.set(
+        line.productId,
+        (quantityByProduct.get(line.productId) ?? 0) + line.quantity,
+      );
+    }
+  }
+
+  return Array.from(quantityByProduct.entries()).map(([productId, quantity]) => ({
+    productId,
+    quantity,
+  }));
+}
+
 export async function findSalesForStaffToday(
   db: PrismaClient,
   staffMemberId: string,

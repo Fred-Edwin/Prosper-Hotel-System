@@ -160,10 +160,20 @@ model RecipeLine {
 // used on the IngredientMovement side is `issued`, reused rather than a
 // separate reason — the ingredients really did leave the store for this
 // production run.
+// sold_derived added by ticket 24: CONTEXT.md's "Sold, derived" — a sale
+// inferred at a canteen count rather than recorded at the moment of sale.
+// Product (StockMovement) only, by construction — an IngredientMovement
+// row is never written with this reason, since ingredients are never sold
+// (CONTEXT.md). There is no separate IngredientMovementReason enum to
+// split this against; both movement tables share this one, and the
+// asymmetry is enforced by which table each reason is actually written to
+// (e.g. `produced`/`sold`/`sold_derived` never appear on
+// IngredientMovement, `issued` never appears on StockMovement).
 enum StockMovementReason {
   received
   transferred
   sold
+  sold_derived
   wasted
   consumed
   given_away

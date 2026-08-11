@@ -8,7 +8,7 @@ is checked against in a later stage, and both need to exist for the
 canteen's revenue/cost story to be demoable together, though the
 computation itself only strictly needs 21 and the existing sale/count
 machinery)
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done
 
 ## What this delivers
 
@@ -94,29 +94,29 @@ count.
 
 ## Acceptance criteria
 
-- [ ] `sold_derived` exists on `StockMovementReason`.
-- [ ] Given a canteen count and a prior count, the derived-sold quantity
+- [x] `sold_derived` exists on `StockMovementReason`.
+- [x] Given a canteen count and a prior count, the derived-sold quantity
       per item matches formulas.md §2's formula exactly, verified
       against the doc's own worked reasoning style (construct an
       equivalent worked example in the test).
-- [ ] Credit sales recorded in the period are subtracted (read from
+- [x] Credit sales recorded in the period are subtracted (read from
       `sales`, filtered to non-void credit lines at that location in the
       period between the two counts).
-- [ ] Transferred in/out, wasted, consumed, given away are each read
+- [x] Transferred in/out, wasted, consumed, given away are each read
       from their respective existing movement reasons in the period and
       applied with the correct sign.
-- [ ] A `sold_derived` movement is written per item with non-zero
+- [x] A `sold_derived` movement is written per item with non-zero
       derived quantity, valued at the product's selling price.
-- [ ] First-ever count at a location produces no derived-sold detail
+- [x] First-ever count at a location produces no derived-sold detail
       (nothing to compare against) rather than a wrong zero-baseline
       figure.
-- [ ] `getCurrentStockAtLocation` includes `sold_derived` in its sum
+- [x] `getCurrentStockAtLocation` includes `sold_derived` in its sum
       like any other movement.
-- [ ] **Screen:** ticket 20's count-result view gains a "since last
+- [x] **Screen:** ticket 20's count-result view gains a "since last
       count" item-detail table when the count is at the canteen; absent
       or clearly labelled unavailable for a first count or a restaurant
       count.
-- [ ] Storybook: extend ticket 20's count-result story with a
+- [x] Storybook: extend ticket 20's count-result story with a
       canteen-with-detail variant and a canteen-first-count variant.
 
 ## Verification

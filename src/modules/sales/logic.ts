@@ -8,6 +8,7 @@ import {
   findSalesForStaffToday,
   markSaleVoided,
   sumCreditForCustomer,
+  sumCreditSaleQuantityByProductAtLocation,
 } from "./queries";
 import type { PaymentMethod, Sale, SaleFulfilment } from "./schema";
 
@@ -119,6 +120,19 @@ export async function recordCounterSale(
 // payment lines, never a stored figure.
 export async function getCustomerBalance(db: PrismaClient, customerId: string): Promise<number> {
   return sumCreditForCustomer(db, customerId);
+}
+
+// Ticket 24: stock's count-derived-sales formula reads this directly — the
+// caller (recordStockCount, already permission-checked) is trusted, so
+// this has no access check of its own, same as catalogue's
+// findProductsByIds being called from stock/logic.ts.
+export async function creditSaleQuantityByProductAtLocation(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ productId: string; quantity: number }[]> {
+  return sumCreditSaleQuantityByProductAtLocation(db, locationId, periodStart, periodEnd);
 }
 
 export type ListTodaysSalesResult =
