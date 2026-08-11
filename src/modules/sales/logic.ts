@@ -189,9 +189,9 @@ export async function voidSale(
 
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0);
-  if (sale.occurredAt < dayStart) return { ok: false, reason: "not_same_day" };
 
   if (requester.staff.role !== "owner") {
+    if (sale.occurredAt < dayStart) return { ok: false, reason: "not_same_day" };
     const closed = await isDayClosedFor(db, sale.staffMemberId, sale.locationId, dayStart);
     if (closed) return { ok: false, reason: "day_closed" };
   }

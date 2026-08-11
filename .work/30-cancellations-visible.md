@@ -4,7 +4,7 @@
 **Blocked by:** 28 (day-close state — a cancellation only needs special
 handling once post-close cancellation is even possible; before that,
 same-day void already displays correctly per ticket 10)
-**Status:** planned
+**Status:** done
 
 ## Goal
 
@@ -62,21 +62,58 @@ not indistinguishable from an entry that never happened.
 
 ## Acceptance criteria
 
-- [ ] Today's Sales: void badge/dimming confirmed correct for a sale
+- [x] Today's Sales: void badge/dimming confirmed correct for a sale
       voided by the owner after that day closed for the recorder
       (post-ticket-28 case), not just the pre-28 same-day case.
-- [ ] Money-out: a reversed expense is visibly marked (badge + dimmed
+- [x] Money-out: a reversed expense is visibly marked (badge + dimmed
       row, matching Today's Sales' pattern) rather than silently absent
       from the list — implement only if the audit confirms this is
       currently missing.
-- [ ] Stock count detail: a corrected count line is visibly distinguished
+- [x] Stock count detail: a corrected count line is visibly distinguished
       from an uncorrected one — implement only if the audit finds this
       isn't already true.
-- [ ] Handover and Takings: confirmed to have no cancellation state to
+- [x] Handover and Takings: confirmed to have no cancellation state to
       surface (edit-in-place design) — documented in this ticket's
       completion notes as "no change needed," not silently skipped.
-- [ ] No new logic, routes, or schema changes — this ticket touches
+- [x] No new logic, routes, or schema changes — this ticket touches
       `ui/` files only.
+
+## Completion notes
+
+Audit found every display gap the ticket speculated about already
+implemented, plus one real logic bug blocking the case the ticket
+asked to confirm:
+
+- **Today's Sales** (`todays-sales.tsx`): badge (line 231–235) and
+  dimmed row (line 213) key off `sale.voided` alone, with no same-day
+  assumption — already correct for the post-close case. But
+  `voidSale` (`sales/logic.ts`) itself had an unconditional
+  `occurredAt < dayStart → not_same_day` check running *before* the
+  owner bypass, so the owner could never actually void a previous-day
+  sale — contradicting its own comment ("Post-close is owner-only") and
+  ticket 28's intent. Flagged to Edwinfred as a scope question (ticket
+  28's own cited precedent was broken); approved to fix here. Moved the
+  `not_same_day` check inside the `role !== "owner"` branch, mirroring
+  the existing `day_closed` bypass. Added a logic test: "the owner can
+  void a sale from a previous day" (`sales.integration.test.ts`).
+  Existing "voiding a sale from a previous day is rejected" test
+  (non-owner) still passes unchanged.
+- **Money-out** (`money-out-list.tsx`): already has a "Reversed" badge
+  (line 128–134) and a dimmed/muted amount (line 111, `muted={e.reversed}`)
+  — ticket 16 did copy ticket 10's pattern after all. No change needed.
+- **Stock count review** (`stock-count-review.tsx`, the owner's
+  comparison screen where `correctedAt` lives): a corrected line already
+  shows a "Corrected" label (line 296–297) distinguishing it from an
+  uncorrected disagreement. No change needed. (`stock-count-detail.tsx`,
+  the staff view, never receives expected/correction data at all by
+  design — not applicable here.)
+- **Handover / Takings**: confirmed no void/cancel/reversed state exists
+  on either screen — genuinely edit-in-place per tickets 13/23. No
+  change needed.
+
+Net result: no UI files changed. One logic fix (`sales/logic.ts`) plus
+its test, approved by Edwinfred as an exception to this ticket's
+"display only" scope since it blocked AC #1 from being true.
 
 ## Verification
 
