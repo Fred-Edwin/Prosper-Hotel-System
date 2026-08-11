@@ -305,7 +305,12 @@ function HandoverCount({
               first, then come back here.
             </p>
           )}
-          {submitError && submitError !== "takings_not_recorded" && (
+          {submitError === "day_closed" && (
+            <p className="text-[12px] text-destructive" data-testid="handover-submit-error">
+              This day is closed — ask the owner.
+            </p>
+          )}
+          {submitError && submitError !== "takings_not_recorded" && submitError !== "day_closed" && (
             <p className="text-[12px] text-destructive" data-testid="handover-submit-error">
               Couldn&apos;t record the handover. Try again.
             </p>

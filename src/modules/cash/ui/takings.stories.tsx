@@ -68,3 +68,18 @@ export const SubmitFails: Story = {
     onSubmit: stubSubmitFails,
   },
 };
+
+/**
+ * Ticket 28: the attendant's own handover already closed the day, so a
+ * takings re-entry is rejected with a clear reason.
+ */
+export const DayClosed: Story = {
+  name: "Day closed — edit rejected",
+  args: {
+    state: {
+      status: "ready",
+      takings: { cashMinor: 5000, mpesaMinor: 3200 },
+    },
+    onSubmit: async () => ({ ok: false as const, error: "day_closed" }),
+  },
+};

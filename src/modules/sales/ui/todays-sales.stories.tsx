@@ -114,3 +114,11 @@ export const VoidFails: Story = {
     onVoid: async () => ({ ok: false, error: "already_voided" }),
   },
 };
+
+export const VoidDayClosed: Story = {
+  name: "Void — day closed",
+  args: {
+    state: Default.args.state,
+    onVoid: async () => ({ ok: false, error: "day_closed" }),
+  },
+};

@@ -2,6 +2,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { canAccessLocation, findCustomerById, type AuthenticatedStaff } from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
 import { recordStockMovement } from "@/modules/stock";
+import { isDayClosedFor } from "@/modules/cash";
 import {
   createSaleRecord,
   findSaleById,
@@ -164,11 +165,14 @@ export async function listTodaysSalesForStaff(
 
 export type VoidSaleResult =
   | { ok: true; sale: Sale }
-  | { ok: false; reason: "forbidden" | "not_found" | "already_voided" | "not_same_day" };
+  | {
+      ok: false;
+      reason: "forbidden" | "not_found" | "already_voided" | "not_same_day" | "day_closed";
+    };
 
-// architecture.md: "any role," same day, before close — not "only the
-// recorder." Post-close/owner-only isn't implemented since no closed-day
-// state exists yet (ticket scope).
+// architecture.md: "any role," same day, before close. Post-close is
+// owner-only — see cash's isDayClosedFor, keyed to the sale's own staff
+// member/location, since closing is per-person.
 export async function voidSale(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -186,6 +190,11 @@ export async function voidSale(
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0);
   if (sale.occurredAt < dayStart) return { ok: false, reason: "not_same_day" };
+
+  if (requester.staff.role !== "owner") {
+    const closed = await isDayClosedFor(db, sale.staffMemberId, sale.locationId, dayStart);
+    if (closed) return { ok: false, reason: "day_closed" };
+  }
 
   const products = await findProductsByIds(
     db,

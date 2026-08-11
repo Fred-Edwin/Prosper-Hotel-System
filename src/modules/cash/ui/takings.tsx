@@ -233,7 +233,12 @@ function TakingsEntry({
             Go back and change these
           </button>
 
-          {submitError && (
+          {submitError === "day_closed" && (
+            <p className="text-[12px] text-destructive" data-testid="takings-submit-error">
+              This day is closed — ask the owner.
+            </p>
+          )}
+          {submitError && submitError !== "day_closed" && (
             <p className="text-[12px] text-destructive" data-testid="takings-submit-error">
               Couldn&apos;t record today&apos;s takings. Try again.
             </p>

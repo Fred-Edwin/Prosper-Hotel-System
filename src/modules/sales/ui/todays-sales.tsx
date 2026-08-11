@@ -141,14 +141,17 @@ export function TodaysSalesView({
   const [confirmingVoidId, setConfirmingVoidId] = useState<string | null>(null);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [voidErrorId, setVoidErrorId] = useState<string | null>(null);
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   async function handleConfirmVoid(saleId: string) {
     setVoidingId(saleId);
     setVoidErrorId(null);
+    setVoidError(null);
     const result = await onVoid(saleId);
     setVoidingId(null);
     if (!result.ok) {
       setVoidErrorId(saleId);
+      setVoidError(result.error);
       return;
     }
     onVoided();
@@ -302,7 +305,9 @@ export function TodaysSalesView({
                     </Button>
                     {voidErrorId === sale.id && (
                       <p className="mt-2 text-[12px] text-destructive" data-testid="todays-sales-void-error">
-                        Couldn&apos;t void this sale. Try again.
+                        {voidError === "day_closed"
+                          ? "This day is closed — ask the owner."
+                          : "Couldn't void this sale. Try again."}
                       </p>
                     )}
                   </div>

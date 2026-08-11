@@ -36,6 +36,25 @@ function requireOwner(requester: AuthenticatedStaff): boolean {
   return requester.staff.role === "owner";
 }
 
+// proposal.md §8: a person's day, at their location, is closed the moment
+// their Handover for that day is recorded — per-person, per-location, not a
+// global end-of-day switch. Reused by every same-day edit entry point that
+// needs to reject non-owner edits after handover.
+export async function isDayClosedFor(
+  db: PrismaClient,
+  staffMemberId: string,
+  locationId: string,
+  date: Date,
+): Promise<boolean> {
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const handover = await findTodaysHandover(db, staffMemberId, locationId, dayStart, dayEnd);
+  return handover !== null;
+}
+
 // CONTEXT.md's Handover, restaurant case: expected is the sum of that
 // person's non-void recorded sales for the day, cash and M-Pesa separately.
 // Credit is excluded — no money changed hands at the point of sale.
@@ -79,7 +98,7 @@ async function computeExpectedFromTakings(
 
 export type RecordHandoverResult =
   | { ok: true; handover: Handover }
-  | { ok: false; reason: "forbidden" | "takings_not_recorded" };
+  | { ok: false; reason: "forbidden" | "takings_not_recorded" | "day_closed" };
 
 // A second attempt the same day, same staff member, same location edits the
 // existing row in place rather than creating a second one — proposal.md §5 /
@@ -99,6 +118,11 @@ export async function recordHandover(
   }
 
   const { dayStart, dayEnd } = dayBounds();
+
+  if (!requireOwner(requester)) {
+    const closed = await isDayClosedFor(db, requester.staff.id, locationId, dayStart);
+    if (closed) return { ok: false, reason: "day_closed" };
+  }
 
   const expected =
     requester.location.code === "canteen"
@@ -156,7 +180,7 @@ export async function getTodaysHandoverForStaff(
 
 export type RecordTakingsResult =
   | { ok: true; takings: Takings }
-  | { ok: false; reason: "forbidden" | "invalid_amount" };
+  | { ok: false; reason: "forbidden" | "invalid_amount" | "day_closed" };
 
 // CONTEXT.md's Takings: the canteen's structural substitute for per-sale
 // recording — no expected figure to compute or compare against, unlike
@@ -178,6 +202,12 @@ export async function recordTakings(
   }
 
   const { dayStart, dayEnd } = dayBounds();
+
+  if (!requireOwner(requester)) {
+    const closed = await isDayClosedFor(db, requester.staff.id, locationId, dayStart);
+    if (closed) return { ok: false, reason: "day_closed" };
+  }
+
   const existing = await findTodaysTakings(db, locationId, dayStart, dayEnd);
 
   const takings = existing

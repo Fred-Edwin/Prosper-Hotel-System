@@ -5,6 +5,7 @@ import { recordCounterSale, voidSale } from "@/modules/sales";
 import {
   getTodaysHandoverForStaff,
   getTodaysHandoversAtLocation,
+  isDayClosedFor,
   recordHandover,
   recordTakings,
 } from "../logic";
@@ -208,7 +209,7 @@ describe("recordHandover", () => {
     expect(result.handover.actualCashMinor).toBe(50);
   });
 
-  test("a second attempt the same day, same staff, same location edits the existing handover in place", async () => {
+  test("a second attempt the same day, same staff, same location is rejected once the day is closed", async () => {
     const first = await recordHandover(testDb, staffAt("cashier", restaurantId), {
       cashMinor: 100,
       mpesaMinor: 0,
@@ -217,6 +218,31 @@ describe("recordHandover", () => {
     if (!first.ok) return;
 
     const second = await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 120,
+      mpesaMinor: 0,
+    });
+
+    expect(second).toEqual({ ok: false, reason: "day_closed" });
+
+    const all = await testDb.handover.findMany({ where: { staffMemberId: "staff-1" } });
+    expect(all).toHaveLength(1);
+    expect(all[0].actualCashMinor).toBe(100);
+  });
+
+  test("the owner can still edit a handover in place after the day is closed", async () => {
+    const first = await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 100,
+      mpesaMinor: 0,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const ownerAsSameStaff: AuthenticatedStaff = {
+      staff: { ...staffAt("cashier", restaurantId).staff, role: "owner" },
+      location: staffAt("cashier", restaurantId).location,
+    };
+
+    const second = await recordHandover(testDb, ownerAsSameStaff, {
       cashMinor: 120,
       mpesaMinor: 0,
     });
@@ -295,7 +321,7 @@ describe("recordHandover — canteen", () => {
     expect(rows).toHaveLength(0);
   });
 
-  test("a second attempt the same day edits the existing canteen handover in place", async () => {
+  test("a second attempt the same day at the canteen is rejected once the day is closed", async () => {
     await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
 
     const first = await recordHandover(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
@@ -303,13 +329,11 @@ describe("recordHandover — canteen", () => {
     if (!first.ok) return;
 
     const second = await recordHandover(testDb, attendant(), { cashMinor: 4800, mpesaMinor: 3200 });
-    expect(second.ok).toBe(true);
-    if (!second.ok) return;
-    expect(second.handover.id).toBe(first.handover.id);
-    expect(second.handover.actualCashMinor).toBe(4800);
+    expect(second).toEqual({ ok: false, reason: "day_closed" });
 
     const all = await testDb.handover.findMany({ where: { staffMemberId: "staff-3" } });
     expect(all).toHaveLength(1);
+    expect(all[0].actualCashMinor).toBe(5000);
   });
 });
 
@@ -432,5 +456,148 @@ describe("getTodaysHandoversAtLocation", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.handovers).toHaveLength(0);
+  });
+});
+
+describe("isDayClosedFor", () => {
+  test("is false when no handover has been recorded today", async () => {
+    const closed = await isDayClosedFor(testDb, "staff-1", restaurantId, new Date());
+    expect(closed).toBe(false);
+  });
+
+  test("is true once a handover has been recorded for that staff member and location today", async () => {
+    await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 100,
+      mpesaMinor: 0,
+    });
+
+    const closed = await isDayClosedFor(testDb, "staff-1", restaurantId, new Date());
+    expect(closed).toBe(true);
+  });
+
+  test("is false for a different staff member at the same location on the same day", async () => {
+    await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 100,
+      mpesaMinor: 0,
+    });
+
+    const closed = await isDayClosedFor(testDb, "staff-2", restaurantId, new Date());
+    expect(closed).toBe(false);
+  });
+
+  test("is false for the same staff member at a different location", async () => {
+    await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 100,
+      mpesaMinor: 0,
+    });
+
+    const closed = await isDayClosedFor(testDb, "staff-1", canteenId, new Date());
+    expect(closed).toBe(false);
+  });
+});
+
+describe("recordTakings — day-close enforcement", () => {
+  function attendant(): AuthenticatedStaff {
+    return staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
+  }
+
+  test("a non-owner cannot edit takings after recording their own handover for the day", async () => {
+    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+    const handover = await recordHandover(testDb, attendant(), {
+      cashMinor: 5000,
+      mpesaMinor: 3200,
+    });
+    expect(handover.ok).toBe(true);
+
+    const result = await recordTakings(testDb, attendant(), {
+      cashMinor: 5100,
+      mpesaMinor: 3200,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "day_closed" });
+
+    const takings = await testDb.takings.findFirst({ where: { locationId: canteenId } });
+    expect(takings?.cashMinor).toBe(5000);
+  });
+
+  test("the owner can still edit takings after a handover has been recorded", async () => {
+    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+    await recordHandover(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+
+    const owner = staffAt("owner", canteenId, "canteen");
+    const result = await recordTakings(testDb, owner, { cashMinor: 5100, mpesaMinor: 3200 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.takings.cashMinor).toBe(5100);
+  });
+
+  test("before any handover is recorded, takings can still be edited same-day", async () => {
+    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+
+    const result = await recordTakings(testDb, attendant(), { cashMinor: 5100, mpesaMinor: 3200 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.takings.cashMinor).toBe(5100);
+  });
+});
+
+describe("voidSale — day-close enforcement", () => {
+  test("a non-owner cannot void a same-day sale after recording their own handover", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const handover = await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 0,
+      mpesaMinor: 0,
+    });
+    expect(handover.ok).toBe(true);
+
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    expect(result).toEqual({ ok: false, reason: "day_closed" });
+  });
+
+  test("the owner can still void a same-day sale after the seller's handover is recorded", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 0,
+      mpesaMinor: 0,
+    });
+
+    const owner = staffAt("owner", restaurantId);
+    const result = await voidSale(testDb, owner, recorded.sale.id);
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("a different staff member's handover does not close this seller's day", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    await recordHandover(
+      testDb,
+      staffMemberAt("staff-2", "Other Cashier", "cashier", restaurantId),
+      { cashMinor: 0, mpesaMinor: 0 },
+    );
+
+    const result = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+
+    expect(result.ok).toBe(true);
   });
 });
