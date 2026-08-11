@@ -662,6 +662,23 @@ describe("voidSale", () => {
     expect(result).toEqual({ ok: false, reason: "not_same_day" });
   });
 
+  test("the owner can void a sale from a previous day", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    await testDb.sale.update({ where: { id: recorded.sale.id }, data: { occurredAt: yesterday } });
+
+    const result = await voidSale(testDb, staffAt("owner", restaurantId), recorded.sale.id);
+
+    expect(result.ok).toBe(true);
+  });
+
   test("a cashier at a different location cannot void a sale there", async () => {
     const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
       lines: [{ productId: sodaId, quantity: 1 }],
