@@ -20,6 +20,7 @@ export async function createStockMovement(
     sellingValueMinor?: number | null;
     isEstimated?: boolean;
     transferId?: string;
+    receiptId?: string;
   },
 ): Promise<StockMovement> {
   return db.stockMovement.create({ data });
@@ -115,26 +116,54 @@ export async function createIngredientConsumptionMovement(
 
 // receiptId is only nullable for wasted/consumed/given_away rows (ticket
 // 15) — the "received" filter below means every row here always has one.
+// Ticket 22: a receipt may also include product lines (StockMovement),
+// which carry no unitCostMinor of their own — their per-line value comes
+// from the product's lastKnownCostMinor as of the receipt (queried once
+// per receipt set, not per line, since the average may have moved since).
 export async function findReceiptsAtLocation(db: PrismaClient, locationId: string): Promise<Receipt[]> {
-  const movements = await db.ingredientMovement.findMany({
-    where: { locationId, reason: "received" },
-    orderBy: { occurredAt: "desc" },
-  });
+  const [ingredientMovements, stockMovements] = await Promise.all([
+    db.ingredientMovement.findMany({
+      where: { locationId, reason: "received" },
+      orderBy: { occurredAt: "desc" },
+    }),
+    db.stockMovement.findMany({
+      where: { locationId, reason: "received" },
+      orderBy: { occurredAt: "desc" },
+    }),
+  ]);
 
-  const byReceiptId = new Map<string, IngredientMovement[]>();
-  for (const movement of movements) {
+  const productIds = [...new Set(stockMovements.map((m) => m.productId))];
+  const products =
+    productIds.length > 0
+      ? await db.product.findMany({ where: { id: { in: productIds } } })
+      : [];
+  const productCostById = new Map(products.map((p) => [p.id, p.lastKnownCostMinor ?? 0]));
+
+  const byReceiptId = new Map<
+    string,
+    { occurredAt: Date; totalMinor: number; lineCount: number }
+  >();
+  for (const movement of ingredientMovements) {
     const receiptId = movement.receiptId as string;
-    const group = byReceiptId.get(receiptId) ?? [];
-    group.push(movement);
+    const group = byReceiptId.get(receiptId) ?? { occurredAt: movement.occurredAt, totalMinor: 0, lineCount: 0 };
+    group.totalMinor += movement.quantity * (movement.unitCostMinor ?? 0);
+    group.lineCount += 1;
+    byReceiptId.set(receiptId, group);
+  }
+  for (const movement of stockMovements) {
+    const receiptId = movement.receiptId as string;
+    const group = byReceiptId.get(receiptId) ?? { occurredAt: movement.occurredAt, totalMinor: 0, lineCount: 0 };
+    group.totalMinor += movement.quantity * (productCostById.get(movement.productId) ?? 0);
+    group.lineCount += 1;
     byReceiptId.set(receiptId, group);
   }
 
-  return Array.from(byReceiptId.entries()).map(([receiptId, lines]) => ({
+  return Array.from(byReceiptId.entries()).map(([receiptId, group]) => ({
     receiptId,
     locationId,
-    occurredAt: lines[0].occurredAt,
-    totalMinor: lines.reduce((sum, l) => sum + l.quantity * (l.unitCostMinor ?? 0), 0),
-    lineCount: lines.length,
+    occurredAt: group.occurredAt,
+    totalMinor: group.totalMinor,
+    lineCount: group.lineCount,
   }));
 }
 
@@ -142,9 +171,13 @@ export async function findReceiptById(
   db: PrismaClient,
   receiptId: string,
 ): Promise<{ receiptId: string; locationId: string } | null> {
-  const movement = await db.ingredientMovement.findFirst({ where: { receiptId } });
-  if (!movement) return null;
-  return { receiptId: movement.receiptId as string, locationId: movement.locationId };
+  const ingredientMovement = await db.ingredientMovement.findFirst({ where: { receiptId } });
+  if (ingredientMovement) {
+    return { receiptId: ingredientMovement.receiptId as string, locationId: ingredientMovement.locationId };
+  }
+  const stockMovement = await db.stockMovement.findFirst({ where: { receiptId } });
+  if (!stockMovement) return null;
+  return { receiptId: stockMovement.receiptId as string, locationId: stockMovement.locationId };
 }
 
 export async function sumMovementsByIngredientAtLocation(

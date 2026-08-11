@@ -4,11 +4,16 @@
  * Receiving — record a delivery into the store.
  *
  * Mirrors New sale's line-entry pattern per ticket 12: search/pick an
- * ingredient, add it as a line, enter quantity and price paid per unit,
+ * item, add it as a line, enter quantity and price paid per unit,
  * confirm. Simpler than the till in one respect — there's no payment
  * step here (that's a separate Cash Movement the owner records, per
  * architecture.md: "recording a receipt is not paying for it") — so a
  * line is complete as soon as quantity and price are filled in.
+ *
+ * Ticket 22: a delivery may include ingredients, products, or both in one
+ * visit (e.g. the canteen receiving printer paper and airtime scratch
+ * cards together) — an Ingredients/Products toggle filters which picker
+ * is shown, but lines from both kinds can sit together in one delivery.
  */
 
 import { useEffect, useState } from "react";
@@ -27,27 +32,61 @@ type Ingredient = {
   active: boolean;
 };
 
-type Line = { ingredient: Ingredient; quantity: string; unitCostMinor: string };
+type Product = {
+  id: string;
+  name: string;
+  lastKnownCostMinor: number | null;
+  active: boolean;
+};
+
+type Item =
+  | { itemType: "ingredient"; ingredient: Ingredient }
+  | { itemType: "product"; product: Product };
+
+type Line = {
+  itemType: "product" | "ingredient";
+  itemId: string;
+  name: string;
+  unit: string;
+  lastKnownCostMinor: number | null;
+  quantity: string;
+  unitCostMinor: string;
+};
 
 export type LoadState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ready"; ingredients: Ingredient[] };
+  | { status: "ready"; ingredients: Ingredient[]; products: Product[] };
 
-async function fetchIngredients(): Promise<LoadState> {
+async function fetchIngredientsAndProducts(): Promise<LoadState> {
   try {
-    const response = await fetch("/api/catalogue/ingredients/active");
-    if (!response.ok) return { status: "error" };
-    const body = await response.json();
-    if (!Array.isArray(body?.ingredients)) return { status: "error" };
-    return { status: "ready", ingredients: body.ingredients };
+    const [ingredientsResponse, productsResponse] = await Promise.all([
+      fetch("/api/catalogue/ingredients/active"),
+      fetch("/api/catalogue/products/active"),
+    ]);
+    if (!ingredientsResponse.ok || !productsResponse.ok) return { status: "error" };
+    const ingredientsBody = await ingredientsResponse.json();
+    const productsBody = await productsResponse.json();
+    if (!Array.isArray(ingredientsBody?.ingredients) || !Array.isArray(productsBody?.products)) {
+      return { status: "error" };
+    }
+    return {
+      status: "ready",
+      ingredients: ingredientsBody.ingredients,
+      products: productsBody.products,
+    };
   } catch {
     return { status: "error" };
   }
 }
 
 async function submitReceipt(input: {
-  lines: { ingredientId: string; quantity: number; unitCostMinor: number }[];
+  lines: {
+    itemType: "product" | "ingredient";
+    itemId: string;
+    quantity: number;
+    unitCostMinor: number;
+  }[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const response = await fetch("/api/stock/receive", {
@@ -87,7 +126,7 @@ function ReceiveDeliveryForAttempt({
 
   useEffect(() => {
     let cancelled = false;
-    fetchIngredients().then((result) => {
+    fetchIngredientsAndProducts().then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
@@ -115,64 +154,93 @@ export function ReceiveDeliveryView({
   if (state.status === "error") {
     return (
       <div className="p-3">
-        <ErrorState what="ingredients" onRetry={onRetry} />
+        <ErrorState what="items" onRetry={onRetry} />
       </div>
     );
   }
-  if (state.ingredients.length === 0) {
+  if (state.ingredients.length === 0 && state.products.length === 0) {
     return (
       <div className="p-3">
         <EmptyFirstUse
           icon={<PackagePlus className="size-4" />}
-          title="No ingredients to receive yet"
-          body="Once ingredients are added in the catalogue, they will appear here to record a delivery against."
+          title="Nothing to receive yet"
+          body="Once ingredients or products are added in the catalogue, they will appear here to record a delivery against."
         />
       </div>
     );
   }
 
-  return <Receiving ingredients={state.ingredients} onDone={onDone} onSubmit={onSubmit} />;
+  return (
+    <Receiving
+      ingredients={state.ingredients}
+      products={state.products}
+      onDone={onDone}
+      onSubmit={onSubmit}
+    />
+  );
 }
 
 function Receiving({
   ingredients,
+  products,
   onDone,
   onSubmit,
 }: {
   ingredients: Ingredient[];
+  products: Product[];
   onDone: () => void;
   onSubmit: typeof submitReceipt;
 }) {
+  const [tab, setTab] = useState<"ingredient" | "product">(
+    ingredients.length === 0 && products.length > 0 ? "product" : "ingredient",
+  );
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<Line[] | null>(null);
 
-  const shown = query.trim()
-    ? ingredients.filter((i) => i.name.toLowerCase().includes(query.trim().toLowerCase()))
-    : ingredients;
+  const items: Item[] =
+    tab === "ingredient"
+      ? ingredients.map((ingredient) => ({ itemType: "ingredient" as const, ingredient }))
+      : products.map((product) => ({ itemType: "product" as const, product }));
 
-  const add = (ingredient: Ingredient) =>
+  const shown = query.trim()
+    ? items.filter((i) => {
+        const name = i.itemType === "ingredient" ? i.ingredient.name : i.product.name;
+        return name.toLowerCase().includes(query.trim().toLowerCase());
+      })
+    : items;
+
+  const add = (item: Item) => {
+    const itemId = item.itemType === "ingredient" ? item.ingredient.id : item.product.id;
     setLines((ls) => {
-      if (ls.some((l) => l.ingredient.id === ingredient.id)) return ls;
+      if (ls.some((l) => l.itemId === itemId)) return ls;
+      const name = item.itemType === "ingredient" ? item.ingredient.name : item.product.name;
+      const lastKnownCostMinor =
+        item.itemType === "ingredient" ? item.ingredient.lastKnownCostMinor : item.product.lastKnownCostMinor;
       return [
         ...ls,
         {
-          ingredient,
+          itemType: item.itemType,
+          itemId,
+          name,
+          unit: item.itemType === "ingredient" ? item.ingredient.unitOfMeasure : "unit",
+          lastKnownCostMinor,
           quantity: "",
-          unitCostMinor: ingredient.lastKnownCostMinor != null ? String(ingredient.lastKnownCostMinor) : "",
+          unitCostMinor: lastKnownCostMinor != null ? String(lastKnownCostMinor) : "",
         },
       ];
     });
+  };
 
-  const remove = (id: string) => setLines((ls) => ls.filter((l) => l.ingredient.id !== id));
+  const remove = (itemId: string) => setLines((ls) => ls.filter((l) => l.itemId !== itemId));
 
-  const setQuantity = (id: string, quantity: string) =>
-    setLines((ls) => ls.map((l) => (l.ingredient.id === id ? { ...l, quantity } : l)));
+  const setQuantity = (itemId: string, quantity: string) =>
+    setLines((ls) => ls.map((l) => (l.itemId === itemId ? { ...l, quantity } : l)));
 
-  const setUnitCost = (id: string, unitCostMinor: string) =>
-    setLines((ls) => ls.map((l) => (l.ingredient.id === id ? { ...l, unitCostMinor } : l)));
+  const setUnitCost = (itemId: string, unitCostMinor: string) =>
+    setLines((ls) => ls.map((l) => (l.itemId === itemId ? { ...l, unitCostMinor } : l)));
 
   const linesComplete =
     lines.length > 0 &&
@@ -190,7 +258,8 @@ function Receiving({
     setSubmitError(null);
     const result = await onSubmit({
       lines: lines.map((l) => ({
-        ingredientId: l.ingredient.id,
+        itemType: l.itemType,
+        itemId: l.itemId,
         quantity: Number(l.quantity),
         unitCostMinor: Number(l.unitCostMinor),
       })),
@@ -210,12 +279,40 @@ function Receiving({
   return (
     <div className="flex min-h-full flex-col">
       <div className="border-b bg-card px-3 pt-2 pb-2">
+        <div
+          className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+          role="tablist"
+          aria-label="Item type"
+        >
+          <button
+            role="tab"
+            aria-selected={tab === "ingredient"}
+            onClick={() => setTab("ingredient")}
+            data-testid="receive-tab-ingredient"
+            className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+              tab === "ingredient" ? "bg-card shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            Ingredients
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "product"}
+            onClick={() => setTab("product")}
+            data-testid="receive-tab-product"
+            className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+              tab === "product" ? "bg-card shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            Products
+          </button>
+        </div>
         <div className="relative">
           <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search ingredients"
+            placeholder={tab === "ingredient" ? "Search ingredients" : "Search products"}
             className="h-10 pl-8"
             data-testid="receive-search"
           />
@@ -232,7 +329,13 @@ function Receiving({
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
-        {shown.length === 0 ? (
+        {items.length === 0 ? (
+          <div className="py-12 text-center">
+            <p className="text-sm text-muted-foreground">
+              No {tab === "ingredient" ? "ingredients" : "products"} to receive yet.
+            </p>
+          </div>
+        ) : shown.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-sm text-muted-foreground">
               Nothing matches &ldquo;{query}&rdquo;.
@@ -242,26 +345,31 @@ function Receiving({
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2" data-testid="receive-ingredient-grid">
-            {shown.map((i) => {
-              const inLines = lines.some((l) => l.ingredient.id === i.id);
+          <div className="grid grid-cols-2 gap-2" data-testid="receive-item-grid">
+            {shown.map((item) => {
+              const itemId = item.itemType === "ingredient" ? item.ingredient.id : item.product.id;
+              const name = item.itemType === "ingredient" ? item.ingredient.name : item.product.name;
+              const lastKnownCostMinor =
+                item.itemType === "ingredient"
+                  ? item.ingredient.lastKnownCostMinor
+                  : item.product.lastKnownCostMinor;
+              const unit = item.itemType === "ingredient" ? item.ingredient.unitOfMeasure : "unit";
+              const inLines = lines.some((l) => l.itemId === itemId);
               return (
                 <button
-                  key={i.id}
-                  onClick={() => add(i)}
-                  title={i.name}
+                  key={itemId}
+                  onClick={() => add(item)}
+                  title={name}
                   disabled={inLines}
-                  data-testid="receive-ingredient-tile"
+                  data-testid="receive-item-tile"
                   className={`relative flex h-[64px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 disabled:opacity-50 ${
                     inLines ? "border-neutral-400" : "active:bg-accent"
                   }`}
                 >
-                  <span className="line-clamp-2 text-[13px] leading-tight font-medium">
-                    {i.name}
-                  </span>
+                  <span className="line-clamp-2 text-[13px] leading-tight font-medium">{name}</span>
                   <span className="text-[11px] text-muted-foreground">
-                    {i.unitOfMeasure}
-                    {i.lastKnownCostMinor != null && ` · last ${money(i.lastKnownCostMinor)}`}
+                    {unit}
+                    {lastKnownCostMinor != null && ` · last ${money(lastKnownCostMinor)}`}
                   </span>
                   {inLines && (
                     <span className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-white">
@@ -279,27 +387,27 @@ function Receiving({
         {lines.length > 0 && (
           <div className="max-h-64 overflow-y-auto px-4 py-1.5" data-testid="receive-lines">
             {lines.map((l) => (
-              <div key={l.ingredient.id} className="flex items-center gap-2 border-b py-2 last:border-0">
+              <div key={l.itemId} className="flex items-center gap-2 border-b py-2 last:border-0">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium">{l.ingredient.name}</div>
+                  <div className="truncate text-[13px] font-medium">{l.name}</div>
                   <div className="mt-1 flex items-center gap-1.5">
                     <Input
                       inputMode="numeric"
                       placeholder="Qty"
                       value={l.quantity}
-                      onChange={(e) => setQuantity(l.ingredient.id, e.target.value)}
+                      onChange={(e) => setQuantity(l.itemId, e.target.value)}
                       className="h-8 w-20 text-[13px]"
-                      data-testid={`receive-quantity-${l.ingredient.id}`}
+                      data-testid={`receive-quantity-${l.itemId}`}
                     />
-                    <span className="text-[11px] text-muted-foreground">{l.ingredient.unitOfMeasure}</span>
+                    <span className="text-[11px] text-muted-foreground">{l.unit}</span>
                     <span className="text-[11px] text-muted-foreground">@</span>
                     <Input
                       inputMode="numeric"
                       placeholder="Price/unit"
                       value={l.unitCostMinor}
-                      onChange={(e) => setUnitCost(l.ingredient.id, e.target.value)}
+                      onChange={(e) => setUnitCost(l.itemId, e.target.value)}
                       className="h-8 w-24 text-[13px]"
-                      data-testid={`receive-unitcost-${l.ingredient.id}`}
+                      data-testid={`receive-unitcost-${l.itemId}`}
                     />
                   </div>
                 </div>
@@ -307,8 +415,8 @@ function Receiving({
                   size="icon"
                   variant="ghost"
                   className="size-7 shrink-0 text-muted-foreground"
-                  onClick={() => remove(l.ingredient.id)}
-                  aria-label={`Remove ${l.ingredient.name}`}
+                  onClick={() => remove(l.itemId)}
+                  aria-label={`Remove ${l.name}`}
                 >
                   <Trash2 className="size-3.5" />
                 </Button>
@@ -361,15 +469,15 @@ function ReceiptConfirmation({ lines, onDone }: { lines: Line[]; onDone: () => v
           <p className="text-sm font-medium">Delivery recorded</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">{money(total)}</p>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            {lines.length} {lines.length === 1 ? "ingredient" : "ingredients"} added to stock
+            {lines.length} {lines.length === 1 ? "item" : "items"} added to stock
           </p>
         </div>
 
         <div className="rounded-lg border bg-card p-3">
           {lines.map((l) => (
-            <div key={l.ingredient.id} className="flex justify-between gap-3 py-1.5 text-[13px]">
+            <div key={l.itemId} className="flex justify-between gap-3 py-1.5 text-[13px]">
               <span className="min-w-0 truncate">
-                {l.quantity} {l.ingredient.unitOfMeasure} × {l.ingredient.name}
+                {l.quantity} {l.unit} × {l.name}
               </span>
               <span className="shrink-0 tabular-nums">{money(Number(l.unitCostMinor))} / unit</span>
             </div>

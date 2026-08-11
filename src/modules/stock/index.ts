@@ -28,6 +28,7 @@ export type {
   TransferHistoryEntry,
   TransferHistoryLine,
   RecordMovementResult,
+  ReceiptLine,
   RecordIngredientReceiptResult,
   RecordIngredientIssueResult,
   RecordProductionResult,

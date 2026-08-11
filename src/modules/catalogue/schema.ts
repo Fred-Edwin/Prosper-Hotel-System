@@ -7,6 +7,7 @@ export type Product = {
   name: string;
   kind: ProductKind;
   priceMinor: number | null;
+  lastKnownCostMinor: number | null;
   active: boolean;
 };
 

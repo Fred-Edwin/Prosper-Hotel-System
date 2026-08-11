@@ -14,6 +14,10 @@ export type StockMovement = {
   staffMemberId: string;
   occurredAt: Date;
   transferId: string | null;
+  // Shared by every line recorded in the same receiving call (ticket 22) —
+  // a delivery may mix product and ingredient lines under one receipt id.
+  // Null for every other reason.
+  receiptId: string | null;
 };
 
 export type StockLevel = {

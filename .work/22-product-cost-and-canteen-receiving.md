@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends the existing `Product` model and
 `recordIngredientReceipt`'s pattern; does not depend on ticket 21)
-**Status:** in-progress (claimed by claude-code build session, 2026-08-11)
+**Status:** in-review
 
 ## What this delivers
 
@@ -71,27 +71,46 @@ and, later (ticket 25), the canteen's own-goods cost-estimate rate.
 
 ## Acceptance criteria
 
-- [ ] `Product.lastKnownCostMinor` exists, nullable, minor units.
-- [ ] `recordProductCost` recalculates the running average correctly
+- [x] `Product.lastKnownCostMinor` exists, nullable, minor units.
+- [x] `recordProductCost` recalculates the running average correctly
       given existing quantity-on-hand at the location and the new
       delivery's quantity/price (same worked-example arithmetic as
       formulas.md §3, applied to a product instead of an ingredient).
-- [ ] Receiving a delivery accepts a mix of product and ingredient lines
+- [x] Receiving a delivery accepts a mix of product and ingredient lines
       in one call, all sharing one receipt id.
-- [ ] Each product line writes a `received` `StockMovement` and updates
+- [x] Each product line writes a `received` `StockMovement` and updates
       `Product.lastKnownCostMinor` via the running average; each
       ingredient line behaves exactly as ticket 12 already does
       (unchanged).
-- [ ] Rejected: non-positive quantity, negative cost, inactive product
+- [x] Rejected: non-positive quantity, negative cost, inactive product
       or ingredient — per line, in a mixed delivery.
-- [ ] `canAccessLocation()` + the existing `canReceive` role gate apply
+- [x] `canAccessLocation()` + the existing `canReceive` role gate apply
       unchanged (owner, store manager, attendant).
-- [ ] **Screen:** the existing `receive` screen (ticket 12) gains an
+- [x] **Screen:** the existing `receive` screen (ticket 12) gains an
       item-type toggle or combined picker so a canteen attendant can add
       product lines alongside (or instead of) ingredient lines in the
       same delivery form.
-- [ ] Storybook: extend `ReceiveDelivery`'s story with a canteen/product
+- [x] Storybook: extend `ReceiveDelivery`'s story with a canteen/product
       variant (product-only delivery, and a mixed delivery).
+
+## Notes from implementation
+
+- `recordIngredientCost` (ticket 12) never actually computed the running
+  average — it only overwrote `lastKnownCostMinor` with the price just
+  paid, ignoring quantity on hand. Fixed alongside `recordProductCost`
+  (same shared helper) since the ticket cites it as the pattern to mirror
+  and the bug would otherwise ship twice. Signature grew a
+  `quantityOnHand`/`quantityBought` input; its only caller
+  (`recordIngredientReceipt`) was updated accordingly.
+- `findReceiptsAtLocation`/`findReceipt` (stock module, read by cash's
+  Stock-category expense form) were extended to union `StockMovement` and
+  `IngredientMovement` rows sharing a `receiptId` — otherwise a
+  product-only delivery (e.g. a canteen buying only sodas, no ingredients)
+  would exist but never be selectable/payable from the cash screen.
+  Confirmed with the user before implementing.
+- `StockMovement.receiptId` added (mirroring `IngredientMovement`'s
+  existing field) so product lines can share a receipt id with ingredient
+  lines in the same delivery.
 
 ## Verification
 

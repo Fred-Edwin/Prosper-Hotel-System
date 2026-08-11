@@ -11,6 +11,7 @@ export {
   deactivateIngredient,
   reactivateIngredient,
   recordIngredientCost,
+  recordProductCost,
   createRecipe,
   getCurrentRecipe,
   getRecipeAt,
