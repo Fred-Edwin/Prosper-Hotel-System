@@ -4,6 +4,7 @@
 **Blocked by:** 12 (receiving) — the Stock category is defined as always
 paired with a `Received` stock movement, so this ticket needs a real
 receipt to pair against rather than inventing that link speculatively
+**Status:** done
 
 ## What this delivers
 

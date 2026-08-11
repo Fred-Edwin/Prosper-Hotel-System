@@ -13,6 +13,7 @@ export type StockMovement = {
   isEstimated: boolean | null;
   staffMemberId: string;
   occurredAt: Date;
+  transferId: string | null;
 };
 
 export type StockLevel = {
@@ -36,6 +37,7 @@ export type IngredientMovement = {
   // Null for wasted/consumed/given_away (ticket 15) — no delivery to
   // group under. Always set for received (ticket 16).
   receiptId: string | null;
+  transferId: string | null;
 };
 
 // One row per delivery event — every line recorded in the same

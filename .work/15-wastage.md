@@ -3,6 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (`stock`'s ledger and `wasted` reason already exist;
 `corrected` stays untouched — this is a distinct concept, see below)
+**Status:** done
 
 ## What this delivers
 

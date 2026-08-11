@@ -3,6 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (`stock`'s movement ledger already exists from the
 tracer slice)
+**Status:** done
 
 ## What this delivers
 

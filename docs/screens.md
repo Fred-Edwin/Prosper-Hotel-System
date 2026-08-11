@@ -45,6 +45,8 @@ new destinations get added here as tickets that build them land, per
 | Modules/Stock/ReceiveDelivery | `src/modules/stock/ui/receive-delivery.stories.tsx` | approved |
 | Modules/Stock/IssueToKitchen | `src/modules/stock/ui/issue-to-kitchen.stories.tsx` | approved |
 | Modules/Stock/RecordWastage | `src/modules/stock/ui/record-wastage.stories.tsx` | approved |
+| Modules/Stock/TransferDesign | `src/modules/stock/ui/transfer-variants.stories.tsx` | approved |
+| Modules/Stock/TransferHistory | `src/modules/stock/ui/transfer-history.stories.tsx` | approved |
 
 ## Sales
 

@@ -3,6 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (`StaffMember` already exists in schema, from the
 tracer slice — only create/update/deactivate logic is missing)
+**Status:** done
 
 ## What this delivers
 

@@ -4,6 +4,7 @@
 **Blocked by:** None (`stock`'s ingredient ledger and `received` reason
 already exist from tickets 12/15; this ticket adds a sibling reason the
 same way ticket 15 added `consumed`/`given_away`)
+**Status:** done
 
 ## What this delivers
 

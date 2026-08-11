@@ -100,6 +100,7 @@ const all: Record<string, StaffLink> = {
     icon: Boxes,
     hint: "What's on hand at your location",
   },
+  transfer: { key: "transfer", label: "Transfer stock", icon: ArrowLeftRight, hint: "Move stock to the other location" },
 };
 
 /** Six, three and five — the counts settled at setup. Stock added for every
@@ -115,6 +116,7 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     all.count,
     all.wastage,
     all.stock,
+    all.transfer,
     all.handover,
   ],
   cashier: [all.sell, all.sales, all.wastage, all.stock, all.handover],
@@ -125,6 +127,7 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     all.count,
     all.wastage,
     all.stock,
+    all.transfer,
     all.handover,
   ],
 };

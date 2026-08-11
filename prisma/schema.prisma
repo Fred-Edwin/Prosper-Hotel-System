@@ -270,6 +270,14 @@ model StockMovement {
   staffMemberId String
   staffMember   StaffMember         @relation(fields: [staffMemberId], references: [id])
   occurredAt    DateTime            @default(now())
+  // Shared by the outgoing and incoming rows of one transfer (ticket 21).
+  // Unlike a receipt this spans product and ingredient movement tables, so
+  // it remains a grouping value rather than a relation to a new record.
+  transferId    String?
+  // Set on a reversal's own rows to the transferId of the transfer it
+  // undoes (ticket 21) — lets the history view mark the original as
+  // reversed and refuse to reverse it twice, without a relation table.
+  reversedTransferId String?
 
   @@map("stock_movements")
 }
@@ -316,6 +324,12 @@ model IngredientMovement {
   // no delivery to group under, and nothing reads receiptId off them —
   // findReceiptsAtLocation filters to reason = "received" already.
   receiptId     String?
+  // Shared by the outgoing and incoming rows of one transfer (ticket 21).
+  transferId    String?
+  // Set on a reversal's own rows to the transferId of the transfer it
+  // undoes (ticket 21) — lets the history view mark the original as
+  // reversed and refuse to reverse it twice, without a relation table.
+  reversedTransferId String?
 
   @@map("ingredient_movements")
 }
