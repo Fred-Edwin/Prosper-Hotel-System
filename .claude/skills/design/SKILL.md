@@ -1,25 +1,40 @@
 ---
 name: design
-description: Finalize the design system (theme tokens, component base) and design every screen as a real, built, interactive prototype — organized by user role and destination — through a per-screen build/self-critique/review loop, landing each approved screen as a Storybook story. Use after /foundation, before /tickets.
+description: Design every not-yet-built screen for one stage/feature as a real, built, interactive prototype, through a per-screen build/self-critique/review loop, landing each approved screen as a Storybook story. Run once at bootstrap for the whole v1 product (before /tickets); re-run scoped to one stage/feature just-in-time, before that stage's /tickets, for the rest of the project's life.
 ---
 
 # Design
 
-Bootstrap phase 4 of 6. Run once, after `/foundation`, before `/tickets`.
+Takes a `scope` argument: a stage name or feature area (e.g. "Stage 4 —
+canteen operations", or a `docs/scope.md` feature name). Always state the
+scope explicitly before starting — never infer it silently from
+conversation context.
 
 ## Purpose
 
-Make every UI/UX decision up front, as real running code, so that `/build`
-never has to invent layout, component composition, or visual design while
-implementing a ticket. By the end of this phase, every screen the product
-needs exists as an approved, working Storybook story built from real
-components and realistic mock data — `/build` only assembles what's already
-designed.
+Make every UI/UX decision for the screens in scope up front, as real
+running code, so that `/build` never has to invent layout, component
+composition, or visual design while implementing a ticket. By the end of
+a run, every screen the scope needs exists as an approved, working
+Storybook story built from real components and realistic mock data —
+`/build` only assembles what's already designed.
 
 Screens are built as actual interactive prototypes (real components, real
 navigation, real mock data), never static mockups. Enterprise design
 quality is judged on usability and speed as much as appearance, and neither
 of those can be evaluated from a static image.
+
+## Bootstrap run vs. scoped rerun
+
+**First-ever run** (right after `/foundation`, before any `/tickets`):
+scope is the whole v1 product, theme doesn't exist yet, `docs/screens.md`
+doesn't exist yet. Do steps 1 and 2 in full.
+
+**Every later run** (steady state, for the rest of the project's life):
+scope is one stage or feature area whose screens are about to be ticketed.
+Theme and `docs/screens.md` already exist — steps 1 and 2 become quick
+checks, not fresh work. This is the common case from here on; assume it
+unless nothing has been designed yet.
 
 ## Inputs
 
@@ -27,41 +42,34 @@ of those can be evaluated from a static image.
 - The scaffolded repo, component tooling (shadcn init'd), and Storybook setup from `/foundation`
 - `references/ui-rules.md` and `references/design-principles.md` (this
   skill's reference material — read both in full before doing anything else)
-- Any project-specific overrides in `docs/design.md`, if one already exists
-  (project-specific rules there override `references/ui-rules.md`)
+- `docs/design.md` and the existing `docs/screens.md`, if they already exist
 
 ## Process
 
-### 1. Finalize the theme
+### 1. Confirm the theme
 
-Tokens are a real design decision, not scaffolding — decide them here, not
-in `/foundation`, so they reflect the actual design direction rather than a
-placeholder guess. Using `references/design-principles.md` as the basis:
+**Bootstrap run:** decide it fresh, using `references/design-principles.md`
+as the basis — neutral ramp, accent colour, semantic colours, radius
+personality and scale, type scale/font, motion durations/easings. Write
+into the project's Tailwind v4 `@theme` block. Create `docs/design.md` as
+a short index: chosen font, accent colour, radius personality, density
+default, and a pointer to the theme file and to `references/ui-rules.md` /
+`references/design-principles.md`. Do not duplicate token values into
+`docs/design.md` — point to the theme file instead. Confirm the finalized
+theme with Edwinfred before proceeding — this is a cheap, high-leverage
+checkpoint since every screen from here on depends on it.
 
-- Pick the neutral ramp (one Tailwind ramp, used exclusively), the accent
-  colour, and the three semantic colours
-- Pick the radius personality (sharp/medium/large) and derive the radius
-  scale
-- Confirm or set the type scale and font choice
-- Set motion durations/easings (defaults from `references/design-principles.md`
-  are almost always correct — only deviate with a specific reason)
+**Scoped rerun:** the theme file and `docs/design.md` already exist and
+are in active use by every previously-approved screen — do not redo this
+step. Just confirm nothing about it needs to change for the screens in
+scope; if it does, that's a real design decision, flag it to Edwinfred
+explicitly rather than editing tokens as a side effect of a single stage.
 
-Write these into the project's Tailwind v4 `@theme` block (the file
-`/foundation` scaffolded for this). This file is the binding source of
-truth for these values from this point forward — not a document. If
-`docs/design.md` doesn't exist yet, create it as a short index: chosen
-font, accent colour, radius personality, density default, and a pointer to
-the theme file and to `references/ui-rules.md` / `references/design-principles.md`.
-Do not duplicate token values into `docs/design.md` — point to the theme
-file instead.
+### 2. Extend the screen inventory
 
-Confirm the finalized theme with Edwinfred before proceeding — this is a
-cheap, high-leverage checkpoint since every screen from here on depends on it.
-
-### 2. Build the screen inventory
-
-Using `docs/scope.md` and `docs/architecture.md`, produce `docs/screens.md`:
-every screen the v1 product needs, organized as:
+**Bootstrap run:** using `docs/scope.md` and `docs/architecture.md`,
+produce `docs/screens.md` from scratch: every screen the v1 product
+needs, organized as:
 
 ```
 ## <Role/Persona> (e.g. Admin, Director, Accountant)
@@ -71,39 +79,49 @@ every screen the v1 product needs, organized as:
   **Status:** planned
 ```
 
+**Scoped rerun:** `docs/screens.md` already exists with prior stages'
+screens `approved`. Append rows for the current scope's screens only,
+under the existing role/destination structure — don't touch or
+re-organize already-approved rows. If the scope's screens aren't already
+named in `docs/screens.md`'s "Not yet built" note, derive them from
+`docs/scope.md` / `docs/roadmap.md` for this stage the same way the
+bootstrap run would, then add them as new `planned` rows.
+
 This is a living checklist — status moves through `planned` → `in review`
 → `approved` as the per-screen loop below proceeds. It makes the phase
 resumable: an agent picking this up in a later session reads exactly what's
 left, without Edwinfred re-explaining anything.
 
-Once the inventory is complete, ask Edwinfred where to start (which role,
-or shells/app-frame first) and what cadence to use — build one screen at a
-time, or a full role's screens before review. Do not assume; ask both, with
-one-at-a-time as the recommended default.
+Once the new rows are in place, ask Edwinfred what cadence to use for
+this scope — one screen at a time, or all of this scope's screens before
+review. Don't assume; one-at-a-time is the recommended default.
 
 ### 3. Identify pattern types before building
 
-Across the inventory, name the distinct screen *pattern types* present
-(e.g. list view, detail view, form, dashboard, settings) per
-`references/design-principles.md`'s page templates. Variant exploration
-(step 4 below) only happens for the **first screen of each pattern type**.
-Every subsequent screen of an already-established pattern type reuses the
-chosen pattern directly — no new variants, just consistent application.
-This keeps effort proportional and is itself what produces consistency
-across the app.
+Before building anything new, check the pattern types already established
+by prior approved screens (RecordTable, DetailPage, Form, SummaryStrip,
+etc., per `references/design-principles.md`'s page templates) — the
+default is to reuse one of these for each screen in scope. Variant
+exploration (step 4 below) only happens for a screen whose shape doesn't
+match any pattern type already in use anywhere in `docs/screens.md`, not
+just within the current scope. Every screen that fits an established
+pattern reuses it directly — no new variants, just consistent
+application. This keeps effort proportional and is itself what produces
+consistency across the app.
 
 ### 4. Per-screen build loop
 
-For each screen, in the order and cadence Edwinfred chose:
+For each screen in scope, in the order and cadence Edwinfred chose:
 
 1. **Build it as a real prototype** — actual shadcn components, actual
    Storybook-viewable, actual mock/seed-shaped data (per `scope.md`'s
    definition-of-done for the relevant feature — see "Mock data" below).
-   If this is the first screen of a new pattern type, build 2–3 real
-   variants; otherwise build one, following the established pattern.
-   Include the screen's required states in the same pass, not as a later
-   add-on: empty (first-use and no-filter-results are different messages),
-   loading (skeleton, not spinner), error, and permission-denied, per
+   If this is genuinely the first screen of a pattern type not already
+   established anywhere in the app, build 2–3 real variants; otherwise
+   build one, following the established pattern. Include the screen's
+   required states in the same pass, not as a later add-on: empty
+   (first-use and no-filter-results are different messages), loading
+   (skeleton, not spinner), error, and permission-denied, per
    `references/ui-rules.md`'s "Required states" section.
 
 2. **Self-critique before showing Edwinfred.** Check the built screen
@@ -129,7 +147,7 @@ For each screen, in the order and cadence Edwinfred chose:
    to step 2 for the new variants.
 
 6. Move to the next screen per the chosen cadence, repeating until every
-   screen in `docs/screens.md` is `approved`.
+   screen in this scope is `approved`.
 
 ### Mock data
 
@@ -147,21 +165,24 @@ than guessing at a shape or leaving the screen unfinished.
 
 ## Output
 
-- Finalized theme file (binding source of truth for design tokens)
-- `docs/design.md` (short index: chosen values summary + pointers)
-- `docs/screens.md` (full inventory, all screens `approved`)
-- Every approved screen as a Storybook story in-repo, built from real
-  components and covering its required states
-- `docs/conventions.md` may need a pointer added to the Storybook
-  location, if not already referenced from `/foundation`
+**Bootstrap run:** finalized theme file, `docs/design.md`, fully-approved
+`docs/screens.md`, every approved screen as a Storybook story in-repo.
+
+**Scoped rerun:** theme and `docs/design.md` unchanged (confirmed, not
+regenerated); `docs/screens.md` with this scope's new rows moved to
+`approved`; new Storybook stories for just those screens.
+
+Either way: `docs/conventions.md` may need a pointer added to the
+Storybook location, if not already referenced from `/foundation`.
 
 Note: these Storybook stories are isolated design references, not the
-running app. `/tickets` cuts a dedicated App Shell ticket (built first,
-before any feature) that wires real navigation and routing in the actual
-app around these designs — every destination becomes a real, clickable
-route showing the relevant approved screen's designed state (including
-its empty/pending state for destinations not yet implemented) rather than
-a 404.
+running app. On the bootstrap run, `/tickets` cuts a dedicated App Shell
+ticket (built first, before any feature) that wires real navigation and
+routing in the actual app around these designs — every destination
+becomes a real, clickable route showing the relevant approved screen's
+designed state (including its empty/pending state for destinations not
+yet implemented) rather than a 404. On a scoped rerun, the shell already
+exists — the stage's `/tickets` run wires its new routes into it instead.
 
 ## Explicit non-goals
 
@@ -174,3 +195,6 @@ a 404.
   against mock data — real logic and real data wiring is `/build`'s job.
 - Don't let an approved screen's "liked" notes become an implicit rule the
   agent applies to unrelated future screens.
+- No redesigning the theme or re-touching already-approved screens as a
+  side effect of a scoped rerun — scope creep here defeats the point of
+  scoping the run at all.

@@ -1,31 +1,24 @@
 ---
 name: build
-description: Claim one eligible ticket, implement it on its own branch, self-verify, and open a PR for /review. Use during the bootstrap build pass after /tickets, and repeatedly during steady state whenever tickets exist in planned status.
+description: Claim one eligible ticket, implement it on its own branch, self-verify, and merge — without waiting for /review unless you choose to run it first. Use during the bootstrap build pass after /tickets, and repeatedly during steady state whenever tickets exist in planned status.
 ---
 
 # Build
 
-Closes out the bootstrap sequence once the App Shell and first feature's
-tickets are all `done` — at that point the project is genuinely live, and
-`/build` becomes the main steady-state workhorse: re-run every time
-`/tickets` cuts a new feature's tickets, or `/fix`/`/add` hand off new
-ones. There is no fixed "phase 6 of 6" — `/tickets` now runs per-feature,
-just-in-time, so `/build` simply runs continuously alongside it for the
-life of the project.
+The steady-state workhorse: re-run every time `/tickets` cuts a new
+feature's tickets, or `/fix`/`/add` hand off new ones.
 
 ## Purpose
 
-Take one ticket from `planned` to `in-review`: implement it, verify it
-locally, and open a PR — without making scope or architecture decisions
+Take one ticket from `planned` to merged on `main`: implement it, verify
+it locally, and merge — without making scope or architecture decisions
 that aren't already settled in `docs/conventions.md`, `docs/architecture.md`,
 or the ticket itself.
 
-## Claiming a ticket
+**Track every step below in TodoWrite as you go** — add the steps up
+front, check each off the moment it's done. Don't defer this to the end.
 
-App Shell tickets must be `done` before any feature ticket is claimed —
-the shell provides the routes and layout every feature ticket wires
-into. If App Shell tickets are still open, claim from those first
-regardless of what else is `planned`.
+## Claiming a ticket
 
 1. Scan `.work/*.md` for tickets with `Status: planned` whose declared
    dependencies are all `Status: done`.
@@ -36,23 +29,23 @@ regardless of what else is `planned`.
    this status change immediately — this is the claim. If another agent
    later finds this ticket already `in-progress`, it moves on to a
    different eligible ticket rather than duplicating work.
-4. Create a branch for this ticket (e.g. `ticket/<ticket-id>-<slug>`).
+4. Create a branch for this ticket (e.g. `ticket/<ticket-id>-<slug>`),
+   off current `main`.
 
 ## Process
 
 1. **Read the ticket in full**, plus everything its Context section points
    to: the relevant feature folder, `docs/conventions.md`, relevant
-   sections of `docs/architecture.md`, relevant Storybook stories from
-   `docs/screens.md`.
+   sections of `docs/architecture.md`.
 
-   **If the ticket builds a new screen or changes an existing one**, check
-   for design precedent before planning the implementation: look in the
-   `prosper-hotel-design-reference` worktree (find its path with
-   `git worktree list` if it isn't checked out at the usual sibling path;
-   if the worktree is gone, check out branch `design-reference-a977bea`
-   fresh) for a matching Storybook story or component. If precedent
-   exists, build to match it — layout, components used, states — rather
-   than re-deriving the screen from `docs/conventions.md` alone.
+   **If the ticket builds a new screen or changes an existing one**,
+   check `docs/screens.md` for its `Status: approved` entry, then open
+   the matching Storybook story under `src/modules/<feature>/ui/` (or
+   `components/layout/` / `components/patterns/` for shells and shared
+   patterns). Build to match that story — layout, components used,
+   states — rather than re-deriving the screen from `docs/conventions.md`
+   alone. `docs/screens.md` is the single inventory; there is no separate
+   design-reference location to check.
 
    **If nothing matches, stop and ask** rather than inventing the
    composition silently — same rule as `CLAUDE.md`'s "if a needed pattern
@@ -70,14 +63,19 @@ regardless of what else is `planned`.
    building the closest existing pattern directly; don't assume either
    way, ask.
 
+   **If the ticket's own cited precedent (a function or screen it says
+   to mirror) turns out to be wrong or buggy**, that's a scope question,
+   not a local judgment call — stop and ask whether to fix the precedent
+   alongside the new work or leave it and only build the new code.
+
 2. **Decide test-first or not, then state a plan and wait for approval.**
    Tickets don't reliably carry a `TDD: true/false` field — decide per
    task instead: logic, calculations, and permission checks get tests
    written first (see below); plumbing, wiring, and pure UI composition
    get tests after, per the Verification section. Then present a short
    plan — files/modules touched, approach, the test-first-or-not call and
-   why, and (for UI tickets) whether design precedent was found — and wait
-   for explicit approval before writing any code.
+   why, and (for UI tickets) which approved story is being matched — and
+   wait for explicit approval before writing any code.
 
 3. **Implement the vertical slice** described in the ticket's Scope. Follow
    `docs/conventions.md` — use existing patterns and the canonical
@@ -96,6 +94,9 @@ regardless of what else is `planned`.
    test-first in the first place. Pure UI-composition portions of a mixed
    ticket don't need this discipline even when the logic portion is
    test-first — apply it to the logic, not the markup.
+
+   When logic accepts a batch/list input, include at least one test case
+   with a repeated key in that batch — a common gap otherwise.
 
    **If test-after:** implement normally. Tests are still required by
    the Verification section below, just not written test-first.
@@ -117,42 +118,62 @@ regardless of what else is `planned`.
 
    **If the ticket touches UI**, also check the rendered result against
    `references/ui-rules.md` item by item, visually, not just by reading
-   the code. Default to whatever native browser capability the running
-   agent already has (e.g. Codex's built-in browser) to load the changed
-   screen(s)/Storybook stories and check states. If no native browser
-   capability is available (e.g. running under Claude Code) or it's
-   having issues, fall back to the Playwright MCP server; if that also
-   isn't available or approved, fall back to a throwaway script driving
-   Playwright's bundled `chromium` directly (see `docs/gotchas.md`'s
-   Testing/Playwright section for both fallbacks' setup notes). If none
-   of these are usable, stop and flag it to the user rather than skipping
-   the visual check or reporting it as passed.
+   the code:
+
+   1. Start Storybook (`pnpm storybook`) and note the port it prints.
+   2. Fetch `http://localhost:<port>/index.json` and read the real story
+      IDs from it — **don't guess an ID from the story name**; Storybook's
+      slugging is more aggressive than it looks (e.g. "Empty — first use"
+      becomes `--empty`, not `--empty--first-use`).
+   3. Drive it with whatever native browser capability the running agent
+      already has (e.g. Codex's built-in browser). If none is available,
+      or it's having issues, fall back to the Playwright MCP server. If
+      that also isn't available or approved, fall back to a throwaway
+      script that `import { chromium } from "playwright"` and
+      `chromium.launch({ args: ["--no-sandbox"] })` directly — run it
+      with `node` from inside the repo (an absolute path *into* the repo,
+      or `cd` there first); running it from outside the repo, e.g. a
+      scratch dir, fails dependency resolution even though the script
+      looks identical.
+   4. If a fallback reports Chromium isn't installed, check
+      `ls ~/.cache/ms-playwright/` before installing anything — it's a
+      shared home-directory cache, so the binary is very likely already
+      there. Never install system Chrome as a fix (needs `sudo`, and
+      neither the MCP server nor `@playwright/test` use it anyway). Only
+      run `npx playwright install chromium` if the cache is genuinely
+      empty.
+   5. If the MCP server seems to hang or stall on first connect, that's
+      usually `npx` resolving the package fresh, not a missing
+      dependency — give it a moment before concluding it's broken.
+   6. Screenshots confirm layout/tokens/states, not underlying
+      correctness (e.g. that a total actually equals quantity × cost) —
+      reason about that from the code together with the screenshot, not
+      the screenshot alone.
 
    This is mechanical verification; it is not a substitute for `/review`,
-   which checks things a machine can't.
+   which checks things a machine can't and is optional per the merge step
+   below.
 
-6. **Open a PR** against main, referencing the ticket file. Set the
-   ticket's `Status: in-review`.
-
-7. **Stop.** `/build`'s job for this ticket ends at the PR. Do not merge —
-   that happens after `/review` approves.
+6. **Merge.** Once self-verify passes, merge the branch to `main` and set
+   the ticket's `Status: done`. `/review` is optional and user-invoked —
+   run it yourself before this step if you want that ticket gated, or
+   after merge as a post-hoc audit; `/build` doesn't wait for it by
+   default.
 
 ## On review feedback
 
-If `/review` rejects the PR, `/build` resumes: read the review findings,
-address them on the same branch, re-verify, and update the PR. Ticket
-status returns to `in-progress` while addressing findings, then back to
-`in-review` once pushed.
+If `/review` is run (before or after merge) and rejects the work, `/build`
+resumes: read the review findings, address them on the same branch (or a
+follow-up branch if already merged), re-verify, and merge again.
 
 ## Output
 
-One PR per ticket, ticket status accurately reflecting where it is in the
-pipeline (`in-progress` / `in-review` / `blocked` / `done`).
+One merged change per ticket, ticket status accurately reflecting where
+it is in the pipeline (`in-progress` / `blocked` / `done`).
 
 ## Explicit non-goals
 
-- No merging — `/review` gates that.
 - No scope or architecture decisions — flag and stop instead.
 - No working multiple tickets in one session/branch — one ticket, one
-  branch, one PR, keeps blast radius and review scope contained.
+  branch, one merge, keeps blast radius contained.
 - No writing code before the plan (step 2 of Process) is approved.
