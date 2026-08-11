@@ -63,6 +63,8 @@ export async function todaysHandoverRoute(): Promise<Response> {
           occurredAt: result.handover.occurredAt,
         }
       : null,
+    locationCode: session.location.code,
+    takingsRecordedToday: result.takingsRecordedToday,
   });
 }
 

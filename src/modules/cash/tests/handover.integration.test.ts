@@ -6,6 +6,7 @@ import {
   getTodaysHandoverForStaff,
   getTodaysHandoversAtLocation,
   recordHandover,
+  recordTakings,
 } from "../logic";
 import { testDb } from "@/shared/test-db";
 
@@ -14,7 +15,7 @@ let canteenId: string;
 let sodaId: string;
 
 function staffAt(
-  role: "owner" | "cashier",
+  role: "owner" | "cashier" | "attendant",
   locationId: string,
   locationCode: "restaurant" | "canteen" = "restaurant",
 ): AuthenticatedStaff {
@@ -24,7 +25,7 @@ function staffAt(
 function staffMemberAt(
   id: string,
   name: string,
-  role: "owner" | "cashier",
+  role: "owner" | "cashier" | "attendant",
   locationId: string,
   locationCode: "restaurant" | "canteen" = "restaurant",
 ): AuthenticatedStaff {
@@ -76,6 +77,18 @@ beforeAll(async () => {
     },
   });
 
+  await testDb.staffMember.create({
+    data: {
+      id: "staff-3",
+      name: "Test Attendant",
+      phone: "+254700111336",
+      pinHash: await hashPin("1234"),
+      role: "attendant",
+      locationId: canteen.id,
+      dailyRateMinor: 0,
+    },
+  });
+
   const soda = await testDb.product.create({
     data: { name: "Soda 500ml", kind: "goods", priceMinor: 80 },
   });
@@ -84,6 +97,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await testDb.handover.deleteMany({});
+  await testDb.takings.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
@@ -93,6 +107,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await testDb.handover.deleteMany({});
+  await testDb.takings.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
@@ -229,6 +244,7 @@ describe("recordHandover", () => {
       location: { id: canteenId, code: "canteen", name: "Test Canteen" },
     };
 
+    await recordTakings(testDb, cashierAtCanteen, { cashMinor: 0, mpesaMinor: 0 });
     const result = await recordHandover(testDb, cashierAtCanteen, { cashMinor: 0, mpesaMinor: 0 });
 
     expect(result.ok).toBe(true);
@@ -237,11 +253,71 @@ describe("recordHandover", () => {
   });
 });
 
+describe("recordHandover — canteen", () => {
+  function attendant(): AuthenticatedStaff {
+    return staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
+  }
+
+  test("expected cash/M-Pesa equal today's recorded Takings exactly, not summed sales", async () => {
+    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+
+    const result = await recordHandover(testDb, attendant(), {
+      cashMinor: 5000,
+      mpesaMinor: 3200,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handover.expectedCashMinor).toBe(5000);
+    expect(result.handover.expectedMpesaMinor).toBe(3200);
+  });
+
+  test("a mismatch between actual and takings-derived expected does not block recording", async () => {
+    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+
+    const result = await recordHandover(testDb, attendant(), {
+      cashMinor: 4750,
+      mpesaMinor: 3200,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handover.expectedCashMinor).toBe(5000);
+    expect(result.handover.actualCashMinor).toBe(4750);
+  });
+
+  test("is blocked with takings_not_recorded when no takings have been recorded yet today", async () => {
+    const result = await recordHandover(testDb, attendant(), { cashMinor: 100, mpesaMinor: 0 });
+
+    expect(result).toEqual({ ok: false, reason: "takings_not_recorded" });
+
+    const rows = await testDb.handover.findMany({ where: { locationId: canteenId } });
+    expect(rows).toHaveLength(0);
+  });
+
+  test("a second attempt the same day edits the existing canteen handover in place", async () => {
+    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+
+    const first = await recordHandover(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const second = await recordHandover(testDb, attendant(), { cashMinor: 4800, mpesaMinor: 3200 });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.handover.id).toBe(first.handover.id);
+    expect(second.handover.actualCashMinor).toBe(4800);
+
+    const all = await testDb.handover.findMany({ where: { staffMemberId: "staff-3" } });
+    expect(all).toHaveLength(1);
+  });
+});
+
 describe("getTodaysHandoverForStaff", () => {
   test("returns null when nothing has been recorded today", async () => {
     const result = await getTodaysHandoverForStaff(testDb, staffAt("cashier", restaurantId));
 
-    expect(result).toEqual({ ok: true, handover: null });
+    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: true });
   });
 
   test("returns the requester's own handover for today after recording", async () => {
@@ -267,7 +343,24 @@ describe("getTodaysHandoverForStaff", () => {
 
     const result = await getTodaysHandoverForStaff(testDb, staffAt("cashier", restaurantId));
 
-    expect(result).toEqual({ ok: true, handover: null });
+    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: true });
+  });
+
+  test("reports takingsRecordedToday false at the canteen when no takings have been recorded", async () => {
+    const attendant = staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
+
+    const result = await getTodaysHandoverForStaff(testDb, attendant);
+
+    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: false });
+  });
+
+  test("reports takingsRecordedToday true at the canteen once takings have been recorded", async () => {
+    const attendant = staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
+    await recordTakings(testDb, attendant, { cashMinor: 5000, mpesaMinor: 3200 });
+
+    const result = await getTodaysHandoverForStaff(testDb, attendant);
+
+    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: true });
   });
 });
 

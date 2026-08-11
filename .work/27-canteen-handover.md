@@ -4,7 +4,7 @@
 **Blocked by:** 23 (takings — the canteen's expected figure comes from
 the day's declared takings, not summed sales; this ticket cannot exist
 until that figure is recordable)
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done
 
 ## Goal
 
