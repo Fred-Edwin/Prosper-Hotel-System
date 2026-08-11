@@ -88,9 +88,12 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   MCP server fails even with a fully-populated `~/.cache/ms-playwright/`.
   `.mcp.json` is gitignored (local machine config, not shared) — each
   session sets it up independently, so this can recur on a fresh
-  machine. Fix it by adding `--browser chromium` to the server's `args`
-  in `.mcp.json` and restarting the MCP connection, rather than
-  installing system Chrome. If you don't want to touch `.mcp.json`, the
+  machine. **`.mcp.json.example` is the tracked template with the fix
+  already applied** (`--browser chromium` in the server's `args`) — if
+  `.mcp.json` doesn't exist yet, copy it from there; if it already
+  exists but predates this fix, diff it against the example and add the
+  missing flag, then restart the MCP connection. Don't install system
+  Chrome as a workaround. If you don't want to touch `.mcp.json`, the
   throwaway-script fallback below already launches bundled chromium
   explicitly and is unaffected either way.
 - **"Chromium isn't installed" — check the shared cache before installing
