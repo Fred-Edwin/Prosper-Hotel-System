@@ -5,7 +5,7 @@
 schema, adds no new payment/customer behaviour), 23 (takings — not a
 data dependency, but the canteen's other Stage 4 recording surface;
 `staff-nav.ts`'s attendant array already sits next to it)
-**Status:** in-progress (claude, 2026-08-11)
+**Status:** done
 
 ## Goal
 
@@ -80,25 +80,25 @@ roles have. The `attendant` role has no path to it at all.
 
 ## Acceptance criteria
 
-- [ ] The canteen `attendant` role has a reachable nav entry distinct
+- [x] The canteen `attendant` role has a reachable nav entry distinct
       from `takings` that opens a credit-sale-only entry screen.
-- [ ] The screen requires a customer (existing or created inline,
+- [x] The screen requires a customer (existing or created inline,
       reusing `CustomerPicker`) before the action is enabled — mirrors
       `Till`'s `creditNeedsCustomer` gating.
-- [ ] Submitting calls `recordCounterSale` with a single payment line,
+- [x] Submitting calls `recordCounterSale` with a single payment line,
       `method: "credit"`, amount equal to the basket total, and the
       chosen `customerId`.
-- [ ] No cash or M-Pesa payment option is present anywhere on this
+- [x] No cash or M-Pesa payment option is present anywhere on this
       screen.
-- [ ] A recorded canteen credit sale is readable via `Today's sales`
+- [x] A recorded canteen credit sale is readable via `Today's sales`
       (ticket 09, no changes needed — already generic) and is included
       in ticket 24's count-derived-sales credit-sale read (no changes
       needed there either — confirms the plumbing gap is closed, not
       just the UI).
-- [ ] Loading, empty-product, and error states via
+- [x] Loading, empty-product, and error states via
       `components/patterns/states.tsx`, matching `NewSale`'s existing
       pattern.
-- [ ] Storybook story for the new screen, covering: empty product list,
+- [x] Storybook story for the new screen, covering: empty product list,
       no customer selected (action disabled), ready-to-submit, and
       confirmation.
 

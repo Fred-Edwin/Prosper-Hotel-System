@@ -12,6 +12,7 @@ import { StockCount } from "@/modules/stock/ui/stock-count";
 import { TransferStock } from "@/modules/stock/ui/transfer-stock";
 import { TransferHistoryView } from "@/modules/stock/ui/transfer-history";
 import { NewSale } from "@/modules/sales/ui/new-sale";
+import { CreditSale } from "@/modules/sales/ui/credit-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
 import { Handover } from "@/modules/cash/ui/handover";
 import { Takings } from "@/modules/cash/ui/takings";
@@ -47,6 +48,7 @@ export function StaffPageClient({
       )}
       {active === "stock" && <StockList locationId={locationId} />}
       {active === "sell" && <NewSale onDone={() => setActive(null)} />}
+      {active === "credit" && <CreditSale onDone={() => setActive(null)} />}
       {active === "sales" && <TodaysSales />}
       {active === "receive" && <ReceiveDelivery onDone={() => setActive(null)} />}
       {active === "issue" && <IssueToKitchen onDone={() => setActive(null)} />}
@@ -60,6 +62,7 @@ export function StaffPageClient({
       {active !== null &&
         active !== "stock" &&
         active !== "sell" &&
+        active !== "credit" &&
         active !== "sales" &&
         active !== "receive" &&
         active !== "issue" &&

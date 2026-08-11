@@ -22,6 +22,7 @@ import {
   Boxes,
   History,
   ChefHat,
+  HandCoins,
   type LucideIcon,
 } from "lucide-react";
 
@@ -57,6 +58,12 @@ const all: Record<string, StaffLink> = {
     label: "Takings",
     icon: Receipt,
     hint: "Record the day's takings",
+  },
+  credit: {
+    key: "credit",
+    label: "Credit sale",
+    icon: HandCoins,
+    hint: "Record a sale on credit",
   },
   handover: {
     key: "handover",
@@ -122,6 +129,7 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
   cashier: [all.sell, all.sales, all.wastage, all.stock, all.handover],
   attendant: [
     all.takings,
+    all.credit,
     all.sales,
     all.receive,
     all.count,
