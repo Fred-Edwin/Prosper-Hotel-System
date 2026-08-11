@@ -11,12 +11,22 @@ import {
   listExpenses,
   recordExpense,
   reverseExpense,
+  drawingDebtOwed,
+  listDrawingRepaymentsForOwner,
+  recordDrawingRepayment,
+  reverseDrawingRepayment,
 } from "./logic";
 import type { ExpenseCategory } from "./schema";
 
 function writeStatus(reason: string): number {
   if (reason === "forbidden" || reason === "day_closed") return 403;
   return reason === "not_found" ? 404 : 400;
+}
+
+function writeDrawingRepaymentStatus(reason: string): number {
+  if (reason === "forbidden") return 403;
+  if (reason === "not_found") return 404;
+  return 400;
 }
 
 // The blind-count decision (docs/design.md via the design-reference
@@ -223,4 +233,64 @@ export async function reverseExpenseRoute(
   }
 
   return Response.json({ expense: result.expense });
+}
+
+// Ticket 32 — the outstanding drawings balance, netting debt minus
+// unreversed repayments. Owner-only, same access pattern as
+// runningCashBalanceRoute.
+export async function drawingDebtOwedRoute(): Promise<Response> {
+  const session = await getSession();
+  if (session?.staff.role !== "owner") {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  const outstandingMinor = await drawingDebtOwed(db);
+  return Response.json({ outstandingMinor });
+}
+
+export async function listDrawingRepaymentsRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const result = await listDrawingRepaymentsForOwner(db, session);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ repayments: result.repayments });
+}
+
+export async function recordDrawingRepaymentRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await recordDrawingRepayment(db, session, { amountMinor: body.amountMinor });
+  if (!result.ok) {
+    return Response.json(
+      { error: result.reason },
+      { status: writeDrawingRepaymentStatus(result.reason) },
+    );
+  }
+
+  return Response.json({ repayment: result.repayment });
+}
+
+export async function reverseDrawingRepaymentRoute(
+  _request: Request,
+  { params }: { params: Promise<{ repaymentId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { repaymentId } = await params;
+  const result = await reverseDrawingRepayment(db, session, repaymentId);
+  if (!result.ok) {
+    return Response.json(
+      { error: result.reason },
+      { status: writeDrawingRepaymentStatus(result.reason) },
+    );
+  }
+
+  return Response.json({ repayment: result.repayment });
 }

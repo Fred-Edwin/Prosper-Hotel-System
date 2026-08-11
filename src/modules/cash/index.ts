@@ -47,3 +47,21 @@ export {
   runningCashBalanceRoute,
 } from "./routes";
 export type { Expense, ExpenseCategory, ExpensePaymentMethod, DrawingDebt } from "./schema";
+
+export {
+  recordDrawingRepayment,
+  reverseDrawingRepayment,
+  listDrawingRepaymentsForOwner,
+} from "./logic";
+export type {
+  RecordDrawingRepaymentResult,
+  ReverseDrawingRepaymentResult,
+  ListDrawingRepaymentsResult,
+} from "./logic";
+export {
+  drawingDebtOwedRoute,
+  listDrawingRepaymentsRoute,
+  recordDrawingRepaymentRoute,
+  reverseDrawingRepaymentRoute,
+} from "./routes";
+export type { DrawingRepayment } from "./schema";

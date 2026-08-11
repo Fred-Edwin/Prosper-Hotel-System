@@ -5,7 +5,7 @@
 record; does not need ticket 31's balance to exist first — they read
 independently, though both surface on the same screen)
 
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done (2026-08-11)
 
 ## Goal
 
@@ -63,22 +63,22 @@ no way to pay it down.
 
 ## Acceptance criteria
 
-- [ ] A repayment can be recorded with a positive amount; the
+- [x] A repayment can be recorded with a positive amount; the
       outstanding drawings balance decreases by that amount.
-- [ ] A repayment larger than the current outstanding balance is
+- [x] A repayment larger than the current outstanding balance is
       rejected.
-- [ ] A non-positive repayment amount is rejected.
-- [ ] Only the owner can record or reverse a repayment.
-- [ ] A repayment can be reversed same-day by the owner: the original
+- [x] A non-positive repayment amount is rejected.
+- [x] Only the owner can record or reverse a repayment.
+- [x] A repayment can be reversed same-day by the owner: the original
       stays readable and marked reversed, and the outstanding balance
       reflects the reversal (goes back up).
-- [ ] Reversing an already-reversed repayment is rejected.
-- [ ] **Screen:** `money-out`'s destination gains a repayment action and
+- [x] Reversing an already-reversed repayment is rejected.
+- [x] **Screen:** `money-out`'s destination gains a repayment action and
       shows the current outstanding drawings balance, reachable from
       wherever the existing drawings-category entries are shown.
-- [ ] Loading, empty (no debt outstanding), and error states via
+- [x] Loading, empty (no debt outstanding), and error states via
       `components/patterns/states.tsx`.
-- [ ] Storybook: extend `money-out-destination.stories.tsx` with a
+- [x] Storybook: extend `money-out-destination.stories.tsx` with a
       repayment-flow variant and a zero-balance variant.
 
 ## Verification

@@ -2,6 +2,11 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { MoneyOutContentView, type LoadState, type BalanceState } from "./money-out-destination";
 import type { ExpenseView } from "./money-out-list";
 import type { ReceiptOption } from "./expense-fields";
+import type {
+  DrawingRepaymentView,
+  BalanceState as DrawingDebtState,
+  RepaymentListState,
+} from "./drawing-repayment-card";
 
 /**
  * Money out — sheet record form chosen at the ticket 16 checkpoint, matching
@@ -98,11 +103,48 @@ async function reverseStub() {
   return { ok: true as const };
 }
 
+const drawingRepayments: DrawingRepaymentView[] = [
+  { id: "repay-1", amountMinor: 100000, occurredAt: "2026-08-09T10:00:00.000Z", reversed: false },
+  { id: "repay-2", amountMinor: 50000, occurredAt: "2026-08-05T10:00:00.000Z", reversed: true },
+];
+
+const drawingDebtOutstanding: DrawingDebtState = { status: "ready", outstandingMinor: 50000 };
+const drawingDebtZero: DrawingDebtState = { status: "ready", outstandingMinor: 0 };
+const repaymentListReady: RepaymentListState = { status: "ready", repayments: drawingRepayments };
+
+async function fetchDrawingDebtStub(): Promise<DrawingDebtState> {
+  return drawingDebtOutstanding;
+}
+
+async function fetchDrawingDebtZeroStub(): Promise<DrawingDebtState> {
+  return drawingDebtZero;
+}
+
+async function fetchDrawingRepaymentsStub(): Promise<RepaymentListState> {
+  return repaymentListReady;
+}
+
+async function fetchDrawingRepaymentsEmptyStub(): Promise<RepaymentListState> {
+  return { status: "ready", repayments: [] };
+}
+
+async function submitDrawingRepaymentStub() {
+  return { ok: true as const };
+}
+
+async function reverseDrawingRepaymentStub() {
+  return { ok: true as const };
+}
+
 const shared = {
   fetchReceiptsFn: fetchReceiptsStub,
   fetchBalanceFn: fetchBalanceStub,
   onSubmit: submitStub,
   onReverseRequest: reverseStub,
+  fetchDrawingDebtFn: fetchDrawingDebtStub,
+  fetchDrawingRepaymentsFn: fetchDrawingRepaymentsStub,
+  onSubmitDrawingRepayment: submitDrawingRepaymentStub,
+  onReverseDrawingRepaymentRequest: reverseDrawingRepaymentStub,
 };
 
 export const Default: Story = { args: { ...shared, state: ready } };
@@ -110,3 +152,20 @@ export const Loading: Story = { args: { ...shared, state: { status: "loading" } 
 export const Empty: Story = { args: { ...shared, state: { status: "ready", expenses: [] } } };
 export const ErrorState: Story = { args: { ...shared, state: { status: "error" } } };
 export const Denied: Story = { args: { ...shared, state: { status: "denied" } } };
+
+// Ticket 32 — the repayment flow: outstanding balance, "Record repayment"
+// action, and a reversible history list.
+export const DrawingRepaymentFlow: Story = {
+  args: { ...shared, state: ready },
+};
+
+// Ticket 32 — nothing owed: no repayment action, an empty-state message
+// instead of a balance to pay down.
+export const DrawingRepaymentZeroBalance: Story = {
+  args: {
+    ...shared,
+    state: ready,
+    fetchDrawingDebtFn: fetchDrawingDebtZeroStub,
+    fetchDrawingRepaymentsFn: fetchDrawingRepaymentsEmptyStub,
+  },
+};

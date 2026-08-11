@@ -24,6 +24,15 @@ import { money } from "@/shared/money";
 import { MoneyOutList, categoryLabel, type ExpenseView } from "./money-out-list";
 import { RecordExpenseSheet } from "./record-expense-sheet";
 import type { ReceiptOption } from "./expense-fields";
+import {
+  DrawingRepaymentCard,
+  fetchDrawingDebt,
+  fetchDrawingRepayments,
+  submitDrawingRepayment,
+  reverseDrawingRepaymentRequest,
+  type BalanceState as DrawingDebtState,
+  type RepaymentListState,
+} from "./drawing-repayment-card";
 
 export type BalanceState =
   | { status: "loading" }
@@ -206,6 +215,10 @@ export function MoneyOutContentView({
   fetchBalanceFn = fetchRunningBalance,
   onSubmit = submitExpense,
   onReverseRequest = reverseExpenseRequest,
+  fetchDrawingDebtFn = fetchDrawingDebt,
+  fetchDrawingRepaymentsFn = fetchDrawingRepayments,
+  onSubmitDrawingRepayment = submitDrawingRepayment,
+  onReverseDrawingRepaymentRequest = reverseDrawingRepaymentRequest,
 }: {
   state: LoadState;
   onRetry?: () => void;
@@ -214,6 +227,10 @@ export function MoneyOutContentView({
   fetchBalanceFn?: () => Promise<BalanceState>;
   onSubmit?: typeof submitExpense;
   onReverseRequest?: typeof reverseExpenseRequest;
+  fetchDrawingDebtFn?: () => Promise<DrawingDebtState>;
+  fetchDrawingRepaymentsFn?: () => Promise<RepaymentListState>;
+  onSubmitDrawingRepayment?: typeof submitDrawingRepayment;
+  onReverseDrawingRepaymentRequest?: typeof reverseDrawingRepaymentRequest;
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
@@ -223,6 +240,11 @@ export function MoneyOutContentView({
   const [saveError, setSaveError] = useState<string | undefined>();
   const [reversingId, setReversingId] = useState<string | null>(null);
   const [balanceState, setBalanceState] = useState<BalanceState>({ status: "loading" });
+  const [drawingDebtState, setDrawingDebtState] = useState<DrawingDebtState>({ status: "loading" });
+  const [repaymentListState, setRepaymentListState] = useState<RepaymentListState>({
+    status: "loading",
+  });
+  const [reversingRepaymentId, setReversingRepaymentId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchReceiptsFn().then((r) => {
@@ -239,6 +261,42 @@ export function MoneyOutContentView({
     setBalanceState({ status: "loading" });
     fetchBalanceFn().then(setBalanceState);
   };
+
+  useEffect(() => {
+    fetchDrawingDebtFn().then(setDrawingDebtState);
+  }, [fetchDrawingDebtFn]);
+
+  useEffect(() => {
+    fetchDrawingRepaymentsFn().then(setRepaymentListState);
+  }, [fetchDrawingRepaymentsFn]);
+
+  const loadDrawingDebt = () => {
+    setDrawingDebtState({ status: "loading" });
+    fetchDrawingDebtFn().then(setDrawingDebtState);
+  };
+
+  const loadDrawingRepayments = () => {
+    setRepaymentListState({ status: "loading" });
+    fetchDrawingRepaymentsFn().then(setRepaymentListState);
+  };
+
+  async function handleSaveDrawingRepayment(
+    amountMinor: number,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const result = await onSubmitDrawingRepayment(amountMinor);
+    if (!result.ok) return result;
+    loadDrawingDebt();
+    loadDrawingRepayments();
+    return { ok: true };
+  }
+
+  async function handleReverseDrawingRepayment(id: string) {
+    setReversingRepaymentId(id);
+    await onReverseDrawingRepaymentRequest(id);
+    setReversingRepaymentId(null);
+    loadDrawingDebt();
+    loadDrawingRepayments();
+  }
 
   const clear = () => {
     setQuery("");
@@ -344,6 +402,15 @@ export function MoneyOutContentView({
   return (
     <div>
       <RunningBalanceStrip state={balanceState} onRetry={loadBalance} />
+      <DrawingRepaymentCard
+        balanceState={drawingDebtState}
+        listState={repaymentListState}
+        onRetryBalance={loadDrawingDebt}
+        onRetryList={loadDrawingRepayments}
+        onSave={handleSaveDrawingRepayment}
+        onReverse={handleReverseDrawingRepayment}
+        reversingId={reversingRepaymentId}
+      />
       {content}
     </div>
   );
