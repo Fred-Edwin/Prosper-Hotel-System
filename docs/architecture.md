@@ -87,6 +87,15 @@ usually a smell. It earns its place here because profit spans stock cost, sales 
 expenses, and that join has to live somewhere. **It reads through other modules' interfaces,
 never their internals.**
 
+**What `reporting` pulls in (ticket 25).** The dashboard's Profit panel needed several reads
+that didn't exist on any module's `index.ts` yet, since nothing before it needed "a figure at
+an arbitrary location and period" rather than "today, at my own location": `stock` gained
+ingredient stock valuation at a point in time and money-bought/issued sums over a period;
+`sales` gained a location/period revenue total; `cash` gained takings and running-costs totals
+over a location/period. All are owner-gated the same way as every other location-scoped read
+in their module — added as narrow, additive exports, not by reaching into another module's
+`queries.ts`/`logic.ts` directly.
+
 **The audit trail is not a module.** Every module writes to it, so it is a shared
 foundation capability rather than a part of the business. It is *read* through `reporting`.
 

@@ -233,6 +233,12 @@ boxes-of-packaged-goods problem that makes the canteen's own stock impractical t
 sold is unknown. What *is* known is the money taken. Cost is estimated from it, using the rate
 measured at the last count:
 
+**Which goods are "own goods."** Nothing on a product record says so directly — it is read from
+how the item arrived: a product that reached the canteen via a transfer from the restaurant is
+restaurant-supplied (the exact half above); a product received directly from a supplier is the
+canteen's own goods. A product can be either at different times depending on how a given batch
+arrived, so this is worked out per period (since the last count), not stored as a fixed label.
+
 ```
 rate = cost of these goods at the last count ÷ what they sold for over that period
 
@@ -248,6 +254,12 @@ KSh 4,000.
 
 So the canteen's cost for the day is `2,400 + 2,880 = KSh 5,280`.
 
+**"Cost of these goods at the last count" is the cost of what sold, not what's left.** It reads
+the quantity the count worked out had been sold since the previous count (§2's derived-sales
+formula), valued at cost — not the quantity still counted on the shelf. The parallel revenue term
+is the selling value of that same sold quantity, so the ratio is a margin on goods that actually
+moved, not a snapshot of unsold stock.
+
 ### The count corrects the estimate
 
 At each count the real figure replaces the estimates for that period, and the correction is
@@ -261,6 +273,13 @@ Correction                  − KSh  2,600
 
 A correction that always leans the same way means either the rate needs adjusting or stock is
 leaving unaccounted for. Both are worth seeing.
+
+**"Estimated since last count" uses the rate from the count *before* that** — the rate actually in
+force during the period being corrected, not the rate the latest count just measured (using the
+latest count's own rate would compare a period against itself and never show a correction). This
+needs three counts of history to compute at all; with only two, there is no earlier rate yet to
+apply, and the correction is unavailable rather than guessed — same "first period has no measured
+rate" reasoning as everywhere else in this document.
 
 **Counting is an event, not a timetable.** It can happen any day; the period is simply the gap
 since the last one. Weekly is the habit. Counting more often shortens the estimated stretch and
