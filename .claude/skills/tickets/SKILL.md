@@ -31,7 +31,7 @@ scope, and a bad agent run only costs one ticket's worth of work.
 ## Input
 
 `docs/scope.md`, `docs/architecture.md`, `docs/conventions.md`, and
-`docs/screens.md`. Also: the current state of the codebase, if this is not
+`docs/screens.md`, `docs/roadmap.md` . Also: the current state of the codebase, if this is not
 the first feature — read what's already built before cutting the next
 feature's tickets, so they reflect real patterns already in use.
 

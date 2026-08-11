@@ -150,21 +150,31 @@ transfer to already be real).
 
 **Delivers:** proposal.md §3 "Close of day," §5 in full (the blind
 handover check, cash and M-Pesa separately, restaurant vs. canteen
-expected-amount sources), and §8 in full — same-day void (any role, no
-close yet) *and* amending a closed day (owner-only, effective-dated
-correction that leaves the original figures untouched).
+expected-amount sources — tickets 26–27), and §8's easier half — same-day
+void/edit (any role, before that person's day closes) and the "closed"
+state itself (tickets 28, 30).
 
-**Why here, and why both halves of §8 belong in this stage.** The
-handover check's expected amount is *assembled from sales already
-recorded* (§5) — it cannot be built, let alone tested, before stages 2–4
-produce real sales/takings to check against. "Amending a closed day"
-only makes sense once "closed day" is a real state a day can be in,
-which this stage introduces — so the harder half of §8 (effective-dated,
-past-dated corrections with the entered/effective date split) has to
-land here, not earlier. The easier half (same-day void, no close
-involved) was already proven conceptually in Foundation's data-lifecycle
-notes, but gets its first full real exercise against actual sales here
-too.
+**Revised split for §8's harder half (discovered while cutting tickets
+28–30).** "Amending a closed day" is owner-only and effective-dated, but
+its natural UI home is the Ledger destination ("where every figure comes
+from," `admin-nav.ts`) — a screen this stage has no reason to build
+early, since Ledger's whole point is showing figures across every module,
+which is Stage 8's job by the same reasoning that keeps `reporting` last.
+Building a correction form now means attaching it to a screen that
+doesn't exist yet, then rebuilding it once Ledger lands. **Moved to Stage
+8**, alongside Ledger itself, where the correction mechanism and the
+activity/history view it feeds naturally belong together. This stage
+still builds the *state* the correction mechanism will depend on (ticket
+28's "closed" flag, set when a handover is recorded) — Stage 8 only adds
+the owner-facing means to act on it.
+
+**Why the rest is here.** The handover check's expected amount is
+*assembled from sales/takings already recorded* (§5) — it cannot be
+built, let alone tested, before stages 2–4 produce real sales/takings to
+check against. The same-day-void half of §8 was already proven
+conceptually in Foundation's data-lifecycle notes, but gets its first
+full real exercise against actual sales here, and "closed" (ticket 28)
+needs those same real handovers to have a trigger to attach to.
 
 **Depends on:** Stages 2, 3, 4 (something to check a handover against at
 both locations).
