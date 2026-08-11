@@ -5,7 +5,15 @@
 `Handover`, `Expense` — ticket 16's four categories are already stored
 with enough shape to compute this)
 
-**Status:** in-progress (claimed by build session, 2026-08-11)
+**Status:** done (2026-08-11)
+
+**Scope note:** `Expense` had no payment-method field — confirmed against
+`prisma/schema.prisma` before writing acceptance criteria, per the Context
+note above. Asked the user, who chose to add `paymentMethod` to `Expense`
+now (migration `20260811132510_add_expense_payment_method`, defaulted to
+`cash` on existing rows) rather than deferring or approximating the
+money-out split. `record-expense-sheet.tsx` now requires picking cash or
+M-Pesa for every new expense.
 
 ## Goal
 
@@ -76,23 +84,23 @@ both sides now exist.
 
 ## Acceptance criteria
 
-- [ ] `getRunningCashBalance` returns expected cash and expected M-Pesa
+- [x] `getRunningCashBalance` returns expected cash and expected M-Pesa
       as two separate figures, matching formulas.md §9's worked example
       when given equivalent constructed data.
-- [ ] Reversed expenses are excluded from money-out; voided sales don't
+- [x] Reversed expenses are excluded from money-out; voided sales don't
       affect this (handovers are the money-in source, not sales
       directly) — confirm voided sales already can't inflate a
       handover's actual amount (they shouldn't, per ticket 10's reversal
       model) rather than adding a redundant check here.
-- [ ] Equipment and drawings both reduce the balance (cash physically
+- [x] Equipment and drawings both reduce the balance (cash physically
       leaves) even though neither reduces profit — confirm this doesn't
       get accidentally conflated with a profit calculation anywhere in
       this ticket's code or tests.
-- [ ] **Screen:** `money-out`'s destination shows the running cash and
+- [x] **Screen:** `money-out`'s destination shows the running cash and
       M-Pesa balances, read-only, above or alongside the existing
       payment list.
-- [ ] Loading and error states via `components/patterns/states.tsx`.
-- [ ] Storybook: extend `money-out-destination.stories.tsx` with the
+- [x] Loading and error states via `components/patterns/states.tsx`.
+- [x] Storybook: extend `money-out-destination.stories.tsx` with the
       balance figures visible in at least one story.
 
 ## Verification

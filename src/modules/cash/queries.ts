@@ -1,5 +1,14 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { DrawingDebt, Expense, ExpenseCategory, Handover, Takings } from "./schema";
+import type { Expense as PrismaExpense } from "@/generated/prisma/client";
+import type { DrawingDebt, Expense, ExpenseCategory, ExpensePaymentMethod, Handover, Takings } from "./schema";
+
+// Prisma's generated PaymentMethod is shared with PaymentLine, so it
+// includes "credit" — a sales-only concept. createExpense never writes
+// it, so this narrowing is safe; it just isn't expressible in the
+// Prisma-generated type itself.
+function toExpense(row: PrismaExpense): Expense {
+  return { ...row, paymentMethod: row.paymentMethod as ExpensePaymentMethod };
+}
 
 export async function findTodaysHandover(
   db: PrismaClient,
@@ -75,11 +84,13 @@ export async function createExpense(
     staffMemberId: string;
     category: ExpenseCategory;
     amountMinor: number;
+    paymentMethod: ExpensePaymentMethod;
     note: string | null;
     receiptId: string | null;
   },
 ): Promise<Expense> {
-  return db.expense.create({ data });
+  const row = await db.expense.create({ data });
+  return toExpense(row);
 }
 
 export async function createDrawingDebt(
@@ -90,7 +101,8 @@ export async function createDrawingDebt(
 }
 
 export async function findExpenseById(db: PrismaClient, id: string): Promise<Expense | null> {
-  return db.expense.findUnique({ where: { id } });
+  const row = await db.expense.findUnique({ where: { id } });
+  return row ? toExpense(row) : null;
 }
 
 export async function findDrawingDebtByExpenseId(
@@ -105,10 +117,11 @@ export async function markExpenseReversed(
   expenseId: string,
   reversedBy: string,
 ): Promise<Expense> {
-  return db.expense.update({
+  const row = await db.expense.update({
     where: { id: expenseId },
     data: { reversed: true, reversedAt: new Date(), reversedBy },
   });
+  return toExpense(row);
 }
 
 export async function markDrawingDebtReversed(db: PrismaClient, id: string): Promise<DrawingDebt> {
@@ -123,10 +136,11 @@ export async function listExpensesAtLocation(
   locationId: string,
   category?: ExpenseCategory,
 ): Promise<Expense[]> {
-  return db.expense.findMany({
+  const rows = await db.expense.findMany({
     where: { locationId, ...(category ? { category } : {}) },
     orderBy: { occurredAt: "desc" },
   });
+  return rows.map(toExpense);
 }
 
 // Ticket 25 — formulas.md §7's running costs (gas, charcoal, electricity,
@@ -174,6 +188,45 @@ export async function sumUnreversedDrawingDebt(db: PrismaClient): Promise<number
     _sum: { amountMinor: true },
   });
   return result._sum.amountMinor ?? 0;
+}
+
+// Ticket 31 — formulas.md §9's "handovers received" term. Business-wide
+// (not per-location, proposal.md §6), all-time (the running balance is
+// current, not periodic), cash and M-Pesa kept separate. Handover has no
+// void/reversal concept, so every row counts.
+export async function sumHandoversMinor(
+  db: PrismaClient,
+): Promise<{ cashMinor: number; mpesaMinor: number }> {
+  const result = await db.handover.aggregate({
+    _sum: { actualCashMinor: true, actualMpesaMinor: true },
+  });
+  return {
+    cashMinor: result._sum.actualCashMinor ?? 0,
+    mpesaMinor: result._sum.actualMpesaMinor ?? 0,
+  };
+}
+
+// Ticket 31 — formulas.md §9's money-out terms (stock, running costs,
+// equipment/assets, drawings), split by payment method the same way
+// money-in already is. Business-wide, all-time, unreversed only —
+// cancelled entries count nowhere (formulas.md's opening rule).
+export async function sumExpensesMinorByMethod(
+  db: PrismaClient,
+): Promise<{ cashMinor: number; mpesaMinor: number }> {
+  const [cash, mpesa] = await Promise.all([
+    db.expense.aggregate({
+      where: { reversed: false, paymentMethod: "cash" },
+      _sum: { amountMinor: true },
+    }),
+    db.expense.aggregate({
+      where: { reversed: false, paymentMethod: "mpesa" },
+      _sum: { amountMinor: true },
+    }),
+  ]);
+  return {
+    cashMinor: cash._sum.amountMinor ?? 0,
+    mpesaMinor: mpesa._sum.amountMinor ?? 0,
+  };
 }
 
 export type HandoverWithStaffName = Handover & { staffName: string };

@@ -14,6 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { money } from "@/shared/money";
 import type { ExpenseView } from "./money-out-list";
 
+const paymentMethodLabel: Record<ExpenseView["paymentMethod"], string> = {
+  cash: "Cash",
+  mpesa: "M-Pesa",
+};
+
 export type ReceiptOption = {
   receiptId: string;
   occurredAt: string;
@@ -40,6 +45,8 @@ export function ExpenseFields({
   onCategoryChange,
   amount,
   onAmountChange,
+  paymentMethod,
+  onPaymentMethodChange,
   note,
   onNoteChange,
   receiptId,
@@ -51,6 +58,8 @@ export function ExpenseFields({
   onCategoryChange: (v: ExpenseView["category"]) => void;
   amount: string;
   onAmountChange: (v: string) => void;
+  paymentMethod: ExpenseView["paymentMethod"];
+  onPaymentMethodChange: (v: ExpenseView["paymentMethod"]) => void;
   note: string;
   onNoteChange: (v: string) => void;
   receiptId: string | null;
@@ -116,6 +125,24 @@ export function ExpenseFields({
           className="h-9"
           data-testid="expense-amount"
         />
+      </Field>
+
+      <Field label="Paid with" required hint="Which balance this payment reduces.">
+        <Select
+          value={paymentMethod}
+          onValueChange={(v) => onPaymentMethodChange(v as ExpenseView["paymentMethod"])}
+        >
+          <SelectTrigger className="h-9 w-full" data-testid="expense-payment-method">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(paymentMethodLabel) as ExpenseView["paymentMethod"][]).map((k) => (
+              <SelectItem key={k} value={k}>
+                {paymentMethodLabel[k]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </Field>
 
       <Field label="Note" hint="What this was for — optional but helps later.">

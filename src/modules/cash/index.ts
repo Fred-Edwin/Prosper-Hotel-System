@@ -24,17 +24,26 @@ export type {
 export { recordTakingsRoute, todaysTakingsRoute } from "./routes";
 export type { Takings } from "./schema";
 
-export { recordExpense, reverseExpense, listExpenses, drawingDebtOwed, getRunningCosts } from "./logic";
+export {
+  recordExpense,
+  reverseExpense,
+  listExpenses,
+  drawingDebtOwed,
+  getRunningCosts,
+  getRunningCashBalance,
+} from "./logic";
 export type {
   RecordExpenseResult,
   ReverseExpenseResult,
   ListExpensesResult,
   RunningCostsResult,
+  GetRunningCashBalanceResult,
 } from "./logic";
 export {
   listExpensesRoute,
   receiptsForExpenseRoute,
   recordExpenseRoute,
   reverseExpenseRoute,
+  runningCashBalanceRoute,
 } from "./routes";
-export type { Expense, ExpenseCategory, DrawingDebt } from "./schema";
+export type { Expense, ExpenseCategory, ExpensePaymentMethod, DrawingDebt } from "./schema";

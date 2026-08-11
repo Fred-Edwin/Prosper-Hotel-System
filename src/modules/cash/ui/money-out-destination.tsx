@@ -17,10 +17,87 @@ import { useEffect, useState } from "react";
 import { AdminShell } from "@/components/layout/admin-shell";
 import { getDestinations } from "@/components/layout/admin-nav";
 import { TableToolbar } from "@/components/patterns/table-toolbar";
+import { SummaryStrip } from "@/components/patterns/summary-strip";
 import { LoadingTable, ErrorState, PermissionDenied } from "@/components/patterns/states";
+import { Skeleton } from "@/components/ui/skeleton";
+import { money } from "@/shared/money";
 import { MoneyOutList, categoryLabel, type ExpenseView } from "./money-out-list";
 import { RecordExpenseSheet } from "./record-expense-sheet";
 import type { ReceiptOption } from "./expense-fields";
+
+export type BalanceState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "denied" }
+  | { status: "ready"; cashMinor: number; mpesaMinor: number };
+
+async function fetchRunningBalance(): Promise<BalanceState> {
+  try {
+    const response = await fetch("/api/cash/running-balance");
+    if (response.status === 403) return { status: "denied" };
+    if (!response.ok) return { status: "error" };
+    const body = await response.json();
+    if (typeof body?.cashMinor !== "number" || typeof body?.mpesaMinor !== "number") {
+      return { status: "error" };
+    }
+    return { status: "ready", cashMinor: body.cashMinor, mpesaMinor: body.mpesaMinor };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+/** The running cash/M-Pesa balance — formulas.md §9. Its own load/error
+ * state, independent of the expense list, since one failing to load
+ * shouldn't hide the other. */
+function RunningBalanceStrip({
+  state,
+  onRetry,
+}: {
+  state: BalanceState;
+  onRetry: () => void;
+}) {
+  if (state.status === "loading") {
+    return (
+      <div className="mb-4 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2">
+        {[0, 1].map((i) => (
+          <div key={i} className="bg-card p-4">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="mt-2 h-6 w-28" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="mb-4">
+        <ErrorState what="the running balance" onRetry={onRetry} preserved="The list below is unaffected." />
+      </div>
+    );
+  }
+
+  // Owner-only same as the rest of this screen — PermissionDenied already
+  // covers the whole destination when denied, so a denied balance never
+  // renders on its own.
+  if (state.status === "denied") return null;
+
+  return (
+    <div className="mb-4">
+      <SummaryStrip
+        columns={2}
+        items={[
+          { label: "Expected cash", value: money(state.cashMinor), sub: "handed over, minus paid out" },
+          {
+            label: "Expected M-Pesa",
+            value: money(state.mpesaMinor),
+            sub: "handed over, minus paid out",
+          },
+        ]}
+      />
+    </div>
+  );
+}
 
 export type LoadState =
   | { status: "loading" }
@@ -55,6 +132,7 @@ async function fetchReceipts(): Promise<ReceiptOption[]> {
 async function submitExpense(input: {
   category: ExpenseView["category"];
   amountMinor: number;
+  paymentMethod: ExpenseView["paymentMethod"];
   note: string | null;
   receiptId: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -125,6 +203,7 @@ export function MoneyOutContentView({
   onRetry = () => {},
   onChanged = () => {},
   fetchReceiptsFn = fetchReceipts,
+  fetchBalanceFn = fetchRunningBalance,
   onSubmit = submitExpense,
   onReverseRequest = reverseExpenseRequest,
 }: {
@@ -132,6 +211,7 @@ export function MoneyOutContentView({
   onRetry?: () => void;
   onChanged?: () => void;
   fetchReceiptsFn?: () => Promise<ReceiptOption[]>;
+  fetchBalanceFn?: () => Promise<BalanceState>;
   onSubmit?: typeof submitExpense;
   onReverseRequest?: typeof reverseExpenseRequest;
 }) {
@@ -142,6 +222,7 @@ export function MoneyOutContentView({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
   const [reversingId, setReversingId] = useState<string | null>(null);
+  const [balanceState, setBalanceState] = useState<BalanceState>({ status: "loading" });
 
   useEffect(() => {
     fetchReceiptsFn().then((r) => {
@@ -149,6 +230,15 @@ export function MoneyOutContentView({
       setReceiptsLoading(false);
     });
   }, [fetchReceiptsFn]);
+
+  useEffect(() => {
+    fetchBalanceFn().then(setBalanceState);
+  }, [fetchBalanceFn]);
+
+  const loadBalance = () => {
+    setBalanceState({ status: "loading" });
+    fetchBalanceFn().then(setBalanceState);
+  };
 
   const clear = () => {
     setQuery("");
@@ -158,6 +248,7 @@ export function MoneyOutContentView({
   async function handleSave(input: {
     category: ExpenseView["category"];
     amountMinor: number;
+    paymentMethod: ExpenseView["paymentMethod"];
     note: string | null;
     receiptId: string | null;
   }): Promise<{ ok: boolean }> {
@@ -170,6 +261,7 @@ export function MoneyOutContentView({
       return { ok: false };
     }
     onChanged();
+    loadBalance();
     return { ok: true };
   }
 
@@ -178,6 +270,7 @@ export function MoneyOutContentView({
     await onReverseRequest(id);
     setReversingId(null);
     onChanged();
+    loadBalance();
   }
 
   const expenses = state.status === "ready" ? state.expenses : [];
@@ -201,6 +294,8 @@ export function MoneyOutContentView({
 
   return (
     <div>
+      <RunningBalanceStrip state={balanceState} onRetry={loadBalance} />
+
       <div className="mb-3 flex items-center justify-between gap-2">
         <TableToolbar
           query={query}
@@ -253,6 +348,7 @@ export function MoneyOutDestinationView({
   onRetry,
   onChanged,
   fetchReceiptsFn,
+  fetchBalanceFn,
   onSubmit,
   onReverseRequest,
 }: {
@@ -261,6 +357,7 @@ export function MoneyOutDestinationView({
   onRetry?: () => void;
   onChanged?: () => void;
   fetchReceiptsFn?: () => Promise<ReceiptOption[]>;
+  fetchBalanceFn?: () => Promise<BalanceState>;
   onSubmit?: typeof submitExpense;
   onReverseRequest?: typeof reverseExpenseRequest;
 }) {
@@ -277,6 +374,7 @@ export function MoneyOutDestinationView({
         onRetry={onRetry}
         onChanged={onChanged}
         fetchReceiptsFn={fetchReceiptsFn}
+        fetchBalanceFn={fetchBalanceFn}
         onSubmit={onSubmit}
         onReverseRequest={onReverseRequest}
       />

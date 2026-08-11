@@ -24,6 +24,7 @@ export type ExpenseView = {
   id: string;
   category: "stock" | "running" | "asset" | "drawing";
   amountMinor: number;
+  paymentMethod: "cash" | "mpesa";
   note: string | null;
   occurredAt: string;
   staffMemberName: string;

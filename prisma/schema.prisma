@@ -446,6 +446,13 @@ model Expense {
   staffMemberId String
   staffMember   StaffMember     @relation(fields: [staffMemberId], references: [id])
   category      ExpenseCategory
+  // Cash or M-Pesa only — never credit, which is a sales-side concept for
+  // money coming in, not a way the business pays money out. Ticket 31's
+  // running balance needs this to split money-out the same way money-in
+  // (Handover) already is. Defaulted to cash for rows recorded before
+  // this field existed, since there is no real record of which method
+  // they used.
+  paymentMethod PaymentMethod   @default(cash)
   amountMinor   Int
   note          String?
   // Required only for category = stock — the IngredientMovement.receiptId

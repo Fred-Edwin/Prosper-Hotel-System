@@ -1,6 +1,9 @@
-import type { ExpenseCategory } from "@/generated/prisma/enums";
+import type { ExpenseCategory, PaymentMethod } from "@/generated/prisma/enums";
 
 export type { ExpenseCategory };
+// Expense only ever uses cash or mpesa — never credit, which is a
+// sales-side concept for money coming in.
+export type ExpensePaymentMethod = Extract<PaymentMethod, "cash" | "mpesa">;
 
 export type Handover = {
   id: string;
@@ -19,6 +22,7 @@ export type Expense = {
   staffMemberId: string;
   category: ExpenseCategory;
   amountMinor: number;
+  paymentMethod: ExpensePaymentMethod;
   note: string | null;
   receiptId: string | null;
   occurredAt: Date;

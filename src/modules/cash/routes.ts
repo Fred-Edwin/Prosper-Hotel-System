@@ -5,6 +5,7 @@ import {
   getTodaysHandoverForStaff,
   getTodaysHandoversAtLocation,
   getTodaysTakingsForStaff,
+  getRunningCashBalance,
   recordHandover,
   recordTakings,
   listExpenses,
@@ -162,6 +163,20 @@ export async function listExpensesRoute(request: Request): Promise<Response> {
   return Response.json({ expenses });
 }
 
+// Ticket 31 — the running cash/M-Pesa balance shown alongside money-out's
+// payment list. Owner-only, same access pattern as listExpenses.
+export async function runningCashBalanceRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const result = await getRunningCashBalance(db, session);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ cashMinor: result.cashMinor, mpesaMinor: result.mpesaMinor });
+}
+
 export async function receiptsForExpenseRoute(): Promise<Response> {
   const session = await getSession();
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
@@ -183,6 +198,7 @@ export async function recordExpenseRoute(request: Request): Promise<Response> {
     locationId: session.staff.locationId,
     category: body.category,
     amountMinor: body.amountMinor,
+    paymentMethod: body.paymentMethod,
     note: body.note,
     receiptId: body.receiptId,
   });

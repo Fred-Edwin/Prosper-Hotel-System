@@ -15,6 +15,8 @@ import {
   listExpensesAtLocation,
   markDrawingDebtReversed,
   markExpenseReversed,
+  sumExpensesMinorByMethod,
+  sumHandoversMinor,
   sumRunningCostsMinorInPeriod,
   sumTakingsMinorAtLocationInPeriod,
   sumUnreversedDrawingDebt,
@@ -22,7 +24,7 @@ import {
   updateTakingsAmounts,
   type HandoverWithStaffName,
 } from "./queries";
-import type { Expense, ExpenseCategory, Handover, Takings } from "./schema";
+import type { Expense, ExpenseCategory, ExpensePaymentMethod, Handover, Takings } from "./schema";
 
 function dayBounds(): { dayStart: Date; dayEnd: Date } {
   const dayStart = new Date();
@@ -256,6 +258,7 @@ export async function recordExpense(
     locationId: string;
     category: ExpenseCategory;
     amountMinor: number;
+    paymentMethod: ExpensePaymentMethod;
     note?: string | null;
     receiptId?: string | null;
   },
@@ -283,6 +286,7 @@ export async function recordExpense(
     staffMemberId: requester.staff.id,
     category: input.category,
     amountMinor: input.amountMinor,
+    paymentMethod: input.paymentMethod,
     note: input.note ?? null,
     receiptId: input.category === "stock" ? (input.receiptId ?? null) : null,
   });
@@ -420,4 +424,30 @@ export async function getTakingsAtLocation(
   }
   const totals = await sumTakingsMinorAtLocationInPeriod(db, locationId, periodStart, periodEnd);
   return { ok: true, ...totals };
+}
+
+export type GetRunningCashBalanceResult =
+  | { ok: true; cashMinor: number; mpesaMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 31 — formulas.md §9: handovers received minus stock, running
+// costs, equipment/assets and drawings, cash and M-Pesa kept separate
+// throughout. Equipment and drawings reduce cash the same as stock and
+// running costs even though they don't reduce profit — this is a cash
+// question, not a profit one.
+export async function getRunningCashBalance(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+): Promise<GetRunningCashBalanceResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const [moneyIn, moneyOut] = await Promise.all([sumHandoversMinor(db), sumExpensesMinorByMethod(db)]);
+
+  return {
+    ok: true,
+    cashMinor: moneyIn.cashMinor - moneyOut.cashMinor,
+    mpesaMinor: moneyIn.mpesaMinor - moneyOut.mpesaMinor,
+  };
 }
