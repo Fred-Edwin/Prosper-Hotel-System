@@ -52,3 +52,14 @@ export type DrawingDebt = {
   reversed: boolean;
   reversedAt: Date | null;
 };
+
+// Ticket 32 — a repayment against the outstanding drawings balance.
+// Symmetric to DrawingDebt: append-only, never edited, only reversible.
+export type DrawingRepayment = {
+  id: string;
+  amountMinor: number;
+  recordedBy: string;
+  occurredAt: Date;
+  reversed: boolean;
+  reversedAt: Date | null;
+};

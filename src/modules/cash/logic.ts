@@ -4,27 +4,39 @@ import { listTodaysSalesForStaff } from "@/modules/sales";
 import { findReceipt } from "@/modules/stock";
 import {
   createDrawingDebt,
+  createDrawingRepayment,
   createExpense,
   createHandoverRecord,
   createTakingsRecord,
   findDrawingDebtByExpenseId,
+  findDrawingRepaymentById,
   findExpenseById,
   findTodaysHandover,
   findTodaysHandoversAtLocation,
   findTodaysTakings,
+  listDrawingRepayments,
   listExpensesAtLocation,
   markDrawingDebtReversed,
+  markDrawingRepaymentReversed,
   markExpenseReversed,
   sumExpensesMinorByMethod,
   sumHandoversMinor,
   sumRunningCostsMinorInPeriod,
   sumTakingsMinorAtLocationInPeriod,
   sumUnreversedDrawingDebt,
+  sumUnreversedDrawingRepayment,
   updateHandoverActuals,
   updateTakingsAmounts,
   type HandoverWithStaffName,
 } from "./queries";
-import type { Expense, ExpenseCategory, ExpensePaymentMethod, Handover, Takings } from "./schema";
+import type {
+  DrawingRepayment,
+  Expense,
+  ExpenseCategory,
+  ExpensePaymentMethod,
+  Handover,
+  Takings,
+} from "./schema";
 
 function dayBounds(): { dayStart: Date; dayEnd: Date } {
   const dayStart = new Date();
@@ -300,10 +312,94 @@ export async function recordExpense(
   return { ok: true, expense };
 }
 
-// No "settled" concept exists yet (ticket 16) — the simplest honest shape
-// is a single ever-growing total of unreversed drawing debt.
+// Ticket 32: the outstanding balance nets unreversed debt against
+// unreversed repayments — proposal.md §6's "outstanding balance." Ticket
+// 16 left this as an ever-growing total since no repayment mechanism
+// existed yet; this is the update once one does.
 export async function drawingDebtOwed(db: PrismaClient): Promise<number> {
-  return sumUnreversedDrawingDebt(db);
+  const [debt, repaid] = await Promise.all([
+    sumUnreversedDrawingDebt(db),
+    sumUnreversedDrawingRepayment(db),
+  ]);
+  return debt - repaid;
+}
+
+export type RecordDrawingRepaymentResult =
+  | { ok: true; repayment: DrawingRepayment }
+  | { ok: false; reason: "forbidden" | "invalid_amount" | "exceeds_outstanding" };
+
+// Owner-only, matching every other drawings-adjacent write. Rejects an
+// amount larger than the current outstanding balance — resolved with
+// Edwinfred: "overpaying" a debt that isn't real accounting isn't a
+// state this tracker represents (formulas.md's scope).
+export async function recordDrawingRepayment(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { amountMinor: number },
+): Promise<RecordDrawingRepaymentResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.amountMinor <= 0) {
+    return { ok: false, reason: "invalid_amount" };
+  }
+
+  const outstanding = await drawingDebtOwed(db);
+  if (input.amountMinor > outstanding) {
+    return { ok: false, reason: "exceeds_outstanding" };
+  }
+
+  const repayment = await createDrawingRepayment(db, {
+    amountMinor: input.amountMinor,
+    recordedBy: requester.staff.id,
+  });
+
+  return { ok: true, repayment };
+}
+
+export type ReverseDrawingRepaymentResult =
+  | { ok: true; repayment: DrawingRepayment }
+  | { ok: false; reason: "forbidden" | "not_found" | "already_reversed" | "not_same_day" };
+
+// Owner-only, same-day only — mirrors reverseExpense's reasoning: a
+// mistaken repayment shouldn't silently understate what's still owed.
+export async function reverseDrawingRepayment(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  repaymentId: string,
+): Promise<ReverseDrawingRepaymentResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const repayment = await findDrawingRepaymentById(db, repaymentId);
+  if (!repayment) return { ok: false, reason: "not_found" };
+
+  if (repayment.reversed) return { ok: false, reason: "already_reversed" };
+
+  const { dayStart } = dayBounds();
+  if (repayment.occurredAt < dayStart) return { ok: false, reason: "not_same_day" };
+
+  const reversed = await markDrawingRepaymentReversed(db, repaymentId);
+  return { ok: true, repayment: reversed };
+}
+
+export type ListDrawingRepaymentsResult =
+  | { ok: true; repayments: DrawingRepayment[] }
+  | { ok: false; reason: "forbidden" };
+
+// Owner-only read, same access pattern as listExpenses.
+export async function listDrawingRepaymentsForOwner(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+): Promise<ListDrawingRepaymentsResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const repayments = await listDrawingRepayments(db);
+  return { ok: true, repayments };
 }
 
 export type ReverseExpenseResult =

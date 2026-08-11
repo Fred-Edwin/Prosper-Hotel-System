@@ -1,6 +1,14 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { Expense as PrismaExpense } from "@/generated/prisma/client";
-import type { DrawingDebt, Expense, ExpenseCategory, ExpensePaymentMethod, Handover, Takings } from "./schema";
+import type {
+  DrawingDebt,
+  DrawingRepayment,
+  Expense,
+  ExpenseCategory,
+  ExpensePaymentMethod,
+  Handover,
+  Takings,
+} from "./schema";
 
 // Prisma's generated PaymentMethod is shared with PaymentLine, so it
 // includes "credit" — a sales-only concept. createExpense never writes
@@ -188,6 +196,45 @@ export async function sumUnreversedDrawingDebt(db: PrismaClient): Promise<number
     _sum: { amountMinor: true },
   });
   return result._sum.amountMinor ?? 0;
+}
+
+// Ticket 32 — symmetric counterpart to sumUnreversedDrawingDebt.
+export async function sumUnreversedDrawingRepayment(db: PrismaClient): Promise<number> {
+  const result = await db.drawingRepayment.aggregate({
+    where: { reversed: false },
+    _sum: { amountMinor: true },
+  });
+  return result._sum.amountMinor ?? 0;
+}
+
+export async function createDrawingRepayment(
+  db: PrismaClient,
+  data: { amountMinor: number; recordedBy: string },
+): Promise<DrawingRepayment> {
+  return db.drawingRepayment.create({ data });
+}
+
+export async function findDrawingRepaymentById(
+  db: PrismaClient,
+  id: string,
+): Promise<DrawingRepayment | null> {
+  return db.drawingRepayment.findUnique({ where: { id } });
+}
+
+export async function markDrawingRepaymentReversed(
+  db: PrismaClient,
+  id: string,
+): Promise<DrawingRepayment> {
+  return db.drawingRepayment.update({
+    where: { id },
+    data: { reversed: true, reversedAt: new Date() },
+  });
+}
+
+// Business-wide, not location-scoped — drawings aren't a location concept
+// (proposal.md §6), same reasoning as sumHandoversMinor/sumExpensesMinorByMethod.
+export async function listDrawingRepayments(db: PrismaClient): Promise<DrawingRepayment[]> {
+  return db.drawingRepayment.findMany({ orderBy: { occurredAt: "desc" } });
 }
 
 // Ticket 31 — formulas.md §9's "handovers received" term. Business-wide

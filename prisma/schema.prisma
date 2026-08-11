@@ -485,6 +485,20 @@ model DrawingDebt {
   @@map("drawing_debts")
 }
 
+// Ticket 32 — symmetric, append-only counterpart to DrawingDebt: a
+// repayment against the outstanding drawings balance. Same shape
+// discipline (never edited, only added to or marked reversed).
+model DrawingRepayment {
+  id          String    @id @default(cuid())
+  amountMinor Int
+  recordedBy  String
+  occurredAt  DateTime  @default(now())
+  reversed    Boolean   @default(false)
+  reversedAt  DateTime?
+
+  @@map("drawing_repayments")
+}
+
 // docs/architecture.md's "physical count": a location-generic count of
 // products and/or ingredients on hand. One row groups the lines recorded
 // together, same shape as IngredientMovement.receiptId grouping a
