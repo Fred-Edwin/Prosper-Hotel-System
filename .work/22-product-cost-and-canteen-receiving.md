@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends the existing `Product` model and
 `recordIngredientReceipt`'s pattern; does not depend on ticket 21)
-**Status:** in-review
+**Status:** in-progress
 
 ## What this delivers
 
@@ -92,6 +92,30 @@ and, later (ticket 25), the canteen's own-goods cost-estimate rate.
       same delivery form.
 - [x] Storybook: extend `ReceiveDelivery`'s story with a canteen/product
       variant (product-only delivery, and a mixed delivery).
+
+## Review findings (rejected — see PR #6)
+
+- **Blocking.** `recordIngredientReceipt` (`src/modules/stock/logic.ts`)
+  computes each item's quantity-on-hand once, up front, before the write
+  loop. Two lines for the *same* product/ingredient within one delivery
+  call both read the same stale pre-delivery quantity, so the second
+  line's running average is wrong (it ignores the first line's delivery
+  entirely). The built screen can't trigger this (its `add()` already
+  dedupes by `itemId`), but the logic function is a public module export
+  and `routes.ts` passes `body.lines` straight through with no dedup, so
+  it's reachable directly via `/api/stock/receive`. Fix: recompute (or
+  incrementally track) quantity-on-hand per item as each line is written,
+  not once before the loop — and add a test with two lines for the same
+  item in one call proving the average matches two sequential calls.
+- **Non-blocking, noted for awareness.** `findReceiptsAtLocation`
+  (`src/modules/stock/queries.ts`) values a historical product line using
+  the product's *current* `lastKnownCostMinor`, not the price paid on
+  that specific delivery — a receipt's displayed total can drift after a
+  later delivery changes the running average. Disclosed in the code
+  comment; inherent to `StockMovement` having no per-line `unitCostMinor`
+  (unlike `IngredientMovement`). Not required to fix for this ticket, but
+  worth being aware of if cash's Stock-expense screen ever needs the
+  actual paid total.
 
 ## Notes from implementation
 
