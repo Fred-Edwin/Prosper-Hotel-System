@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { getCurrentStockAtLocation, recordTransfer, recordTransfers, reverseTransfer } from "../logic";
+import { getCurrentStockAtLocation, listTransfersAtLocation, recordTransfer, recordTransfers, reverseTransfer } from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -243,5 +243,62 @@ describe("recordTransfer", () => {
         quantity: 1,
       }),
     ).resolves.toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("listTransfersAtLocation", () => {
+  test("groups a transfer's linked movements into one entry per direction, resolved to item names", async () => {
+    await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+
+    const sender = await listTransfersAtLocation(testDb, staffAt("store_manager", restaurantId));
+    expect(sender.ok).toBe(true);
+    if (!sender.ok) return;
+    expect(sender.transfers).toHaveLength(1);
+    expect(sender.transfers[0]).toMatchObject({
+      direction: "sent",
+      counterpartLocationName: "Test Canteen",
+      reversed: false,
+      lines: [{ itemType: "product", itemId: productId, name: "Sodas (500ml)", quantity: 4, unit: "units" }],
+    });
+
+    const receiver = await listTransfersAtLocation(testDb, staffAt("attendant", canteenId, storeManagerId));
+    expect(receiver.ok).toBe(true);
+    if (!receiver.ok) return;
+    expect(receiver.transfers).toHaveLength(1);
+    expect(receiver.transfers[0]).toMatchObject({
+      direction: "received",
+      counterpartLocationName: "Test Restaurant",
+      reversed: false,
+    });
+  });
+
+  test("marks a transfer as reversed once undone, and rejects reversing it twice", async () => {
+    const transfer = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!transfer.ok) throw new Error("expected transfer");
+    const transferId = transfer.movements[0].transferId as string;
+
+    const firstReversal = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), transferId);
+    expect(firstReversal.ok).toBe(true);
+
+    const secondReversal = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), transferId);
+    expect(secondReversal).toEqual({ ok: false, reason: "already_reversed" });
+
+    const sender = await listTransfersAtLocation(testDb, staffAt("store_manager", restaurantId));
+    expect(sender.ok).toBe(true);
+    if (!sender.ok) return;
+    const original = sender.transfers.find((entry) => entry.transferId === transferId);
+    expect(original).toMatchObject({ reversed: true });
   });
 });

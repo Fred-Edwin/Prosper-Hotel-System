@@ -64,7 +64,12 @@ export function TransferVariant({ variant, items = defaultInventory, onTransfer 
 
   const complete = async () => {
     const completed = draft;
-    if (onTransfer && !(await onTransfer(completed))) return;
+    if (onTransfer && !(await onTransfer(completed))) {
+      toast.error("Couldn't complete the transfer", {
+        description: "Stock at your location may have changed. Check the quantities and try again.",
+      });
+      return;
+    }
     setReviewOpen(false);
     setDraft([]);
     toast.success(`${completed.length} ${completed.length === 1 ? "item" : "items"} transferred`, {

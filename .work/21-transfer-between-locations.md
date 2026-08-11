@@ -5,9 +5,11 @@
 and `IngredientMovementReason`, unused by any ticket so far;
 `canAccessLocation()` and the existing product/ingredient movement
 queries are all this needs)
-**Status:** in-progress
+**Status:** in-review
 
-**Claimed:** /root — 2026-08-10 (Africa/Nairobi)
+**Claimed:** /root — 2026-08-10 (Africa/Nairobi); resumed by Claude Code —
+2026-08-11 (finished history-screen wiring, reversal tracking, missing
+states, Storybook coverage).
 
 **Design direction:** 2026-08-10 — Approved: adapt the existing
 `src/modules/stock/ui/receive-delivery.tsx` item-picker/form-and-confirm
@@ -90,28 +92,38 @@ readable as one event (same `receiptId`-style linking pattern
 
 ## Acceptance criteria
 
-- [ ] `recordTransfer` writes one negative movement at the source
+- [x] `recordTransfer` writes one negative movement at the source
       location and one positive movement at the destination, same
       product/ingredient, same quantity, both reason `transferred`.
-- [ ] Works for both products and ingredients.
-- [ ] Works in both directions (restaurantâ†’canteen and canteenâ†’restaurant)
+- [x] Works for both products and ingredients.
+- [x] Works in both directions (restaurantâ†’canteen and canteenâ†’restaurant)
       for any active product or ingredient, not a hardcoded subset.
-- [ ] Rejected: non-positive quantity, inactive item, same source and
+- [x] Rejected: non-positive quantity, inactive item, same source and
       destination, insufficient stock at the source.
-- [ ] `canAccessLocation()` gates on the source location; a cashier
+- [x] `canAccessLocation()` gates on the source location; a cashier
       (no stock-operations access) is denied at the route regardless of
       location.
-- [ ] `getCurrentStockAtLocation` reflects the transfer at both
+- [x] `getCurrentStockAtLocation` reflects the transfer at both
       locations immediately after recording.
-- [ ] **Screen:** new `transfer` staff-nav link (store manager,
+- [x] **Screen:** new `transfer` staff-nav link (store manager,
       attendant) opens a form â€” item picker limited to what the sender's
       location holds, quantity, confirm â€” then a read view of transfers
       involving the staff member's location (sent and received, both
       directions).
-- [ ] Empty, loading (skeleton), error, and permission-denied states via
+- [x] Empty, loading (skeleton), error, and permission-denied states via
       `components/patterns/states.tsx`.
-- [ ] Storybook story covers: empty transfer list, a sent transfer, a
+- [x] Storybook story covers: empty transfer list, a sent transfer, a
       received transfer, insufficient-stock error, confirm flow.
+
+**Beyond scope, kept per user decision (2026-08-11):** a
+`reverseTransfer`/"Undo transfer" affordance was built alongside the
+required scope (`reverseTransfer` logic, `POST
+/api/stock/transfers/[transferId]/reverse`, Undo UI in transfer history).
+Not in the original acceptance criteria; the user chose to keep and
+finish it rather than strip it, since the approved history-screen design
+already included Undo. A `reversedTransferId` column
+(`prisma/migrations/20260810193000_add_reversed_transfer_id/`) links a
+reversal back to the transfer it undoes so it can't be reversed twice.
 
 ## Verification
 

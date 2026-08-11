@@ -90,7 +90,7 @@ export async function transferHistoryRoute(): Promise<Response> {
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
   const result = await listTransfersAtLocation(db, session);
   if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
-  return Response.json({ movements: result.movements });
+  return Response.json({ transfers: result.transfers });
 }
 
 export async function reverseTransferRoute(_request: Request, { params }: { params: Promise<{ transferId: string }> }): Promise<Response> {

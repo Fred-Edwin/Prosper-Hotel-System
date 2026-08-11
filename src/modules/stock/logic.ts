@@ -2,6 +2,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import {
   canAccessLocation,
   findLocationById,
+  listLocations,
   type AuthenticatedStaff,
 } from "@/modules/people";
 import {
@@ -159,7 +160,8 @@ export type RecordTransferResult =
         | "same_location"
         | "inactive_item"
         | "not_found"
-        | "insufficient_stock";
+        | "insufficient_stock"
+        | "already_reversed";
     };
 
 export type RecordTransfersResult =
@@ -197,6 +199,7 @@ export async function recordTransfers(
     toLocationId: string;
     lines: { itemType: "product" | "ingredient"; itemId: string; quantity: number }[];
     allowReversalFromOtherLocation?: boolean;
+    reversedTransferId?: string;
   },
 ): Promise<RecordTransfersResult> {
   if (
@@ -243,6 +246,7 @@ export async function recordTransfers(
           reason: "transferred",
           staffMemberId: requester.staff.id,
           transferId,
+          reversedTransferId: input.reversedTransferId,
         },
       });
       const incoming = await tx.stockMovement.create({
@@ -253,6 +257,7 @@ export async function recordTransfers(
           reason: "transferred",
           staffMemberId: requester.staff.id,
           transferId,
+          reversedTransferId: input.reversedTransferId,
         },
       });
         movements.push(outgoing, incoming);
@@ -279,6 +284,7 @@ export async function recordTransfers(
         reason: "transferred",
         staffMemberId: requester.staff.id,
         transferId,
+        reversedTransferId: input.reversedTransferId,
       },
     });
     const incoming = await tx.ingredientMovement.create({
@@ -289,6 +295,7 @@ export async function recordTransfers(
         reason: "transferred",
         staffMemberId: requester.staff.id,
         transferId,
+        reversedTransferId: input.reversedTransferId,
       },
     });
       movements.push(outgoing, incoming);
@@ -303,10 +310,15 @@ export async function reverseTransfer(
   requester: AuthenticatedStaff,
   transferId: string,
 ): Promise<RecordTransfersResult> {
-  const [products, ingredients] = await Promise.all([
+  const [products, ingredients, existingReversal] = await Promise.all([
     db.stockMovement.findMany({ where: { transferId } }),
     db.ingredientMovement.findMany({ where: { transferId } }),
+    Promise.all([
+      db.stockMovement.findFirst({ where: { reversedTransferId: transferId } }),
+      db.ingredientMovement.findFirst({ where: { reversedTransferId: transferId } }),
+    ]),
   ]);
+  if (existingReversal[0] || existingReversal[1]) return { ok: false, reason: "already_reversed" };
   const productOut = products.filter((movement) => movement.quantity < 0);
   const ingredientOut = ingredients.filter((movement) => movement.quantity < 0);
   const original = productOut[0] ?? ingredientOut[0];
@@ -320,6 +332,7 @@ export async function reverseTransfer(
     fromLocationId: incoming.locationId,
     toLocationId: original.locationId,
     allowReversalFromOtherLocation: true,
+    reversedTransferId: transferId,
     lines: [
       ...productOut.map((movement) => ({ itemType: "product" as const, itemId: movement.productId, quantity: -movement.quantity })),
       ...ingredientOut.map((movement) => ({ itemType: "ingredient" as const, itemId: movement.ingredientId, quantity: -movement.quantity })),
@@ -327,14 +340,93 @@ export async function reverseTransfer(
   });
 }
 
-export async function listTransfersAtLocation(db: PrismaClient, requester: AuthenticatedStaff) {
-  if (requester.staff.role === "cashier") return { ok: false as const, reason: "forbidden" as const };
+export type TransferHistoryLine = {
+  itemType: "product" | "ingredient";
+  itemId: string;
+  name: string;
+  quantity: number;
+  unit: string;
+};
+export type TransferHistoryEntry = {
+  transferId: string;
+  direction: "sent" | "received";
+  counterpartLocationName: string;
+  occurredAt: Date;
+  reversed: boolean;
+  isReversal: boolean;
+  lines: TransferHistoryLine[];
+};
+
+export async function listTransfersAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+): Promise<{ ok: true; transfers: TransferHistoryEntry[] } | { ok: false; reason: "forbidden" }> {
+  if (requester.staff.role === "cashier") return { ok: false, reason: "forbidden" };
   const locationId = requester.staff.locationId;
-  const [products, ingredients] = await Promise.all([
+  const [ownProducts, ownIngredients, otherLegProducts, otherLegIngredients, locations] = await Promise.all([
     db.stockMovement.findMany({ where: { locationId, reason: "transferred", transferId: { not: null } }, orderBy: { occurredAt: "desc" } }),
     db.ingredientMovement.findMany({ where: { locationId, reason: "transferred", transferId: { not: null } }, orderBy: { occurredAt: "desc" } }),
+    db.stockMovement.findMany({ where: { locationId: { not: locationId }, reason: "transferred", transferId: { not: null } } }),
+    db.ingredientMovement.findMany({ where: { locationId: { not: locationId }, reason: "transferred", transferId: { not: null } } }),
+    listLocations(db),
   ]);
-  return { ok: true as const, movements: [...products, ...ingredients].sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime()) };
+
+  const locationNameById = new Map(locations.map((location) => [location.id, location.name]));
+  const otherLegByTransferId = new Map<string, { locationId: string }>();
+  for (const movement of [...otherLegProducts, ...otherLegIngredients]) {
+    otherLegByTransferId.set(movement.transferId as string, { locationId: movement.locationId });
+  }
+
+  const reversedTransferIds = new Set(
+    [...ownProducts, ...ownIngredients, ...otherLegProducts, ...otherLegIngredients]
+      .map((movement) => movement.reversedTransferId)
+      .filter((id): id is string => id !== null),
+  );
+
+  const byTransferId = new Map<string, { occurredAt: Date; isReversal: boolean; lines: TransferHistoryLine[] }>();
+  for (const movement of [...ownProducts, ...ownIngredients]) {
+    const transferId = movement.transferId as string;
+    const group = byTransferId.get(transferId) ?? { occurredAt: movement.occurredAt, isReversal: movement.reversedTransferId !== null, lines: [] };
+    group.lines.push({
+      itemType: "productId" in movement ? "product" : "ingredient",
+      itemId: "productId" in movement ? movement.productId : movement.ingredientId,
+      name: "",
+      quantity: Math.abs(movement.quantity),
+      unit: "",
+    });
+    byTransferId.set(transferId, group);
+  }
+
+  const productIds = [...ownProducts].map((movement) => movement.productId);
+  const ingredientIds = [...ownIngredients].map((movement) => movement.ingredientId);
+  const [products, ingredients] = await Promise.all([
+    findProductsByIds(db, productIds),
+    findIngredientsByIds(db, ingredientIds),
+  ]);
+  const productNameById = new Map(products.map((product) => [product.id, product.name]));
+  const ingredientById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
+
+  const transfers: TransferHistoryEntry[] = Array.from(byTransferId.entries()).map(([transferId, group]) => {
+    const anyLeg = [...ownProducts, ...ownIngredients].find((movement) => movement.transferId === transferId)!;
+    const direction: "sent" | "received" = anyLeg.quantity < 0 ? "sent" : "received";
+    const counterpartLocationId = otherLegByTransferId.get(transferId)?.locationId;
+    return {
+      transferId,
+      direction,
+      counterpartLocationName: (counterpartLocationId && locationNameById.get(counterpartLocationId)) ?? "Unknown location",
+      occurredAt: group.occurredAt,
+      reversed: reversedTransferIds.has(transferId),
+      isReversal: group.isReversal,
+      lines: group.lines.map((line) => ({
+        ...line,
+        name: line.itemType === "product" ? (productNameById.get(line.itemId) ?? "Unknown product") : (ingredientById.get(line.itemId)?.name ?? "Unknown ingredient"),
+        unit: line.itemType === "product" ? "units" : (ingredientById.get(line.itemId)?.unitOfMeasure ?? ""),
+      })),
+    };
+  });
+
+  transfers.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+  return { ok: true, transfers };
 }
 
 export type RecordIngredientReceiptResult =
