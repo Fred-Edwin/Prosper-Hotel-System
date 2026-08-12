@@ -1,6 +1,6 @@
 import { db } from "@/shared/db";
 import { getSession } from "@/modules/people";
-import { getDashboardProfit, getLedgerSummary } from "./logic";
+import { getDashboardProfit, getLedgerSummary, getProductLedger } from "./logic";
 
 function writeStatus(reason: string): number {
   return reason === "forbidden" ? 403 : reason === "not_found" ? 404 : 400;
@@ -81,4 +81,44 @@ export async function ledgerSummaryRoute(request: Request): Promise<Response> {
     canteenCostRate: result.canteenCostRate,
     lastCanteenCount: result.lastCanteenCount,
   });
+}
+
+// Ticket 39's Product ledger tab — owner-only, same period-query shape as
+// the waterfall, plus optional location/category/search filters.
+export async function productLedgerRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const periodStartParam = url.searchParams.get("periodStart");
+  const periodEndParam = url.searchParams.get("periodEnd");
+  if (!periodStartParam || !periodEndParam) {
+    return Response.json({ error: "periodStart and periodEnd are required" }, { status: 400 });
+  }
+
+  const periodStart = new Date(periodStartParam);
+  const periodEnd = new Date(periodEndParam);
+  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+    return Response.json({ error: "invalid period" }, { status: 400 });
+  }
+  if (periodStart >= periodEnd) {
+    return Response.json({ error: "periodStart must be before periodEnd" }, { status: 400 });
+  }
+
+  const locationId = url.searchParams.get("locationId") ?? undefined;
+  const categoryId = url.searchParams.get("categoryId") ?? undefined;
+  const search = url.searchParams.get("search") ?? undefined;
+
+  const result = await getProductLedger(db, session, {
+    periodStart,
+    periodEnd,
+    locationId,
+    categoryId,
+    search,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ rows: result.rows });
 }

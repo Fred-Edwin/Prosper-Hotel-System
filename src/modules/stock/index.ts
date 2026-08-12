@@ -21,12 +21,16 @@ export {
   correctStockCount,
   getIngredientStockValueAtLocation,
   getProductStockValueAtLocation,
+  getProductQuantityAtLocationAsOf,
   getIngredientsBoughtMinor,
   getIngredientsIssuedMinor,
   getProductMovementByReasonInPeriod,
+  getProductMovementsByReasonInPeriod,
   getNonSalesConsumptionValue,
+  resolveProductCostBasis,
 } from "./logic";
 export type {
+  ProductCostBasis,
   StockAccessResult,
   RecordTransferResult,
   RecordTransfersResult,
@@ -49,9 +53,11 @@ export type {
   IngredientStockValueResult,
   ProductStockValue,
   ProductStockValueResult,
+  ProductQuantityAtLocationResult,
   IngredientsBoughtResult,
   IngredientsConsumedResult,
   ProductMovementByReasonResult,
+  ProductMovementsByReasonResult,
   NonSalesConsumptionValueResult,
 } from "./logic";
 export {

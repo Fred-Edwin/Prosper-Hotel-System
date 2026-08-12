@@ -6,7 +6,7 @@ this tab in), 41 (product categories — the category filter below needs a
 real category concept; split out of this ticket during `/build`,
 2026-08-12, since the design reference's `category` field has no
 equivalent in this codebase's domain model)
-**Status:** in-progress
+**Status:** done
 
 **Claimed:** Claude Code — 2026-08-12.
 
@@ -71,24 +71,24 @@ history requirement.
 
 ## Acceptance criteria
 
-- [ ] Product ledger row's quantities reconcile: opening + in − out =
+- [x] Product ledger row's quantities reconcile: opening + in − out =
       closing, for a constructed multi-day fixture with produced,
       received, transferred, sold, and wasted movements.
-- [ ] A product with no recipe and no recorded cost shows profit as
+- [x] A product with no recipe and no recorded cost shows profit as
       unavailable (not zero, not a guess) — matches the reference's "no
       recipe — per-unit cost unknown" treatment.
-- [ ] Filtering by location shows only that location's rows; the same
+- [x] Filtering by location shows only that location's rows; the same
       product at both locations appears as two separate rows.
-- [ ] Filtering by category and searching by name both narrow correctly
+- [x] Filtering by category and searching by name both narrow correctly
       and combine (AND, not OR).
-- [ ] Expanding a row shows its per-day breakdown for the selected
+- [x] Expanding a row shows its per-day breakdown for the selected
       period, and collapses back on second click.
-- [ ] Empty state (no movements for any product in this period) and
+- [x] Empty state (no movements for any product in this period) and
       filtered-empty state (filters narrow to zero rows) are visually
       distinct, per `components/patterns/states.tsx`.
-- [ ] Non-owner roles cannot reach this data (route-level check, same
+- [x] Non-owner roles cannot reach this data (route-level check, same
       gate as the rest of `reporting`).
-- [ ] Storybook story: populated table, row expanded, empty, filtered-
+- [x] Storybook story: populated table, row expanded, empty, filtered-
       empty, loading.
 
 ## Verification

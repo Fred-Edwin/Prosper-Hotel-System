@@ -61,6 +61,26 @@ export async function sumMovementsByProductAtLocation(
   }));
 }
 
+// Ticket 39: product-side counterpart to sumIngredientMovementsAtLocationAsOf
+// — quantity on hand at a point in time, not the running total, for the
+// ledger's opening/closing figures.
+export async function sumMovementsByProductAtLocationAsOf(
+  db: PrismaClient,
+  locationId: string,
+  asOf: Date,
+): Promise<{ productId: string; quantityOnHand: number }[]> {
+  const grouped = await db.stockMovement.groupBy({
+    by: ["productId"],
+    where: { locationId, occurredAt: { lte: asOf } },
+    _sum: { quantity: true },
+  });
+
+  return grouped.map((g) => ({
+    productId: g.productId,
+    quantityOnHand: g._sum.quantity ?? 0,
+  }));
+}
+
 export async function createIngredientMovement(
   db: PrismaClient,
   data: {

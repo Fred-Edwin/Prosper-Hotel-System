@@ -34,6 +34,7 @@ import {
   sumIngredientsIssuedByIngredientAtLocationInPeriod,
   sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
+  sumMovementsByProductAtLocationAsOf,
   sumMovementsByProductReasonAtLocationInPeriod,
   sumNonSalesValueAtLocationInPeriod,
   sumProductMovementsByReasonAtLocationInPeriod,
@@ -56,15 +57,19 @@ import type {
 // discovery figure. See docs/formulas.md §4.
 const ESTIMATED_COST_RATE = 0.6;
 
-type ProductCostBasis = { costBasisMinor: number; isEstimated: boolean } | null;
+export type ProductCostBasis = { costBasisMinor: number; isEstimated: boolean } | null;
 
 // formulas.md §4's cost-per-unit table, in priority order: a recipe's
 // ingredients-used ÷ yield first (cooked food only), then the product's
 // own recorded running average (bought-in goods/packaging — recordProductCost's
 // figure), then the labelled 60%-of-selling-price estimate as a last resort.
 // null means no cost figure can be produced at all (no recipe, no recorded
-// cost, no selling price to estimate from).
-function resolveProductCostBasis(
+// cost, no selling price to estimate from). Exported (ticket 39) so
+// reporting's product ledger can resolve a row's cost basis even for
+// products getProductStockValueAtLocation(AsOf) would otherwise skip
+// (those functions drop any product with no cost basis at all; the ledger
+// still needs a row for it, with cost/profit shown as unavailable).
+export function resolveProductCostBasis(
   product: Pick<Product, "priceMinor" | "lastKnownCostMinor">,
   recipe: { perUnitCostMinor: number | null } | null,
 ): ProductCostBasis {
@@ -1374,6 +1379,28 @@ export async function getProductStockValueAtLocation(
   return { ok: true, values };
 }
 
+export type ProductQuantityAtLocationResult =
+  | { ok: true; quantities: { productId: string; quantityOnHand: number }[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 39: as-of counterpart to sumMovementsByProductAtLocation — quantity
+// only, for every product with a movement by the given date, unfiltered by
+// cost basis (unlike getProductStockValueAtLocation, which drops a product
+// with no cost basis at all; the Product ledger still needs a row for it,
+// with cost/profit shown as unavailable rather than the row disappearing).
+export async function getProductQuantityAtLocationAsOf(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  asOf: Date,
+): Promise<ProductQuantityAtLocationResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const quantities = await sumMovementsByProductAtLocationAsOf(db, locationId, asOf);
+  return { ok: true, quantities };
+}
+
 export type IngredientsBoughtResult =
   | { ok: true; totalMinor: number }
   | { ok: false; reason: "forbidden" };
@@ -1453,6 +1480,34 @@ export async function getProductMovementByReasonInPeriod(
     db,
     locationId,
     reason,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, lines };
+}
+
+export type ProductMovementsByReasonResult =
+  | { ok: true; lines: { productId: string; reason: StockMovementReason; quantity: number }[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 39: batched counterpart to getProductMovementByReasonInPeriod —
+// the Product ledger needs every reason for every product in one period at
+// once, not one reason at a time.
+export async function getProductMovementsByReasonInPeriod(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  reasons: StockMovementReason[],
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<ProductMovementsByReasonResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const lines = await sumMovementsByProductReasonAtLocationInPeriod(
+    db,
+    locationId,
+    reasons,
     periodStart,
     periodEnd,
   );

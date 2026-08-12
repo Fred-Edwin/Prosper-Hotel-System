@@ -74,6 +74,7 @@ new destinations get added here as tickets that build them land, per
 |---|---|---|
 | Modules/Reporting/DashboardProfit | `src/modules/reporting/ui/dashboard-profit.stories.tsx` | approved |
 | Modules/Reporting/LedgerShell | `src/modules/reporting/ui/ledger-shell.stories.tsx` | approved |
+| Modules/Reporting/ProductLedger | `src/modules/reporting/ui/product-ledger.stories.tsx` | approved |
 
 ## People
 
@@ -96,10 +97,11 @@ Reporting (stage 8) has its Profit panel (ticket 25); amounts owed
 landed via ticket 36 (Customers tab); product stock valuation landed via
 ticket 37 (AdminStockTable's value column); the Ledger shell and its
 cost-of-goods-sold waterfall, generalised to an arbitrary period across
-both locations, landed via ticket 38. Its four sub-ledger tabs
-(Product, Store, Non-sales, Cash) still show their not-yet-wired state —
-Product and Cash land in tickets 39 and 40, Store and Non-sales in a
-later ticket. Added to this file as their tickets land, not
+both locations, landed via ticket 38; the Product ledger tab (search,
+location filter, owner-managed category filter from ticket 41,
+day-expansion) landed via ticket 39. Store, Non-sales and Cash still
+show their not-yet-wired state — Cash lands in ticket 40, Store/Non-sales
+in a later ticket. Added to this file as their tickets land, not
 speculatively ahead of them.
 
 ## Note on naming
