@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { AdminShell } from "@/components/layout/admin-shell";
 import { getDestinations } from "@/components/layout/admin-nav";
+import { HelpPanel } from "@/components/patterns/help-panel";
 import { TableToolbar } from "@/components/patterns/table-toolbar";
 import { SummaryStrip } from "@/components/patterns/summary-strip";
 import { LoadingTable, ErrorState, PermissionDenied } from "@/components/patterns/states";
@@ -446,6 +447,7 @@ export function MoneyOutDestinationView({
       staffName={staffName}
       title="Money out"
       subtitle="Purchases, running costs, assets, drawings"
+      actions={<HelpPanel topic="money-out" />}
     >
       <MoneyOutContentView
         state={state}

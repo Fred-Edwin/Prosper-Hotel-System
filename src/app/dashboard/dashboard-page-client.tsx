@@ -8,6 +8,7 @@
 
 import { AdminShell } from "@/components/layout/admin-shell";
 import { getDestinations } from "@/components/layout/admin-nav";
+import { HelpPanel } from "@/components/patterns/help-panel";
 import { DashboardBody } from "./dashboard-body";
 
 export function DashboardPageClient({ staffName }: { staffName: string }) {
@@ -18,6 +19,7 @@ export function DashboardPageClient({ staffName }: { staffName: string }) {
       staffName={staffName}
       title="Dashboard"
       subtitle="Today's figures and what needs you"
+      actions={<HelpPanel topic="dashboard" />}
     >
       <DashboardBody />
     </AdminShell>

@@ -8,6 +8,7 @@
 
 import { AdminShell } from "@/components/layout/admin-shell";
 import { getDestinations } from "@/components/layout/admin-nav";
+import { HelpPanel } from "@/components/patterns/help-panel";
 import { Activity } from "@/modules/reporting/ui/activity";
 
 export function ActivityPageClient({ staffName }: { staffName: string }) {
@@ -18,6 +19,7 @@ export function ActivityPageClient({ staffName }: { staffName: string }) {
       staffName={staffName}
       title="Activity"
       subtitle="Every change, who made it, when"
+      actions={<HelpPanel topic="activity" />}
     >
       <Activity />
     </AdminShell>
