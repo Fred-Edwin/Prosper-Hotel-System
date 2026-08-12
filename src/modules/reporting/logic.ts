@@ -3,13 +3,16 @@
 // (profit). Reads through stock/sales/cash/catalogue/people's
 // interfaces only, per docs/architecture.md's "reporting owns no data."
 import type { PrismaClient } from "@/generated/prisma/client";
-import { type AuthenticatedStaff, findLocationByCode } from "@/modules/people";
+import { type AuthenticatedStaff, findLocationByCode, listLocations } from "@/modules/people";
 import { getCurrentRecipe, findProductsByIds } from "@/modules/catalogue";
 import {
   getIngredientStockValueAtLocation,
   getIngredientsBoughtMinor,
   getIngredientsIssuedMinor,
   getProductMovementByReasonInPeriod,
+  getProductMovementsByReasonInPeriod,
+  getProductQuantityAtLocationAsOf,
+  resolveProductCostBasis,
   getLatestStockCount,
   getPreviousStockCount,
   getNonSalesConsumptionValue,
@@ -599,4 +602,282 @@ export async function getLedgerSummary(
     canteenCostRate: canteenCogs.canteenCostRate,
     lastCanteenCount: canteenCogs.lastCanteenCount,
   };
+}
+
+export type ProductLedgerDay = {
+  date: string;
+  opening: number;
+  produced: number;
+  received: number;
+  transferredIn: number;
+  sold: number;
+  transferredOut: number;
+  nonSales: number;
+  salesValueMinor: number;
+  closing: number;
+};
+
+export type ProductLedgerRow = {
+  productId: string;
+  productName: string;
+  locationId: string;
+  locationCode: string;
+  categoryId: string | null;
+  openingQty: number;
+  produced: number;
+  received: number;
+  transferredIn: number;
+  sold: number;
+  transferredOut: number;
+  nonSales: number;
+  salesValueMinor: number;
+  unitCostMinor: number | null;
+  isEstimated: boolean;
+  sellingPriceMinor: number | null;
+  costOfSalesMinor: number | null;
+  profitMinor: number | null;
+  closingQty: number;
+  closingValueMinor: number | null;
+  days: ProductLedgerDay[];
+};
+
+export type ProductLedgerResult =
+  | { ok: true; rows: ProductLedgerRow[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+const PRODUCT_IN_REASONS = ["produced", "received", "transferred"] as const;
+const PRODUCT_OUT_REASONS = ["sold", "sold_derived", "transferred", "wasted", "consumed", "given_away"] as const;
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// One calendar day per entry, periodStart's date through periodEnd's date
+// inclusive — matches the day-expansion child rows against the same
+// calendar days a person reading a date range would expect, regardless of
+// what time of day periodStart/periodEnd fall at.
+function daysInPeriod(periodStart: Date, periodEnd: Date): { start: Date; end: Date; label: string }[] {
+  const days: { start: Date; end: Date; label: string }[] = [];
+  const cursor = new Date(periodStart);
+  cursor.setUTCHours(0, 0, 0, 0);
+  const last = new Date(periodEnd);
+  last.setUTCHours(0, 0, 0, 0);
+  while (cursor <= last) {
+    const start = new Date(cursor);
+    const end = new Date(cursor);
+    end.setUTCDate(end.getUTCDate() + 1);
+    days.push({ start, end, label: isoDate(cursor) });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return days;
+}
+
+type ReasonSums = {
+  produced: number;
+  received: number;
+  transferredIn: number;
+  transferredOut: number;
+  sold: number;
+  nonSales: number;
+};
+
+function emptyReasonSums(): ReasonSums {
+  return { produced: 0, received: 0, transferredIn: 0, transferredOut: 0, sold: 0, nonSales: 0 };
+}
+
+// Folds one product's movement-by-reason lines (both signed `transferred`
+// directions, and quantity sign already flipped to positive "out" figures
+// for out-reasons) into the ledger's named columns.
+function foldReasonLines(
+  lines: { reason: string; quantity: number }[],
+): ReasonSums {
+  const sums = emptyReasonSums();
+  for (const line of lines) {
+    if (line.reason === "produced") sums.produced += line.quantity;
+    else if (line.reason === "received") sums.received += line.quantity;
+    else if (line.reason === "transferred") {
+      if (line.quantity > 0) sums.transferredIn += line.quantity;
+      else sums.transferredOut += -line.quantity;
+    } else if (line.reason === "sold" || line.reason === "sold_derived") sums.sold += -line.quantity;
+    else if (line.reason === "wasted" || line.reason === "consumed" || line.reason === "given_away") {
+      sums.nonSales += -line.quantity;
+    }
+  }
+  return sums;
+}
+
+// Ticket 39's Product ledger — proposal.md §9's "for any item on any date"
+// stock history, one row per product per location for the selected period,
+// expandable to a day-by-day breakdown. Opening/closing quantities come
+// from stock's as-of reads (ground truth), the in/out columns from the
+// same period's movement-by-reason sums, so the two always reconcile by
+// construction — they're reading the same underlying movements two ways,
+// not two independently-derived figures. Cost basis reuses stock's
+// resolveProductCostBasis (ticket 37's three-tier table) directly rather
+// than re-deriving it, and is resolved even for a product
+// getProductStockValueAtLocation(AsOf) would otherwise skip, so a product
+// with genuinely no cost basis still gets a row with profit shown as
+// unavailable (formulas.md's "not zero, not a guess").
+export async function getProductLedger(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    periodStart: Date;
+    periodEnd: Date;
+    locationId?: string;
+    categoryId?: string;
+    search?: string;
+  },
+): Promise<ProductLedgerResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const allLocations = await listLocations(db);
+  const targetLocations = input.locationId
+    ? allLocations.filter((l) => l.id === input.locationId)
+    : allLocations;
+  if (targetLocations.length === 0) return { ok: false, reason: "not_found" };
+
+  const days = daysInPeriod(input.periodStart, input.periodEnd);
+  const rows: ProductLedgerRow[] = [];
+
+  for (const location of targetLocations) {
+    const [openingQuantities, closingQuantities, periodMovements] = await Promise.all([
+      getProductQuantityAtLocationAsOf(db, requester, location.id, input.periodStart),
+      getProductQuantityAtLocationAsOf(db, requester, location.id, input.periodEnd),
+      getProductMovementsByReasonInPeriod(
+        db,
+        requester,
+        location.id,
+        [...PRODUCT_IN_REASONS, ...PRODUCT_OUT_REASONS],
+        input.periodStart,
+        input.periodEnd,
+      ),
+    ]);
+    if (!openingQuantities.ok) return openingQuantities;
+    if (!closingQuantities.ok) return closingQuantities;
+    if (!periodMovements.ok) return periodMovements;
+
+    const openingByProduct = new Map(
+      openingQuantities.quantities.map((q) => [q.productId, q.quantityOnHand]),
+    );
+    const closingByProduct = new Map(
+      closingQuantities.quantities.map((q) => [q.productId, q.quantityOnHand]),
+    );
+
+    const productIds = new Set<string>([
+      ...openingQuantities.quantities.map((q) => q.productId),
+      ...closingQuantities.quantities.map((q) => q.productId),
+      ...periodMovements.lines.map((l) => l.productId),
+    ]);
+    if (productIds.size === 0) continue;
+
+    const products = await findProductsByIds(db, Array.from(productIds));
+    const productById = new Map(products.map((p) => [p.id, p]));
+
+    const linesByProduct = new Map<string, { reason: string; quantity: number }[]>();
+    for (const line of periodMovements.lines) {
+      const list = linesByProduct.get(line.productId) ?? [];
+      list.push(line);
+      linesByProduct.set(line.productId, list);
+    }
+
+    // Per-day movement sums, fetched once per day for the whole location
+    // rather than once per product per day.
+    const dayMovements = await Promise.all(
+      days.map((day) =>
+        getProductMovementsByReasonInPeriod(
+          db,
+          requester,
+          location.id,
+          [...PRODUCT_IN_REASONS, ...PRODUCT_OUT_REASONS],
+          day.start,
+          day.end,
+        ),
+      ),
+    );
+    for (const dm of dayMovements) if (!dm.ok) return dm;
+
+    for (const productId of productIds) {
+      const product = productById.get(productId);
+      if (!product) continue;
+
+      const openingQty = openingByProduct.get(productId) ?? 0;
+      const closingQty = closingByProduct.get(productId) ?? openingQty;
+      const sums = foldReasonLines(linesByProduct.get(productId) ?? []);
+
+      const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
+      const basis = resolveProductCostBasis(product, recipe);
+
+      const soldQty = sums.sold;
+      const salesValueMinor = product.priceMinor != null ? soldQty * product.priceMinor : 0;
+      const costOfSalesMinor = basis ? basis.costBasisMinor * soldQty : null;
+      const profitMinor = costOfSalesMinor === null ? null : salesValueMinor - costOfSalesMinor;
+      const closingValueMinor = basis ? basis.costBasisMinor * closingQty : null;
+
+      const productDays: ProductLedgerDay[] = [];
+      let runningOpening = openingQty;
+      for (let i = 0; i < days.length; i++) {
+        const dm = dayMovements[i];
+        if (!dm.ok) continue;
+        const dayLines = dm.lines.filter((l) => l.productId === productId);
+        const daySums = foldReasonLines(dayLines);
+        const dayClosing =
+          runningOpening +
+          daySums.produced +
+          daySums.received +
+          daySums.transferredIn -
+          daySums.sold -
+          daySums.transferredOut -
+          daySums.nonSales;
+        productDays.push({
+          date: days[i].label,
+          opening: runningOpening,
+          produced: daySums.produced,
+          received: daySums.received,
+          transferredIn: daySums.transferredIn,
+          sold: daySums.sold,
+          transferredOut: daySums.transferredOut,
+          nonSales: daySums.nonSales,
+          salesValueMinor: product.priceMinor != null ? daySums.sold * product.priceMinor : 0,
+          closing: dayClosing,
+        });
+        runningOpening = dayClosing;
+      }
+
+      rows.push({
+        productId: product.id,
+        productName: product.name,
+        locationId: location.id,
+        locationCode: location.code,
+        categoryId: product.categoryId,
+        openingQty,
+        produced: sums.produced,
+        received: sums.received,
+        transferredIn: sums.transferredIn,
+        sold: sums.sold,
+        transferredOut: sums.transferredOut,
+        nonSales: sums.nonSales,
+        salesValueMinor,
+        unitCostMinor: basis?.costBasisMinor ?? null,
+        isEstimated: basis?.isEstimated ?? false,
+        sellingPriceMinor: product.priceMinor,
+        costOfSalesMinor,
+        profitMinor,
+        closingQty,
+        closingValueMinor,
+        days: productDays,
+      });
+    }
+  }
+
+  const search = input.search?.trim().toLowerCase();
+  const filtered = rows.filter(
+    (row) =>
+      (!input.categoryId || row.categoryId === input.categoryId) &&
+      (!search || row.productName.toLowerCase().includes(search)),
+  );
+
+  filtered.sort((a, b) => a.productName.localeCompare(b.productName) || a.locationCode.localeCompare(b.locationCode));
+
+  return { ok: true, rows: filtered };
 }
