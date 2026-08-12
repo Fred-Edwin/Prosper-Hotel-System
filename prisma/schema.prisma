@@ -34,6 +34,7 @@ model Location {
   expenses            Expense[]
   stockCounts         StockCount[]
   assets              Asset[]
+  repayments          Repayment[]
 
   @@map("locations")
 }
@@ -64,6 +65,7 @@ model StaffMember {
   stockCounts         StockCount[]
   daysWorked          DaysWorked[]         @relation("DaysWorkedByStaff")
   daysWorkedRecorded  DaysWorked[]         @relation("DaysWorkedRecordedBy")
+  repayments          Repayment[]
 
   @@map("staff_members")
 }
@@ -294,6 +296,27 @@ model PaymentLine {
   @@map("payment_lines")
 }
 
+// Ticket 36 — formulas.md §11: "owed by a customer = credit given −
+// repayments." Symmetric to a credit PaymentLine but not tied to a Sale —
+// a repayment is money coming in against existing credit, not a sale of
+// goods. Append-only, never edited, only reversible — same discipline as
+// DrawingRepayment.
+model Repayment {
+  id            String      @id @default(cuid())
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  locationId    String
+  location      Location    @relation(fields: [locationId], references: [id])
+  staffMemberId String
+  staffMember   StaffMember @relation(fields: [staffMemberId], references: [id])
+  amountMinor   Int
+  occurredAt    DateTime    @default(now())
+  reversed      Boolean     @default(false)
+  reversedAt    DateTime?
+
+  @@map("repayments")
+}
+
 model StockMovement {
   id                 String              @id @default(cuid())
   productId          String
@@ -428,6 +451,7 @@ model Customer {
   createdAt    DateTime      @default(now())
   paymentLines PaymentLine[]
   sales        Sale[]
+  repayments   Repayment[]
 
   @@map("customers")
 }

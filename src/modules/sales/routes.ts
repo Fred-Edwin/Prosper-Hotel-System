@@ -1,11 +1,19 @@
 import { db } from "@/shared/db";
 import { getSession, listCustomers } from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
-import { recordCounterSale, listTodaysSalesForStaff, voidSale, getTotalCustomerBalance } from "./logic";
+import {
+  recordCounterSale,
+  listTodaysSalesForStaff,
+  voidSale,
+  getTotalCustomerBalance,
+  getCustomerBalanceForOwner,
+  getCustomerCreditHistory,
+  recordRepayment,
+} from "./logic";
 
 function writeStatus(reason: string): number {
   if (reason === "forbidden" || reason === "day_closed") return 403;
-  if (reason === "not_found") return 404;
+  if (reason === "not_found" || reason === "customer_not_found") return 404;
   return 400;
 }
 
@@ -98,4 +106,52 @@ export async function totalCustomerBalanceRoute(): Promise<Response> {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
   return Response.json({ totalMinor: result.totalMinor });
+}
+
+// Ticket 36 — People's Customers tab: a per-customer balance, owner-only.
+export async function customerBalanceRoute(
+  request: Request,
+  { params }: { params: Promise<{ customerId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { customerId } = await params;
+  const result = await getCustomerBalanceForOwner(db, session, customerId);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ balanceMinor: result.balanceMinor });
+}
+
+// Ticket 36 — the customer detail view's itemized credit/repayment ledger.
+export async function customerCreditHistoryRoute(
+  request: Request,
+  { params }: { params: Promise<{ customerId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { customerId } = await params;
+  const result = await getCustomerCreditHistory(db, session, customerId);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ entries: result.entries });
+}
+
+// Ticket 36 — "Take a repayment," any staff member, own location.
+export async function recordRepaymentRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await recordRepayment(db, session, {
+    customerId: body.customerId,
+    amountMinor: body.amountMinor,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+  return Response.json({ repayment: result.repayment });
 }
