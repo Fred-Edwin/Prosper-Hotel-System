@@ -83,3 +83,11 @@
 
 ## Ticket 50 — Wire HelpPanel into admin shell page headers
 - merged: 21:35  (per-milestone timestamps not recorded during this session; single-pass plumbing ticket, context read + implementation + verify + merge completed in one continuous session)
+
+## Ticket 51 — Add an actions slot to the staff shell header
+- claimed: 21:36
+- context read done: 21:36  (context: reused from ticket 50 session; staff-shell.tsx, headers.tsx, staff-page-client.tsx already read)
+- plan approved: 21:36  (auto mode, no genuine ambiguity — proceeding per plan)
+- implementation done: 21:40  (implement: 4m)
+- ui-polish done: 21:41  (ui-polish: 1m — Storybook story; docs/screens.md unchanged, table only points at the stories file)
+- self-verify done: 21:43  (verify: 2m — lint/tsc pass, diff read confirms additive-only change, existing call site unaffected since actions is unset everywhere; pure reuse/wiring tier, dev server already running)
