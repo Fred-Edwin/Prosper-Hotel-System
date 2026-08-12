@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** 46 (Location comparison reads per-location profit, which
 46 builds)
-**Status:** planned
+**Status:** in-progress (claimed by build agent, 2026-08-12 17:10)
 
 ## Goal
 
