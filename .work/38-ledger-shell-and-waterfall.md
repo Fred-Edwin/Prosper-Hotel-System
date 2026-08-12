@@ -5,7 +5,7 @@
 interfaces — `getDashboardProfit` and friends already compute every figure
 the waterfall needs for one day; this ticket extends that to an
 arbitrary period and wires the shell)
-**Status:** planned
+**Status:** done
 
 ## Goal
 
@@ -78,23 +78,26 @@ the first time.
 
 ## Acceptance criteria
 
-- [ ] `/ledger` renders the real shell for the owner: period picker,
+- [x] `/ledger` renders the real shell for the owner: period picker,
       waterfall, four tabs — no more `NotBuiltPageClient`.
-- [ ] Non-owner roles are still redirected away, unchanged from today.
-- [ ] Waterfall figures are correct for a constructed scenario spanning
+- [x] Non-owner roles are still redirected away, unchanged from today.
+- [x] Waterfall figures are correct for a constructed scenario spanning
       both locations and a multi-day period (not just "today") — opening
       + purchases − closing = cost of goods sold, and gross profit =
       sales value − cost of goods sold, checked against known fixture
       data.
-- [ ] Non-sales consumption is shown but documented as already included
+- [x] Non-sales consumption is shown but documented as already included
       in cost of goods sold, not deducted again (per the reference's
       caption and proposal.md §10.5) — text present, not just a comment.
-- [ ] Canteen's own-goods cost portion is marked provisional in the UI
+- [x] Canteen's own-goods cost portion is marked provisional in the UI
       wherever it appears in the waterfall, consistent with the
-      dashboard's existing provisional marking.
-- [ ] Switching the period recomputes the waterfall; switching location
-      filter (if exposed) recomputes it scoped to that location.
-- [ ] Storybook story for the Ledger shell covering: waterfall with data,
+      dashboard's existing provisional marking. (Only the combined "Cost
+      of goods sold" term carries the canteen's own-goods estimate, same
+      as the dashboard precedent — marked there with the info badge.)
+- [x] Switching the period recomputes the waterfall. No location filter is
+      exposed — not in the design reference's toolbar and not required by
+      scope, which asks for one whole-business total.
+- [x] Storybook story for the Ledger shell covering: waterfall with data,
       loading, empty (no movements in period), and the not-yet-wired tab
       states for Store/Non-sales.
 

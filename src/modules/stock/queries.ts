@@ -311,6 +311,38 @@ export async function sumProductMovementsByReasonAtLocationInPeriod(
   return grouped.map((g) => ({ productId: g.productId, quantity: g._sum.quantity ?? 0 }));
 }
 
+// Ticket 38: proposal.md §10.5's non-sales consumption report — wasted,
+// consumed and given-away product movements at a location in a period,
+// valued both at cost and at selling price. Both figures were stamped on
+// the movement itself at recordNonSalesConsumption time (formulas.md §4's
+// cost basis, including the 60%-of-price estimate where no recipe/recorded
+// cost exists), so this sums those stored fields rather than re-deriving
+// cost. Quantity is negative on these movements (stock leaving), so the
+// stored costBasisMinor/sellingValueMinor — already the positive value of
+// the whole line, not a per-unit figure — are summed directly.
+export async function sumNonSalesValueAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ atCostMinor: number; atPriceMinor: number }> {
+  const movements = await db.stockMovement.findMany({
+    where: {
+      locationId,
+      reason: { in: ["wasted", "consumed", "given_away"] },
+      occurredAt: { gt: periodStart, lte: periodEnd },
+    },
+    select: { costBasisMinor: true, sellingValueMinor: true },
+  });
+  return movements.reduce(
+    (sum, m) => ({
+      atCostMinor: sum.atCostMinor + (m.costBasisMinor ?? 0),
+      atPriceMinor: sum.atPriceMinor + (m.sellingValueMinor ?? 0),
+    }),
+    { atCostMinor: 0, atPriceMinor: 0 },
+  );
+}
+
 // The count immediately before a given one at the same location — the
 // "previous count" formulas.md's derived-sales formula reads from. None
 // for the first-ever count at a location.

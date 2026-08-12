@@ -7,6 +7,7 @@ export {
   computeCanteenCostOfGoods,
   computeCountCorrection,
   getDashboardProfit,
+  getLedgerSummary,
 } from "./logic";
 export type {
   TransferCostLine,
@@ -15,5 +16,6 @@ export type {
   CanteenCostOfGoodsResult,
   CountCorrectionResult,
   DashboardProfitResult,
+  LedgerSummaryResult,
 } from "./logic";
-export { dashboardProfitRoute } from "./routes";
+export { dashboardProfitRoute, ledgerSummaryRoute } from "./routes";

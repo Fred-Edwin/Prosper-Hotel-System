@@ -71,6 +71,7 @@ new destinations get added here as tickets that build them land, per
 | Story | Path | Status |
 |---|---|---|
 | Modules/Reporting/DashboardProfit | `src/modules/reporting/ui/dashboard-profit.stories.tsx` | approved |
+| Modules/Reporting/LedgerShell | `src/modules/reporting/ui/ledger-shell.stories.tsx` | approved |
 
 ## People
 
@@ -91,8 +92,12 @@ ticket rather than deferred, since a pay figure with no record of what
 was already paid wasn't useful on its own — see ticket 35's notes.
 Reporting (stage 8) has its Profit panel (ticket 25); amounts owed
 landed via ticket 36 (Customers tab); product stock valuation landed via
-ticket 37 (AdminStockTable's value column). Profit-by-arbitrary-period
-remains unbuilt. Added to this file as their tickets land, not
+ticket 37 (AdminStockTable's value column); the Ledger shell and its
+cost-of-goods-sold waterfall, generalised to an arbitrary period across
+both locations, landed via ticket 38. Its four sub-ledger tabs
+(Product, Store, Non-sales, Cash) still show their not-yet-wired state —
+Product and Cash land in tickets 39 and 40, Store and Non-sales in a
+later ticket. Added to this file as their tickets land, not
 speculatively ahead of them.
 
 ## Note on naming

@@ -8,6 +8,7 @@ import {
   computeCanteenCostOfGoods,
   computeCountCorrection,
   getDashboardProfit,
+  getLedgerSummary,
 } from "../logic";
 import { testDb } from "@/shared/test-db";
 
@@ -658,5 +659,144 @@ describe("getDashboardProfit", () => {
       dayEnd: new Date(),
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("getLedgerSummary — ticket 38, whole business over an arbitrary period", () => {
+  test("opening + purchases − closing = cost of goods sold, and gross profit = sales value − cost of goods sold, over a multi-day period spanning both locations", async () => {
+    const periodStart = new Date("2026-08-01T00:00:00Z");
+    const periodEnd = new Date("2026-08-03T00:00:00Z");
+
+    // Restaurant ingredients: opening 18,000 (flour on hand before the
+    // period), bought 9,000 during it, closing 15,000 (whatever remains at
+    // periodEnd) — the worked example from proposal.md §10.2, spread over
+    // two days rather than one.
+    const flour = await testDb.ingredient.create({
+      data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 1000 },
+    });
+    await testDb.ingredientMovement.create({
+      data: {
+        ingredientId: flour.id,
+        locationId: restaurantId,
+        quantity: 18,
+        reason: "received",
+        unitCostMinor: 1000,
+        staffMemberId: ownerId,
+        occurredAt: new Date("2026-07-31T12:00:00Z"),
+      },
+    });
+    await testDb.ingredientMovement.create({
+      data: {
+        ingredientId: flour.id,
+        locationId: restaurantId,
+        quantity: 9,
+        reason: "received",
+        unitCostMinor: 1000,
+        staffMemberId: ownerId,
+        occurredAt: new Date("2026-08-01T09:00:00Z"),
+      },
+    });
+    await testDb.ingredientMovement.create({
+      data: {
+        ingredientId: flour.id,
+        locationId: restaurantId,
+        quantity: -12,
+        reason: "issued",
+        unitCostMinor: 1000,
+        staffMemberId: ownerId,
+        occurredAt: new Date("2026-08-02T09:00:00Z"),
+      },
+    });
+
+    // Restaurant sells across the two days.
+    const chips = await testDb.product.create({
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        fulfilment: "counter",
+        totalMinor: 5000,
+        occurredAt: new Date("2026-08-01T13:00:00Z"),
+        lines: { create: [{ productId: chips.id, quantity: 50, priceMinor: 5000 }] },
+      },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        fulfilment: "counter",
+        totalMinor: 4000,
+        occurredAt: new Date("2026-08-02T13:00:00Z"),
+        lines: { create: [{ productId: chips.id, quantity: 40, priceMinor: 4000 }] },
+      },
+    });
+
+    // Canteen takes cash across the two days — its own-goods cost has no
+    // measured rate yet (no count), so canteen cost of goods is 0 and its
+    // takings still count toward whole-business sales value.
+    await testDb.takings.create({
+      data: { locationId: canteenId, cashMinor: 1200, mpesaMinor: 300, occurredAt: new Date("2026-08-01T18:00:00Z") },
+    });
+    await testDb.takings.create({
+      data: { locationId: canteenId, cashMinor: 900, mpesaMinor: 100, occurredAt: new Date("2026-08-02T18:00:00Z") },
+    });
+
+    // A plate wasted at the restaurant — non-sales consumption, already
+    // inside cost of goods sold via the ingredients it used, reported
+    // separately at cost and at selling price.
+    await testDb.stockMovement.create({
+      data: {
+        productId: chips.id,
+        locationId: restaurantId,
+        quantity: -1,
+        reason: "wasted",
+        staffMemberId: ownerId,
+        costBasisMinor: 60,
+        sellingValueMinor: 100,
+        occurredAt: new Date("2026-08-01T20:00:00Z"),
+      },
+    });
+
+    const result = await getLedgerSummary(testDb, owner(), { periodStart, periodEnd });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.openingMinor).toBe(18000);
+    expect(result.purchasesMinor).toBe(9000);
+    expect(result.closingMinor).toBe(15000);
+    expect(result.costOfGoodsSoldMinor).toBe(
+      result.openingMinor + result.purchasesMinor - result.closingMinor,
+    );
+    expect(result.salesValueMinor).toBe(5000 + 4000 + 1500 + 1000);
+    expect(result.grossProfitMinor).toBe(result.salesValueMinor - result.costOfGoodsSoldMinor);
+    expect(result.nonSalesAtCostMinor).toBe(60);
+    expect(result.nonSalesAtPriceMinor).toBe(100);
+  });
+
+  test("rejects a non-owner", async () => {
+    const result = await getLedgerSummary(testDb, attendant(canteenId), {
+      periodStart: new Date(),
+      periodEnd: new Date(),
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("an empty period has zero figures throughout, not an error", async () => {
+    const result = await getLedgerSummary(testDb, owner(), {
+      periodStart: new Date("2026-01-01T00:00:00Z"),
+      periodEnd: new Date("2026-01-02T00:00:00Z"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.openingMinor).toBe(0);
+    expect(result.purchasesMinor).toBe(0);
+    expect(result.closingMinor).toBe(0);
+    expect(result.costOfGoodsSoldMinor).toBe(0);
+    expect(result.salesValueMinor).toBe(0);
+    expect(result.grossProfitMinor).toBe(0);
+    expect(result.nonSalesAtCostMinor).toBe(0);
+    expect(result.nonSalesAtPriceMinor).toBe(0);
   });
 });

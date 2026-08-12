@@ -12,6 +12,7 @@ import {
   getProductMovementByReasonInPeriod,
   getLatestStockCount,
   getPreviousStockCount,
+  getNonSalesConsumptionValue,
   type DerivedSalesDetail,
 } from "@/modules/stock";
 import { getSalesRevenueAtLocation } from "@/modules/sales";
@@ -505,5 +506,97 @@ export async function getDashboardProfit(
     canteenCostRate: canteenCogs.canteenCostRate,
     lastCanteenCount: canteenCogs.lastCanteenCount,
     correction,
+  };
+}
+
+export type LedgerSummaryResult =
+  | {
+      ok: true;
+      period: { periodStart: Date; periodEnd: Date };
+      openingMinor: number;
+      purchasesMinor: number;
+      closingMinor: number;
+      costOfGoodsSoldMinor: number;
+      salesValueMinor: number;
+      grossProfitMinor: number;
+      nonSalesAtCostMinor: number;
+      nonSalesAtPriceMinor: number;
+      canteenCostRate: number | null;
+      lastCanteenCount: Date | null;
+    }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// Ticket 38's ledger waterfall — proposal.md §10.2's opening/purchases/
+// closing/cost-of-goods-sold arithmetic, generalised from the dashboard's
+// one-day figure to an arbitrary period, and combining both locations into
+// one whole-business total (which getDashboardProfit does not do).
+//
+// "Opening stock" and "closing stock" here are the restaurant's ingredient
+// stock value at the period's two boundaries — the same figure
+// computeRestaurantCostOfGoods already uses, per formulas.md §6. The
+// canteen's cost of goods is transfer-cost-plus-estimated-rate, not an
+// opening/closing stock figure of its own (2026-08-12 clarification), so it
+// has no separate opening/closing contribution here — it only enters via
+// costOfGoodsSoldMinor, same as computeCanteenCostOfGoods elsewhere.
+export async function getLedgerSummary(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { periodStart: Date; periodEnd: Date },
+): Promise<LedgerSummaryResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const { restaurant, canteen } = await locations(db);
+  if (!restaurant || !canteen) return { ok: false, reason: "not_found" };
+
+  const dayShapedInput = { dayStart: input.periodStart, dayEnd: input.periodEnd };
+
+  const [
+    opening,
+    closing,
+    purchases,
+    restaurantCogs,
+    canteenCogs,
+    restaurantRevenue,
+    canteenTakings,
+    restaurantNonSales,
+    canteenNonSales,
+  ] = await Promise.all([
+    getIngredientStockValueAtLocation(db, requester, restaurant.id, input.periodStart),
+    getIngredientStockValueAtLocation(db, requester, restaurant.id, input.periodEnd),
+    getIngredientsBoughtMinor(db, requester, restaurant.id, input.periodStart, input.periodEnd),
+    computeRestaurantCostOfGoods(db, requester, dayShapedInput),
+    computeCanteenCostOfGoods(db, requester, dayShapedInput),
+    getSalesRevenueAtLocation(db, requester, restaurant.id, input.periodStart, input.periodEnd),
+    getTakingsAtLocation(db, requester, canteen.id, input.periodStart, input.periodEnd),
+    getNonSalesConsumptionValue(db, requester, restaurant.id, input.periodStart, input.periodEnd),
+    getNonSalesConsumptionValue(db, requester, canteen.id, input.periodStart, input.periodEnd),
+  ]);
+  if (!opening.ok) return opening;
+  if (!closing.ok) return closing;
+  if (!purchases.ok) return purchases;
+  if (!restaurantCogs.ok) return restaurantCogs;
+  if (!canteenCogs.ok) return canteenCogs;
+  if (!restaurantRevenue.ok) return restaurantRevenue;
+  if (!canteenTakings.ok) return canteenTakings;
+  if (!restaurantNonSales.ok) return restaurantNonSales;
+  if (!canteenNonSales.ok) return canteenNonSales;
+
+  const costOfGoodsSoldMinor = restaurantCogs.totalMinor + canteenCogs.totalMinor;
+  const salesValueMinor =
+    restaurantRevenue.totalMinor + canteenTakings.cashMinor + canteenTakings.mpesaMinor;
+
+  return {
+    ok: true,
+    period: { periodStart: input.periodStart, periodEnd: input.periodEnd },
+    openingMinor: opening.totalMinor,
+    purchasesMinor: purchases.totalMinor,
+    closingMinor: closing.totalMinor,
+    costOfGoodsSoldMinor,
+    salesValueMinor,
+    grossProfitMinor: salesValueMinor - costOfGoodsSoldMinor,
+    nonSalesAtCostMinor: restaurantNonSales.atCostMinor + canteenNonSales.atCostMinor,
+    nonSalesAtPriceMinor: restaurantNonSales.atPriceMinor + canteenNonSales.atPriceMinor,
+    canteenCostRate: canteenCogs.canteenCostRate,
+    lastCanteenCount: canteenCogs.lastCanteenCount,
   };
 }

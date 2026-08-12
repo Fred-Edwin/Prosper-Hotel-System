@@ -24,6 +24,7 @@ export {
   getIngredientsBoughtMinor,
   getIngredientsIssuedMinor,
   getProductMovementByReasonInPeriod,
+  getNonSalesConsumptionValue,
 } from "./logic";
 export type {
   StockAccessResult,
@@ -51,6 +52,7 @@ export type {
   IngredientsBoughtResult,
   IngredientsConsumedResult,
   ProductMovementByReasonResult,
+  NonSalesConsumptionValueResult,
 } from "./logic";
 export {
   stockAtLocationRoute,
