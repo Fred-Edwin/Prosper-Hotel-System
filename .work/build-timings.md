@@ -81,3 +81,4 @@
 - implementation done: 17:55  (implement: 20m)
 - ui-polish done: 17:58  (ui-polish: 3m)
 - self-verify done: 18:02  (verify: 4m)
+- merged: 18:05  (merge: 3m)
