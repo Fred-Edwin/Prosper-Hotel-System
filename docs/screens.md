@@ -25,6 +25,7 @@ new destinations get added here as tickets that build them land, per
 | Patterns/TableToolbar | `components/patterns/table-toolbar.stories.tsx` | approved |
 | Patterns/States | `components/patterns/states.stories.tsx` | approved |
 | Patterns/ConfirmDialog | `components/patterns/confirm-dialog.stories.tsx` | approved |
+| Patterns/HelpPanel | `components/patterns/help-panel.stories.tsx` | approved |
 
 ## Catalogue
 

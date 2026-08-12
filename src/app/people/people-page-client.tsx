@@ -8,6 +8,7 @@
 
 import { AdminShell } from "@/components/layout/admin-shell";
 import { getDestinations } from "@/components/layout/admin-nav";
+import { HelpPanel } from "@/components/patterns/help-panel";
 import { StaffDestination } from "@/modules/people/ui/staff-destination";
 
 export function PeoplePageClient({ staffName }: { staffName: string }) {
@@ -18,6 +19,7 @@ export function PeoplePageClient({ staffName }: { staffName: string }) {
       staffName={staffName}
       title="People"
       subtitle="Staff and customers — who is owed, and who owes"
+      actions={<HelpPanel topic="people" />}
     >
       <StaffDestination />
     </AdminShell>

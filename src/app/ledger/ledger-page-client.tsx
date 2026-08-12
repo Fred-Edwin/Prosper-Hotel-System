@@ -8,6 +8,7 @@
 
 import { AdminShell } from "@/components/layout/admin-shell";
 import { getDestinations } from "@/components/layout/admin-nav";
+import { HelpPanel } from "@/components/patterns/help-panel";
 import { LedgerShell } from "@/modules/reporting/ui/ledger-shell";
 
 export function LedgerPageClient({ staffName }: { staffName: string }) {
@@ -18,6 +19,7 @@ export function LedgerPageClient({ staffName }: { staffName: string }) {
       staffName={staffName}
       title="Ledger"
       subtitle="Where every figure comes from"
+      actions={<HelpPanel topic="ledger" />}
     >
       <LedgerShell />
     </AdminShell>

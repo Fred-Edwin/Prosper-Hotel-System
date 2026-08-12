@@ -9,6 +9,7 @@
 
 import { AdminShell } from "@/components/layout/admin-shell";
 import { getDestinations } from "@/components/layout/admin-nav";
+import { HelpPanel } from "@/components/patterns/help-panel";
 import { CatalogueDestination } from "@/modules/catalogue/ui/catalogue-destination";
 
 export function CataloguePageClient({ staffName }: { staffName: string }) {
@@ -19,6 +20,7 @@ export function CataloguePageClient({ staffName }: { staffName: string }) {
       staffName={staffName}
       title="Catalogue"
       subtitle="What the business sells and what it costs"
+      actions={<HelpPanel topic="catalogue" />}
     >
       <CatalogueDestination />
     </AdminShell>
