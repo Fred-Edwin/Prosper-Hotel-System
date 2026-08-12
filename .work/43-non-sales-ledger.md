@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** 38 (needs the Ledger shell to host this tab in — already
 built and merged)
-**Status:** in-progress (claimed by build session, 2026-08-12 13:08)
+**Status:** done
 
 ## Goal
 
@@ -67,21 +67,21 @@ waterfall already shows.
 
 ## Acceptance criteria
 
-- [ ] Every wasted/consumed/given-away entry in the period appears as one
+- [x] Every wasted/consumed/given-away entry in the period appears as one
       row, valued using its own snapshotted cost/selling values (not a
       recomputed current value), for a constructed fixture spanning both
       products and ingredients (if ingredient wastage exists) and all
       three reasons.
-- [ ] Entries valued at the 60%-of-selling-price estimate (no recipe) are
+- [x] Entries valued at the 60%-of-selling-price estimate (no recipe) are
       marked as estimated in the UI, matching the reference's "est"
       indicator.
-- [ ] The totals footer sums exactly what the filtered rows show — "N of
+- [x] The totals footer sums exactly what the filtered rows show — "N of
       M" style, filtering changes the total, not just the row count.
-- [ ] Filtering by reason and searching by item/person combine (AND) and
+- [x] Filtering by reason and searching by item/person combine (AND) and
       narrow correctly.
-- [ ] Non-owner roles cannot reach this data (route-level check, same
+- [x] Non-owner roles cannot reach this data (route-level check, same
       gate as the rest of `reporting`).
-- [ ] Storybook story: populated table with all three reasons, an
+- [x] Storybook story: populated table with all three reasons, an
       estimated-cost row, empty, filtered-empty, loading.
 
 ## Verification

@@ -10,6 +10,7 @@ export {
   getLedgerSummary,
   getProductLedger,
   getStoreLedger,
+  getNonSalesLedgerReport,
   getCashLedger,
 } from "./logic";
 export type {
@@ -25,9 +26,18 @@ export type {
   ProductLedgerResult,
   StoreLedgerRow,
   StoreLedgerResult,
+  NonSalesLedgerRow,
+  NonSalesLedgerResult,
   CashLedgerDay,
   CashTransaction,
   CashTransactionCategory,
   CashLedgerResult,
 } from "./logic";
-export { dashboardProfitRoute, ledgerSummaryRoute, productLedgerRoute, storeLedgerRoute, cashLedgerRoute } from "./routes";
+export {
+  dashboardProfitRoute,
+  ledgerSummaryRoute,
+  productLedgerRoute,
+  storeLedgerRoute,
+  nonSalesLedgerRoute,
+  cashLedgerRoute,
+} from "./routes";

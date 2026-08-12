@@ -77,6 +77,7 @@ new destinations get added here as tickets that build them land, per
 | Modules/Reporting/ProductLedger | `src/modules/reporting/ui/product-ledger.stories.tsx` | approved |
 | Modules/Reporting/CashLedger | `src/modules/reporting/ui/cash-ledger.stories.tsx` | approved |
 | Modules/Reporting/StoreLedger | `src/modules/reporting/ui/store-ledger.stories.tsx` | approved |
+| Modules/Reporting/NonSalesLedger | `src/modules/reporting/ui/non-sales-ledger.stories.tsx` | approved |
 
 ## People
 
@@ -106,9 +107,12 @@ filter, day-expansion to individual transactions with method, running
 cash and M-Pesa balances kept independent throughout) landed via ticket
 40. The Store ledger tab (search, location filter, running-average
 cost-move indicator, no day-expansion — the reference has no chevron for
-this sub-ledger) landed via ticket 42. Non-sales still shows its
-not-yet-wired state — a later ticket. Added to this file as their
-tickets land, not speculatively ahead of them.
+this sub-ledger) landed via ticket 42. The Non-sales ledger tab (one row
+per wasted/consumed/given-away entry across products and ingredients,
+valued at its own snapshotted cost/selling figures, reason filter, search
+by item or recorded-by, totals footer, "est" indicator for recipe-less
+cost estimates) landed via ticket 43. Added to this file as their tickets
+land, not speculatively ahead of them.
 
 ## Note on naming
 

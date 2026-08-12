@@ -19,7 +19,9 @@ import {
   getLatestStockCount,
   getPreviousStockCount,
   getNonSalesConsumptionValue,
+  getNonSalesLedger,
   type DerivedSalesDetail,
+  type NonSalesCategory,
 } from "@/modules/stock";
 import { getSalesRevenueAtLocation } from "@/modules/sales";
 import {
@@ -1068,6 +1070,86 @@ export async function getStoreLedger(
   const filtered = rows.filter((row) => !search || row.ingredientName.toLowerCase().includes(search));
 
   filtered.sort((a, b) => a.ingredientName.localeCompare(b.ingredientName) || a.locationCode.localeCompare(b.locationCode));
+
+  return { ok: true, rows: filtered };
+}
+
+// Ticket 43's Non-sales ledger — one row per wasted/consumed/given-away
+// entry across the selected location(s) (or all, matching the Product and
+// Store ledgers' pattern), with an optional reason filter and a search
+// across item name and recorded-by. Line-level rows come straight from
+// stock's getNonSalesLedger — this function joins locations and applies
+// the ledger's own filters, no re-valuation.
+export type NonSalesLedgerRow = {
+  itemType: "product" | "ingredient";
+  itemId: string;
+  itemName: string;
+  locationId: string;
+  locationCode: string;
+  occurredAt: string;
+  reason: NonSalesCategory;
+  quantity: number;
+  costBasisMinor: number | null;
+  isEstimated: boolean | null;
+  sellingValueMinor: number | null;
+  recordedBy: string;
+};
+
+export type NonSalesLedgerResult =
+  | { ok: true; rows: NonSalesLedgerRow[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+export async function getNonSalesLedgerReport(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    periodStart: Date;
+    periodEnd: Date;
+    locationId?: string;
+    reason?: NonSalesCategory;
+    search?: string;
+  },
+): Promise<NonSalesLedgerResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const allLocations = await listLocations(db);
+  const targetLocations = input.locationId
+    ? allLocations.filter((l) => l.id === input.locationId)
+    : allLocations;
+  if (targetLocations.length === 0) return { ok: false, reason: "not_found" };
+
+  const rows: NonSalesLedgerRow[] = [];
+  for (const location of targetLocations) {
+    const result = await getNonSalesLedger(db, requester, location.id, input.periodStart, input.periodEnd);
+    if (!result.ok) return result;
+    for (const line of result.lines) {
+      rows.push({
+        itemType: line.itemType,
+        itemId: line.itemId,
+        itemName: line.itemName,
+        locationId: location.id,
+        locationCode: location.code,
+        occurredAt: line.occurredAt.toISOString(),
+        reason: line.reason,
+        quantity: line.quantity,
+        costBasisMinor: line.costBasisMinor,
+        isEstimated: line.isEstimated,
+        sellingValueMinor: line.sellingValueMinor,
+        recordedBy: line.staffMemberName,
+      });
+    }
+  }
+
+  const search = input.search?.trim().toLowerCase();
+  const filtered = rows.filter(
+    (row) =>
+      (!input.reason || row.reason === input.reason) &&
+      (!search ||
+        row.itemName.toLowerCase().includes(search) ||
+        row.recordedBy.toLowerCase().includes(search)),
+  );
+
+  filtered.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
 
   return { ok: true, rows: filtered };
 }
