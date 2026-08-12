@@ -671,6 +671,91 @@ export async function getRevenueProfitTrend(
   return { ok: true, points };
 }
 
+export type ExceptionShortfall = {
+  handoverId: string;
+  staffName: string;
+  locationCode: string;
+  cashDiffMinor: number;
+  mpesaDiffMinor: number;
+  occurredAt: Date;
+};
+
+export type ExceptionVoidedSale = {
+  saleId: string;
+  saleRef: string;
+  voidedByName: string;
+  totalMinor: number;
+  locationCode: string;
+  voidedAt: Date;
+};
+
+export type GetExceptionsResult =
+  | { ok: true; shortfalls: ExceptionShortfall[]; voidedSales: ExceptionVoidedSale[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 48 — the Dashboard's "Needs you" card: today's handover
+// shortfalls (cash and/or M-Pesa actual != expected, either location —
+// canteen does get a handover check per roadmap.md's Stage 5, just with
+// a different expected-amount source) and today's voided sales. No
+// pending-expense source — this codebase has no submit-for-confirmation
+// concept for expenses (2026-08-12, confirmed with Edwinfred, see ticket
+// 48's file). Business-wide, owner-only, same gate as every other
+// dashboard-feeding read here.
+export async function getExceptions(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { today: Date },
+): Promise<GetExceptionsResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const dayStart = new Date(input.today);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const [cashTransactions, sales, allLocations] = await Promise.all([
+    getCashLedgerTransactions(db, requester, dayStart, dayEnd),
+    listSalesInPeriod(db, dayStart, dayEnd),
+    listLocations(db),
+  ]);
+  if (!cashTransactions.ok) return cashTransactions;
+
+  const locationCodeById = new Map(allLocations.map((l) => [l.id, l.code]));
+
+  const shortfallHandovers = cashTransactions.handovers.filter(
+    (h) => h.actualCashMinor !== h.expectedCashMinor || h.actualMpesaMinor !== h.expectedMpesaMinor,
+  );
+  const voidedSaleRows = sales.filter((s) => s.voided);
+
+  const staffIds = new Set<string>([
+    ...shortfallHandovers.map((h) => h.staffMemberId),
+    ...voidedSaleRows.filter((s) => s.voidedBy).map((s) => s.voidedBy!),
+  ]);
+  const staff = await findStaffMembersByIds(db, Array.from(staffIds));
+  const staffNameById = new Map(staff.map((s) => [s.id, s.name]));
+  const nameFor = (id: string | null) => (id ? (staffNameById.get(id) ?? "Unknown") : "Unknown");
+
+  const shortfalls: ExceptionShortfall[] = shortfallHandovers.map((h) => ({
+    handoverId: h.id,
+    staffName: nameFor(h.staffMemberId),
+    locationCode: locationCodeById.get(h.locationId) ?? "unknown",
+    cashDiffMinor: h.actualCashMinor - h.expectedCashMinor,
+    mpesaDiffMinor: h.actualMpesaMinor - h.expectedMpesaMinor,
+    occurredAt: h.occurredAt,
+  }));
+
+  const voidedSales: ExceptionVoidedSale[] = voidedSaleRows.map((s) => ({
+    saleId: s.id,
+    saleRef: s.id.slice(0, 8),
+    voidedByName: nameFor(s.voidedBy),
+    totalMinor: s.totalMinor,
+    locationCode: locationCodeById.get(s.locationId) ?? "unknown",
+    voidedAt: s.voidedAt ?? s.occurredAt,
+  }));
+
+  return { ok: true, shortfalls, voidedSales };
+}
+
 export type LedgerSummaryResult =
   | {
       ok: true;

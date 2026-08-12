@@ -3,6 +3,7 @@ import { getSession } from "@/modules/people";
 import {
   getDashboardProfit,
   getRevenueProfitTrend,
+  getExceptions,
   getLedgerSummary,
   getProductLedger,
   getStoreLedger,
@@ -96,6 +97,22 @@ export async function revenueProfitTrendRoute(request: Request): Promise<Respons
   }
 
   return Response.json({ points: result.points });
+}
+
+// Ticket 48 — the Dashboard's "Needs you" card. Owner-only, always today
+// (no period param — an exceptions list is inherently "what needs
+// attention right now," not a historical query the Ledger already
+// serves).
+export async function exceptionsRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const result = await getExceptions(db, session, { today: new Date() });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ shortfalls: result.shortfalls, voidedSales: result.voidedSales });
 }
 
 // The Ledger's stats waterfall — owner-only, an arbitrary period rather

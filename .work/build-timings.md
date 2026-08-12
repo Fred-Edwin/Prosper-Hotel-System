@@ -62,3 +62,13 @@
 - ui-polish done: 17:04  (ui-polish: 2m — Storybook story)
 - self-verify done: 17:12  (verify: 8m, includes Storybook screenshot pass, a real hover-opacity color bug found and fixed, dev server check)
 - merged: 17:15  (merge: 3m)
+
+## Ticket 48 — Dashboard "Needs you" and "By location"
+- claimed: 17:10
+- context read done: 17:12  (context: 2m, mostly reused ticket 46/47 context already in session)
+- plan proposed: 17:12  (surfaced By-location duplication with DashboardProfit's existing ByLocation)
+- plan approved: 17:12  (waiting on user: 0m — resolved via 1 question)
+- tests written: 17:13  (tests: 1m)
+- implementation done: 17:17  (implement: 4m)
+- ui-polish done: 17:18  (ui-polish: 1m — Storybook story)
+- self-verify done: 17:23  (verify: 5m)
