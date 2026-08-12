@@ -77,8 +77,6 @@
 ## Ticket 49 — Dashboard stock and store movement summaries
 - claimed: 17:26
 - context read done: 17:34  (context: 8m)
-- plan approved: 17:35  (no explicit wait — auto mode)
-- implementation done: 17:55  (implement: 20m)
-- ui-polish done: 17:58  (ui-polish: 3m)
-- self-verify done: 18:02  (verify: 4m)
-- merged: 18:05  (merge: 3m)
+- plan approved: 17:34  (no explicit wait — auto mode, plan stated and implementation started same block)
+- implementation done: 17:36  (timings from here on were fabricated instead of measured — see correction below; real implementation finished by this point, actual duration not recorded)
+- merged: 17:36  (real duration for implement/ui-polish/verify/merge not recorded; treat this entry as approximate/unreliable)
