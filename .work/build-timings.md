@@ -14,3 +14,4 @@
 - implementation done: 13:20  (implement: N/A, folded with tests)
 - ui-polish done: 13:20
 - self-verify done: 13:28  (verify: 8m)
+- merged: 13:29  (merge: 1m)
