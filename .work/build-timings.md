@@ -91,3 +91,4 @@
 - implementation done: 21:40  (implement: 4m)
 - ui-polish done: 21:41  (ui-polish: 1m — Storybook story; docs/screens.md unchanged, table only points at the stories file)
 - self-verify done: 21:43  (verify: 2m — lint/tsc pass, diff read confirms additive-only change, existing call site unaffected since actions is unset everywhere; pure reuse/wiring tier, dev server already running)
+- merged: 21:44  (merge: 1m)
