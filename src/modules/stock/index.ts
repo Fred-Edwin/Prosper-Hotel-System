@@ -30,6 +30,7 @@ export {
   getProductMovementByReasonInPeriod,
   getProductMovementsByReasonInPeriod,
   getNonSalesConsumptionValue,
+  getNonSalesLedger,
   resolveProductCostBasis,
 } from "./logic";
 export type {
@@ -65,6 +66,8 @@ export type {
   ProductMovementByReasonResult,
   ProductMovementsByReasonResult,
   NonSalesConsumptionValueResult,
+  NonSalesLedgerLine,
+  NonSalesLedgerResult,
 } from "./logic";
 export {
   stockAtLocationRoute,

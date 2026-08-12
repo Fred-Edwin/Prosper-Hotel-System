@@ -397,14 +397,7 @@ export async function sumNonSalesValueAtLocationInPeriod(
   periodStart: Date,
   periodEnd: Date,
 ): Promise<{ atCostMinor: number; atPriceMinor: number }> {
-  const movements = await db.stockMovement.findMany({
-    where: {
-      locationId,
-      reason: { in: ["wasted", "consumed", "given_away"] },
-      occurredAt: { gt: periodStart, lte: periodEnd },
-    },
-    select: { costBasisMinor: true, sellingValueMinor: true },
-  });
+  const movements = await findNonSalesMovementsAtLocationInPeriod(db, locationId, periodStart, periodEnd);
   return movements.reduce(
     (sum, m) => ({
       atCostMinor: sum.atCostMinor + (m.costBasisMinor ?? 0),
@@ -412,6 +405,92 @@ export async function sumNonSalesValueAtLocationInPeriod(
     }),
     { atCostMinor: 0, atPriceMinor: 0 },
   );
+}
+
+// Ticket 43's Non-sales ledger — one row per wasted/consumed/given-away
+// entry (product and ingredient) at a location in a period, for the
+// line-level report. sumNonSalesValueAtLocationInPeriod's aggregate is
+// derived from this same query (see stock/logic.ts) so the two can never
+// disagree.
+export type NonSalesMovementLine = {
+  itemType: "product" | "ingredient";
+  itemId: string;
+  quantity: number;
+  reason: StockMovementReason;
+  costBasisMinor: number | null;
+  sellingValueMinor: number | null;
+  isEstimated: boolean | null;
+  staffMemberId: string;
+  occurredAt: Date;
+};
+
+export async function findNonSalesMovementsAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<NonSalesMovementLine[]> {
+  const [productMovements, ingredientMovements] = await Promise.all([
+    db.stockMovement.findMany({
+      where: {
+        locationId,
+        reason: { in: ["wasted", "consumed", "given_away"] },
+        occurredAt: { gt: periodStart, lte: periodEnd },
+      },
+      select: {
+        productId: true,
+        quantity: true,
+        reason: true,
+        costBasisMinor: true,
+        sellingValueMinor: true,
+        isEstimated: true,
+        staffMemberId: true,
+        occurredAt: true,
+      },
+    }),
+    db.ingredientMovement.findMany({
+      where: {
+        locationId,
+        reason: { in: ["wasted", "consumed", "given_away"] },
+        occurredAt: { gt: periodStart, lte: periodEnd },
+      },
+      select: {
+        ingredientId: true,
+        quantity: true,
+        reason: true,
+        costBasisMinor: true,
+        sellingValueMinor: true,
+        isEstimated: true,
+        staffMemberId: true,
+        occurredAt: true,
+      },
+    }),
+  ]);
+
+  return [
+    ...productMovements.map((m) => ({
+      itemType: "product" as const,
+      itemId: m.productId,
+      quantity: m.quantity,
+      reason: m.reason,
+      costBasisMinor: m.costBasisMinor,
+      sellingValueMinor: m.sellingValueMinor,
+      isEstimated: m.isEstimated,
+      staffMemberId: m.staffMemberId,
+      occurredAt: m.occurredAt,
+    })),
+    ...ingredientMovements.map((m) => ({
+      itemType: "ingredient" as const,
+      itemId: m.ingredientId,
+      quantity: m.quantity,
+      reason: m.reason,
+      costBasisMinor: m.costBasisMinor,
+      sellingValueMinor: m.sellingValueMinor,
+      isEstimated: m.isEstimated,
+      staffMemberId: m.staffMemberId,
+      occurredAt: m.occurredAt,
+    })),
+  ];
 }
 
 // The count immediately before a given one at the same location — the

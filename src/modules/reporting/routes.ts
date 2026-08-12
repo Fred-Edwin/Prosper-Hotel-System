@@ -5,9 +5,11 @@ import {
   getLedgerSummary,
   getProductLedger,
   getStoreLedger,
+  getNonSalesLedgerReport,
   getCashLedger,
   type CashTransactionCategory,
 } from "./logic";
+import type { NonSalesCategory } from "@/modules/stock";
 
 function writeStatus(reason: string): number {
   return reason === "forbidden" ? 403 : reason === "not_found" ? 404 : 400;
@@ -157,6 +159,41 @@ export async function storeLedgerRoute(request: Request): Promise<Response> {
   const search = url.searchParams.get("search") ?? undefined;
 
   const result = await getStoreLedger(db, session, { periodStart, periodEnd, locationId, search });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ rows: result.rows });
+}
+
+// Ticket 43's Non-sales ledger tab — owner-only, same period-query shape
+// as the Store ledger, plus an optional reason filter (wasted/consumed/
+// given_away) alongside location/search.
+export async function nonSalesLedgerRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const periodStartParam = url.searchParams.get("periodStart");
+  const periodEndParam = url.searchParams.get("periodEnd");
+  if (!periodStartParam || !periodEndParam) {
+    return Response.json({ error: "periodStart and periodEnd are required" }, { status: 400 });
+  }
+
+  const periodStart = new Date(periodStartParam);
+  const periodEnd = new Date(periodEndParam);
+  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+    return Response.json({ error: "invalid period" }, { status: 400 });
+  }
+  if (periodStart >= periodEnd) {
+    return Response.json({ error: "periodStart must be before periodEnd" }, { status: 400 });
+  }
+
+  const locationId = url.searchParams.get("locationId") ?? undefined;
+  const reason = (url.searchParams.get("reason") ?? undefined) as NonSalesCategory | undefined;
+  const search = url.searchParams.get("search") ?? undefined;
+
+  const result = await getNonSalesLedgerReport(db, session, { periodStart, periodEnd, locationId, reason, search });
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }

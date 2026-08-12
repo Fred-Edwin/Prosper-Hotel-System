@@ -2,6 +2,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import {
   canAccessLocation,
   findLocationById,
+  findStaffMembersByIds,
   listLocations,
   type AuthenticatedStaff,
 } from "@/modules/people";
@@ -40,6 +41,7 @@ import {
   sumMovementsByProductReasonAtLocationInPeriod,
   sumNonSalesValueAtLocationInPeriod,
   sumProductMovementsByReasonAtLocationInPeriod,
+  findNonSalesMovementsAtLocationInPeriod,
 } from "./queries";
 import type {
   DerivedSaleLine,
@@ -1615,4 +1617,71 @@ export async function getNonSalesConsumptionValue(
     periodEnd,
   );
   return { ok: true, atCostMinor, atPriceMinor };
+}
+
+export type NonSalesLedgerLine = {
+  itemType: "product" | "ingredient";
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  reason: NonSalesCategory;
+  costBasisMinor: number | null;
+  sellingValueMinor: number | null;
+  isEstimated: boolean | null;
+  staffMemberId: string;
+  staffMemberName: string;
+  occurredAt: Date;
+};
+
+export type NonSalesLedgerResult =
+  | { ok: true; lines: NonSalesLedgerLine[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 43: the Non-sales ledger's line-level rows — one per
+// wasted/consumed/given-away entry at a location in a period, each valued
+// at its own snapshotted costBasisMinor/sellingValueMinor (ticket 15),
+// never recomputed. Names are joined here (catalogue for item, people for
+// recorded-by) since the ledger reads them together; the underlying query
+// stays name-agnostic.
+export async function getNonSalesLedger(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<NonSalesLedgerResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const movements = await findNonSalesMovementsAtLocationInPeriod(db, locationId, periodStart, periodEnd);
+
+  const productIds = movements.filter((m) => m.itemType === "product").map((m) => m.itemId);
+  const ingredientIds = movements.filter((m) => m.itemType === "ingredient").map((m) => m.itemId);
+  const staffMemberIds = [...new Set(movements.map((m) => m.staffMemberId))];
+
+  const [products, ingredients, staffMembers] = await Promise.all([
+    findProductsByIds(db, productIds),
+    findIngredientsByIds(db, ingredientIds),
+    findStaffMembersByIds(db, staffMemberIds),
+  ]);
+  const productNames = new Map(products.map((p) => [p.id, p.name]));
+  const ingredientNames = new Map(ingredients.map((i) => [i.id, i.name]));
+  const staffNames = new Map(staffMembers.map((s) => [s.id, s.name]));
+
+  const lines: NonSalesLedgerLine[] = movements.map((m) => ({
+    itemType: m.itemType,
+    itemId: m.itemId,
+    itemName: (m.itemType === "product" ? productNames.get(m.itemId) : ingredientNames.get(m.itemId)) ?? "Unknown item",
+    quantity: m.quantity,
+    reason: m.reason as NonSalesCategory,
+    costBasisMinor: m.costBasisMinor,
+    sellingValueMinor: m.sellingValueMinor,
+    isEstimated: m.isEstimated,
+    staffMemberId: m.staffMemberId,
+    staffMemberName: staffNames.get(m.staffMemberId) ?? "Unknown",
+    occurredAt: m.occurredAt,
+  }));
+
+  return { ok: true, lines };
 }
