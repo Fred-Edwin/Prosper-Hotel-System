@@ -99,8 +99,29 @@ model Product {
   movements          StockMovement[]
   recipes            Recipe[]
   saleLines          SaleLine[]
+  // Nullable and single, per ticket 41: existing products and new ones the
+  // owner hasn't categorised yet must remain valid; one flat category, no
+  // hierarchy. Deactivating a category never clears this — an already
+  // categorised product keeps reading its category.
+  categoryId         String?
+  category           Category?       @relation(fields: [categoryId], references: [id])
 
   @@map("products")
+}
+
+// Owner-managed reference data for grouping products (ticket 41) — split
+// out of ticket 39's Product ledger once its design precedent's
+// food/drinks/snacks/etc. category turned out to have no equivalent here,
+// only the fixed ProductKind enum. Same lifecycle as Ingredient:
+// deactivate, never delete, since a product may already reference it.
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  products  Product[]
+
+  @@map("categories")
 }
 
 model Ingredient {

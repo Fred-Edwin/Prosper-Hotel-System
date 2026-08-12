@@ -3,11 +3,14 @@ import type { AuthenticatedStaff } from "@/modules/people";
 import { findExpenseById } from "@/modules/cash";
 import {
   createAssetRecord,
+  createCategoryRecord,
   createIngredientRecord,
   createProductRecord,
   createRecipeRecord,
   findAssetById,
   findAssetByNameAndLocation,
+  findCategoryById,
+  findCategoryByName,
   findIngredientById,
   findIngredientByName,
   findIngredientsByIds,
@@ -19,18 +22,24 @@ import {
   setAssetExpenseId,
   setAssetQuantity,
   setAssetRetired,
+  setCategoryActive,
   setIngredientActive,
   setIngredientLastKnownCost,
   setProductActive,
   setProductLastKnownCost,
+  updateCategoryRecord,
   updateIngredientRecord,
   updateProductRecord,
 } from "./queries";
-import type { Asset, Ingredient, Product, ProductKind, Recipe, RecipeWithCost } from "./schema";
+import type { Asset, Category, Ingredient, Product, ProductKind, Recipe, RecipeWithCost } from "./schema";
 
 type WriteResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: "forbidden" | "duplicate_name" | "not_found" };
+
+type ProductWriteResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: "forbidden" | "duplicate_name" | "not_found" | "invalid_category" };
 
 type RecipeWriteResult<T> =
   | { ok: true; value: T }
@@ -46,17 +55,23 @@ function requireOwner(requester: AuthenticatedStaff): boolean {
 export async function createProduct(
   db: PrismaClient,
   requester: AuthenticatedStaff,
-  input: { name: string; kind: ProductKind; priceMinor?: number | null },
-): Promise<WriteResult<Product>> {
+  input: { name: string; kind: ProductKind; priceMinor?: number | null; categoryId?: string | null },
+): Promise<ProductWriteResult<Product>> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
   const existing = await findProductByName(db, input.name);
   if (existing) return { ok: false, reason: "duplicate_name" };
 
+  if (input.categoryId) {
+    const category = await findCategoryById(db, input.categoryId);
+    if (!category) return { ok: false, reason: "invalid_category" };
+  }
+
   const product = await createProductRecord(db, {
     name: input.name,
     kind: input.kind,
     priceMinor: input.priceMinor ?? null,
+    categoryId: input.categoryId ?? null,
   });
   return { ok: true, value: product };
 }
@@ -65,8 +80,8 @@ export async function updateProduct(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   id: string,
-  input: { name: string; kind: ProductKind; priceMinor?: number | null },
-): Promise<WriteResult<Product>> {
+  input: { name: string; kind: ProductKind; priceMinor?: number | null; categoryId?: string | null },
+): Promise<ProductWriteResult<Product>> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
   const current = await findProductById(db, id);
@@ -77,10 +92,16 @@ export async function updateProduct(
     if (existing) return { ok: false, reason: "duplicate_name" };
   }
 
+  if (input.categoryId) {
+    const category = await findCategoryById(db, input.categoryId);
+    if (!category) return { ok: false, reason: "invalid_category" };
+  }
+
   const product = await updateProductRecord(db, id, {
     name: input.name,
     kind: input.kind,
     priceMinor: input.priceMinor ?? null,
+    categoryId: input.categoryId ?? null,
   });
   return { ok: true, value: product };
 }
@@ -177,6 +198,66 @@ export async function reactivateIngredient(
   if (!current) return { ok: false, reason: "not_found" };
 
   return { ok: true, value: await setIngredientActive(db, id, true) };
+}
+
+export async function createCategory(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { name: string },
+): Promise<WriteResult<Category>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const existing = await findCategoryByName(db, input.name);
+  if (existing) return { ok: false, reason: "duplicate_name" };
+
+  const category = await createCategoryRecord(db, { name: input.name });
+  return { ok: true, value: category };
+}
+
+export async function updateCategory(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+  input: { name: string },
+): Promise<WriteResult<Category>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findCategoryById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  if (input.name !== current.name) {
+    const existing = await findCategoryByName(db, input.name);
+    if (existing) return { ok: false, reason: "duplicate_name" };
+  }
+
+  const category = await updateCategoryRecord(db, id, { name: input.name });
+  return { ok: true, value: category };
+}
+
+export async function deactivateCategory(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+): Promise<WriteResult<Category>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findCategoryById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await setCategoryActive(db, id, false) };
+}
+
+export async function reactivateCategory(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  id: string,
+): Promise<WriteResult<Category>> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const current = await findCategoryById(db, id);
+  if (!current) return { ok: false, reason: "not_found" };
+
+  return { ok: true, value: await setCategoryActive(db, id, true) };
 }
 
 // formulas.md §3: "flour was bought three times at three prices — what is

@@ -36,6 +36,8 @@ new destinations get added here as tickets that build them land, per
 | Modules/Catalogue/RecipeList | `src/modules/catalogue/ui/recipe-list.stories.tsx` | approved |
 | Modules/Catalogue/RecipeBuilder | `src/modules/catalogue/ui/recipe-builder.stories.tsx` | approved |
 | Modules/Catalogue/AssetsTab | `src/modules/catalogue/ui/assets-tab.stories.tsx` | approved |
+| Modules/Catalogue/CategoriesTab | `src/modules/catalogue/ui/categories-tab.stories.tsx` | approved |
+| Modules/Catalogue/ProductForm | `src/modules/catalogue/ui/product-form.stories.tsx` | approved |
 
 ## Stock
 

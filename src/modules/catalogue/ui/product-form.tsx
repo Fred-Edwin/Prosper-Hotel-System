@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Product, ProductKind } from "../schema";
+import type { Category, Product, ProductKind } from "../schema";
 
 const KIND_LABEL: Record<ProductKind, string> = {
   goods: "Goods",
@@ -35,10 +35,13 @@ const KIND_LABEL: Record<ProductKind, string> = {
   packaging: "Packaging",
 };
 
+const NO_CATEGORY = "__none__";
+
 export function ProductForm({
   open,
   onOpenChange,
   product,
+  categories,
   saving,
   error,
   onSave,
@@ -47,12 +50,17 @@ export function ProductForm({
   onOpenChange: (v: boolean) => void;
   /** Absent when creating. */
   product?: Product;
+  /** Active categories, plus the product's current category if it's been
+   * deactivated since — deactivated categories otherwise drop out of the
+   * picker (docs/conventions.md's ingredient-deactivation pattern). */
+  categories: Category[];
   saving?: boolean;
   error?: string;
   onSave: (input: {
     name: string;
     kind: ProductKind;
     priceMinor: number | null;
+    categoryId: string | null;
     active: boolean;
   }) => void;
 }) {
@@ -61,8 +69,17 @@ export function ProductForm({
   const [price, setPrice] = useState(
     product?.priceMinor != null ? String(product.priceMinor) : "",
   );
+  const [categoryId, setCategoryId] = useState<string | null>(product?.categoryId ?? null);
   const [active, setActive] = useState(product?.active ?? true);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
+
+  const currentCategory = product?.categoryId
+    ? categories.find((c) => c.id === product.categoryId)
+    : undefined;
+  const categoryOptions =
+    currentCategory && !currentCategory.active
+      ? [...categories.filter((c) => c.active), currentCategory]
+      : categories.filter((c) => c.active);
 
   return (
     <EditSheet
@@ -81,6 +98,7 @@ export function ProductForm({
             name,
             kind,
             priceMinor: price.trim() === "" ? null : Math.round(Number(price)),
+            categoryId,
             active,
           });
         }}
@@ -98,6 +116,24 @@ export function ProductForm({
                 {Object.entries(KIND_LABEL).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Category" hint="Optional — groups this product for reporting">
+            <Select
+              value={categoryId ?? NO_CATEGORY}
+              onValueChange={(v) => setCategoryId(v === NO_CATEGORY ? null : v)}
+            >
+              <SelectTrigger className="h-9 w-full text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_CATEGORY}>No category</SelectItem>
+                {categoryOptions.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.active ? c.name : `${c.name} (inactive)`}
                   </SelectItem>
                 ))}
               </SelectContent>

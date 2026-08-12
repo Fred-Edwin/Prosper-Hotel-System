@@ -5,6 +5,7 @@ export {
   findProductsByIds,
   listIngredients,
   findIngredientsByIds,
+  listCategories,
   listActiveAssets as listAssets,
 } from "./queries";
 export {
@@ -26,8 +27,12 @@ export {
   updateAssetQuantity,
   linkAssetExpense,
   retireAsset,
+  createCategory,
+  updateCategory,
+  deactivateCategory,
+  reactivateCategory,
 } from "./logic";
-export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost, Asset } from "./schema";
+export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost, Asset, Category } from "./schema";
 export {
   catalogueRoute,
   activeProductsRoute,
@@ -44,4 +49,7 @@ export {
   updateAssetQuantityRoute,
   linkAssetExpenseRoute,
   retireAssetRoute,
+  createCategoryRoute,
+  updateCategoryRoute,
+  setCategoryActiveRoute,
 } from "./routes";

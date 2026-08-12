@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { Asset, Ingredient, Product, ProductKind, Recipe } from "./schema";
+import type { Asset, Category, Ingredient, Product, ProductKind, Recipe } from "./schema";
 
 export async function listProducts(db: PrismaClient): Promise<Product[]> {
   return db.product.findMany({ orderBy: { name: "asc" } });
@@ -28,7 +28,7 @@ export async function findProductById(
 
 export async function createProductRecord(
   db: PrismaClient,
-  data: { name: string; kind: ProductKind; priceMinor: number | null },
+  data: { name: string; kind: ProductKind; priceMinor: number | null; categoryId: string | null },
 ): Promise<Product> {
   return db.product.create({ data });
 }
@@ -36,7 +36,7 @@ export async function createProductRecord(
 export async function updateProductRecord(
   db: PrismaClient,
   id: string,
-  data: { name: string; kind: ProductKind; priceMinor: number | null },
+  data: { name: string; kind: ProductKind; priceMinor: number | null; categoryId: string | null },
 ): Promise<Product> {
   return db.product.update({ where: { id }, data });
 }
@@ -103,6 +103,41 @@ export async function setIngredientLastKnownCost(
   lastKnownCostMinor: number,
 ): Promise<Ingredient> {
   return db.ingredient.update({ where: { id }, data: { lastKnownCostMinor } });
+}
+
+export async function listCategories(db: PrismaClient): Promise<Category[]> {
+  return db.category.findMany({ orderBy: { name: "asc" } });
+}
+
+export async function findCategoryByName(
+  db: PrismaClient,
+  name: string,
+): Promise<Category | null> {
+  return db.category.findUnique({ where: { name } });
+}
+
+export async function findCategoryById(db: PrismaClient, id: string): Promise<Category | null> {
+  return db.category.findUnique({ where: { id } });
+}
+
+export async function createCategoryRecord(db: PrismaClient, data: { name: string }): Promise<Category> {
+  return db.category.create({ data });
+}
+
+export async function updateCategoryRecord(
+  db: PrismaClient,
+  id: string,
+  data: { name: string },
+): Promise<Category> {
+  return db.category.update({ where: { id }, data });
+}
+
+export async function setCategoryActive(
+  db: PrismaClient,
+  id: string,
+  active: boolean,
+): Promise<Category> {
+  return db.category.update({ where: { id }, data: { active } });
 }
 
 export async function setProductLastKnownCost(

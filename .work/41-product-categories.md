@@ -3,7 +3,7 @@
 **Type:** plumbing (test-after)
 **Blocked by:** None (extends `catalogue`'s existing Product CRUD from
 ticket 01)
-**Status:** in-progress (claimed by Claude Code session, 2026-08-12)
+**Status:** done
 
 ## Goal
 
@@ -64,17 +64,17 @@ that's a fixed enum the owner can't edit, not a category.
 
 ## Acceptance criteria
 
-- [ ] Owner can create a category with a name.
-- [ ] Owner can rename a category in place.
-- [ ] Owner can deactivate a category; deactivated categories no longer
+- [x] Owner can create a category with a name.
+- [x] Owner can rename a category in place.
+- [x] Owner can deactivate a category; deactivated categories no longer
       appear in the product-edit picker but existing product references
       remain readable (same as ingredient deactivation).
-- [ ] Owner can assign/change a product's category from the product edit
+- [x] Owner can assign/change a product's category from the product edit
       form; category is optional (a product can have none).
-- [ ] Non-owner roles cannot create/edit/deactivate categories or see the
+- [x] Non-owner roles cannot create/edit/deactivate categories or see the
       management screen (route-level check, same gate as the rest of
       `catalogue`'s owner-only writes).
-- [ ] Storybook stories: category management (list, create, rename,
+- [x] Storybook stories: category management (list, create, rename,
       deactivate, empty-first-use), and the product form's category field
       (set, unset, deactivated-category-still-shown-on-existing-product).
 

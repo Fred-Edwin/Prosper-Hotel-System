@@ -1,14 +1,19 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { CatalogueDestinationView } from "./catalogue-destination";
-import type { Asset, Product, Ingredient, RecipeWithCost } from "../schema";
+import type { Asset, Category, Product, Ingredient, RecipeWithCost } from "../schema";
 import type { Location } from "@/modules/people";
 
+const categories: Category[] = [
+  { id: "c1", name: "Food", active: true },
+  { id: "c2", name: "Drinks", active: true },
+];
+
 const products: Product[] = [
-  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, active: true },
-  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, active: true },
-  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, lastKnownCostMinor: null, active: true },
-  { id: "p4", name: "Soda 500ml", kind: "goods", priceMinor: 80, lastKnownCostMinor: 50, active: true },
-  { id: "p5", name: "Photocopy (per page)", kind: "service", priceMinor: 5, lastKnownCostMinor: null, active: true },
+  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, active: true, categoryId: "c1" },
+  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, active: true, categoryId: "c1" },
+  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, lastKnownCostMinor: null, active: true, categoryId: "c1" },
+  { id: "p4", name: "Soda 500ml", kind: "goods", priceMinor: 80, lastKnownCostMinor: 50, active: true, categoryId: "c2" },
+  { id: "p5", name: "Photocopy (per page)", kind: "service", priceMinor: 5, lastKnownCostMinor: null, active: true, categoryId: null },
 ];
 
 const ingredients: Ingredient[] = [
@@ -53,6 +58,7 @@ export const Default: Story = {
       status: "ready",
       products,
       ingredients,
+      categories,
       recipes: [
         { productId: "p1", recipe: mukimoRecipe },
         { productId: "p2", recipe: null },

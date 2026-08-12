@@ -2,22 +2,26 @@ import { db } from "@/shared/db";
 import { getSession, listLocations } from "@/modules/people";
 import {
   createAsset,
+  createCategory,
   createIngredient,
   createProduct,
   createRecipe,
+  deactivateCategory,
   deactivateIngredient,
   deactivateProduct,
   getCurrentRecipe,
   linkAssetExpense,
   listRecipeVersions,
+  reactivateCategory,
   reactivateIngredient,
   reactivateProduct,
   retireAsset,
   updateAssetQuantity,
+  updateCategory,
   updateIngredient,
   updateProduct,
 } from "./logic";
-import { listActiveAssets, listIngredients, listProducts } from "./queries";
+import { listActiveAssets, listCategories, listIngredients, listProducts } from "./queries";
 import type { Ingredient, Product } from "./schema";
 
 function writeStatus(reason: string): number {
@@ -33,9 +37,10 @@ export async function catalogueRoute(): Promise<Response> {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const [products, ingredients, assets, locations] = await Promise.all([
+  const [products, ingredients, categories, assets, locations] = await Promise.all([
     listProducts(db),
     listIngredients(db),
+    listCategories(db),
     listActiveAssets(db),
     listLocations(db),
   ]);
@@ -48,7 +53,7 @@ export async function catalogueRoute(): Promise<Response> {
     })),
   );
 
-  return Response.json({ products, ingredients, recipes, assets, locations });
+  return Response.json({ products, ingredients, categories, recipes, assets, locations });
 }
 
 // Every staff member needs to pick a product and its price when recording a
@@ -71,6 +76,7 @@ export async function createProductRoute(request: Request): Promise<Response> {
     name: body.name,
     kind: body.kind,
     priceMinor: body.priceMinor ?? null,
+    categoryId: body.categoryId ?? null,
   });
   if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   return Response.json({ product: result.value });
@@ -89,6 +95,7 @@ export async function updateProductRoute(
     name: body.name,
     kind: body.kind,
     priceMinor: body.priceMinor ?? null,
+    categoryId: body.categoryId ?? null,
   });
   if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   return Response.json({ product: result.value });
@@ -166,6 +173,46 @@ export async function setIngredientActiveRoute(
     : await deactivateIngredient(db, session, id);
   if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   return Response.json({ ingredient: result.value });
+}
+
+export async function createCategoryRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const body = await request.json();
+  const result = await createCategory(db, session, { name: body.name });
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ category: result.value });
+}
+
+export async function updateCategoryRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const body = await request.json();
+  const result = await updateCategory(db, session, id, { name: body.name });
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ category: result.value });
+}
+
+export async function setCategoryActiveRoute(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const body = await request.json();
+  const result = body.active
+    ? await reactivateCategory(db, session, id)
+    : await deactivateCategory(db, session, id);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ category: result.value });
 }
 
 export async function createRecipeRoute(request: Request): Promise<Response> {

@@ -9,6 +9,13 @@ export type Product = {
   priceMinor: number | null;
   lastKnownCostMinor: number | null;
   active: boolean;
+  categoryId: string | null;
+};
+
+export type Category = {
+  id: string;
+  name: string;
+  active: boolean;
 };
 
 export type Ingredient = {

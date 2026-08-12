@@ -1,20 +1,25 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import type { AuthenticatedStaff } from "@/modules/people";
 import {
+  createCategory,
   createIngredient,
   createProduct,
   createRecipe,
+  deactivateCategory,
   deactivateIngredient,
   deactivateProduct,
   getCurrentRecipe,
   getRecipeAt,
+  listCategories,
   listIngredients,
   listProducts,
   listRecipeVersions,
+  reactivateCategory,
   reactivateIngredient,
   reactivateProduct,
   recordIngredientCost,
   recordProductCost,
+  updateCategory,
   updateIngredient,
   updateProduct,
 } from "../index";
@@ -43,6 +48,7 @@ afterAll(async () => {
   await testDb.recipe.deleteMany({});
   await testDb.ingredient.deleteMany({});
   await testDb.product.deleteMany({});
+  await testDb.category.deleteMany({});
   await testDb.$disconnect();
 });
 
@@ -51,6 +57,7 @@ beforeEach(async () => {
   await testDb.recipe.deleteMany({});
   await testDb.ingredient.deleteMany({});
   await testDb.product.deleteMany({});
+  await testDb.category.deleteMany({});
 });
 
 describe("products", () => {
@@ -128,6 +135,133 @@ describe("products", () => {
     if (!created.ok) throw new Error("expected create to succeed");
 
     const result = await deactivateProduct(testDb, cashier, created.value.id);
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("owner can assign and change a product's category; category is optional", async () => {
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    if (!created.ok) throw new Error("expected create to succeed");
+    expect(created.value.categoryId).toBeNull();
+
+    const foodCategory = await createCategory(testDb, owner, { name: "Food" });
+    if (!foodCategory.ok) throw new Error("expected category create to succeed");
+
+    const assigned = await updateProduct(testDb, owner, created.value.id, {
+      name: "Chips",
+      kind: "cooked_food",
+      categoryId: foodCategory.value.id,
+    });
+    expect(assigned.ok).toBe(true);
+    if (assigned.ok) expect(assigned.value.categoryId).toBe(foodCategory.value.id);
+
+    const unassigned = await updateProduct(testDb, owner, created.value.id, {
+      name: "Chips",
+      kind: "cooked_food",
+      categoryId: null,
+    });
+    expect(unassigned.ok).toBe(true);
+    if (unassigned.ok) expect(unassigned.value.categoryId).toBeNull();
+  });
+
+  test("assigning a product to a nonexistent category is rejected", async () => {
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const result = await updateProduct(testDb, owner, created.value.id, {
+      name: "Chips",
+      kind: "cooked_food",
+      categoryId: "nonexistent-category",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "invalid_category" });
+  });
+
+  test("a product keeps reading a deactivated category it was already assigned", async () => {
+    const category = await createCategory(testDb, owner, { name: "Food" });
+    if (!category.ok) throw new Error("expected category create to succeed");
+    const created = await createProduct(testDb, owner, {
+      name: "Chips",
+      kind: "cooked_food",
+      categoryId: category.value.id,
+    });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    await deactivateCategory(testDb, owner, category.value.id);
+
+    const products = await listProducts(testDb);
+    expect(products.find((p) => p.id === created.value.id)?.categoryId).toBe(category.value.id);
+  });
+});
+
+describe("categories", () => {
+  test("owner can create a category with a name", async () => {
+    const result = await createCategory(testDb, owner, { name: "Food" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.name).toBe("Food");
+    expect(result.value.active).toBe(true);
+  });
+
+  test("a non-owner creating a category is denied", async () => {
+    const result = await createCategory(testDb, cashier, { name: "Food" });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("category name must be unique", async () => {
+    await createCategory(testDb, owner, { name: "Food" });
+    const result = await createCategory(testDb, owner, { name: "Food" });
+
+    expect(result).toEqual({ ok: false, reason: "duplicate_name" });
+  });
+
+  test("owner can rename a category in place", async () => {
+    const created = await createCategory(testDb, owner, { name: "Food" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const result = await updateCategory(testDb, owner, created.value.id, { name: "Food & drinks" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.name).toBe("Food & drinks");
+  });
+
+  test("owner can list, deactivate, and reactivate categories", async () => {
+    const created = await createCategory(testDb, owner, { name: "Food" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    expect((await listCategories(testDb)).map((c) => c.id)).toContain(created.value.id);
+
+    const deactivated = await deactivateCategory(testDb, owner, created.value.id);
+    expect(deactivated.ok).toBe(true);
+    if (deactivated.ok) expect(deactivated.value.active).toBe(false);
+
+    const reactivated = await reactivateCategory(testDb, owner, created.value.id);
+    expect(reactivated.ok).toBe(true);
+    if (reactivated.ok) expect(reactivated.value.active).toBe(true);
+  });
+
+  test("a deactivated category remains visible via listCategories but excluded from active pickers", async () => {
+    const created = await createCategory(testDb, owner, { name: "Food" });
+    if (!created.ok) throw new Error("expected create to succeed");
+    await deactivateCategory(testDb, owner, created.value.id);
+
+    const categories = await listCategories(testDb);
+    const found = categories.find((c) => c.id === created.value.id);
+    expect(found).toBeDefined();
+    expect(found?.active).toBe(false);
+
+    const activeOnly = categories.filter((c) => c.active);
+    expect(activeOnly.map((c) => c.id)).not.toContain(created.value.id);
+  });
+
+  test("a non-owner deactivating a category is denied", async () => {
+    const created = await createCategory(testDb, owner, { name: "Food" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const result = await deactivateCategory(testDb, cashier, created.value.id);
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
   });
