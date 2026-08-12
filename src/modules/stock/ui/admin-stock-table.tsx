@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Admin-shell stock table — on-hand quantities only, no cost/value/filters.
+ * Admin-shell stock table — on-hand quantities and value.
  *
  * Design's stock-body.tsx (in the design-reference worktree) is the full
- * valuation view: cost, value, low-stock, category/location filters. It
- * can't be built yet — the stock module exposes quantities only, not
- * per-unit cost. This is deliberately the minimal slice that fits what
- * getCurrentStockAtLocation actually returns, reusing RecordTable rather
- * than inventing a new table shape.
+ * valuation view: cost, value, low-stock, category/location filters. This
+ * ticket (37) closes the value gap this file used to note as unbuilt, but
+ * still deliberately stops short of stock-body.tsx's fuller shape — no
+ * low-stock warnings, no category/location filters. Reuses RecordTable
+ * rather than inventing a new table shape.
  */
 
 import { useEffect, useState } from "react";
@@ -16,6 +16,8 @@ import {
   RecordTable,
   Num,
   Truncate,
+  TotalsRow,
+  ChildCell,
   type Column,
 } from "@/components/patterns/record-table";
 import {
@@ -26,21 +28,52 @@ import {
 } from "@/components/patterns/states";
 import { PackageOpen } from "lucide-react";
 import type { StockLevel } from "../schema";
+import type { ProductStockValue } from "../logic";
+
+export type StockRow = StockLevel & {
+  unitCostMinor: number | null;
+  valueMinor: number | null;
+  isEstimated: boolean;
+};
 
 export type LoadState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "denied" }
-  | { status: "ready"; levels: StockLevel[] };
+  | { status: "ready"; rows: StockRow[] };
+
+function mergeStockAndValue(
+  levels: StockLevel[],
+  values: ProductStockValue[],
+): StockRow[] {
+  const valueById = new Map(values.map((v) => [v.productId, v]));
+  return levels.map((level) => {
+    const value = valueById.get(level.productId);
+    return {
+      ...level,
+      unitCostMinor: value?.unitCostMinor ?? null,
+      valueMinor: value?.valueMinor ?? null,
+      isEstimated: value?.isEstimated ?? false,
+    };
+  });
+}
 
 async function fetchStock(locationId: string): Promise<LoadState> {
   try {
-    const response = await fetch(`/api/stock/${locationId}`);
-    if (response.status === 403) return { status: "denied" };
-    if (!response.ok) return { status: "error" };
-    const body = await response.json();
-    if (!Array.isArray(body?.levels)) return { status: "error" };
-    return { status: "ready", levels: body.levels };
+    const [levelsResponse, valuesResponse] = await Promise.all([
+      fetch(`/api/stock/${locationId}`),
+      fetch(`/api/stock/${locationId}/value`),
+    ]);
+    if (levelsResponse.status === 403 || valuesResponse.status === 403) {
+      return { status: "denied" };
+    }
+    if (!levelsResponse.ok || !valuesResponse.ok) return { status: "error" };
+    const levelsBody = await levelsResponse.json();
+    const valuesBody = await valuesResponse.json();
+    if (!Array.isArray(levelsBody?.levels) || !Array.isArray(valuesBody?.values)) {
+      return { status: "error" };
+    }
+    return { status: "ready", rows: mergeStockAndValue(levelsBody.levels, valuesBody.values) };
   } catch {
     return { status: "error" };
   }
@@ -79,7 +112,7 @@ function AdminStockTableForAttempt({
   return <AdminStockTableView state={state} onRetry={onRetry} />;
 }
 
-const columns: Column<StockLevel>[] = [
+const columns: Column<StockRow>[] = [
   {
     key: "item",
     header: "Item",
@@ -90,6 +123,13 @@ const columns: Column<StockLevel>[] = [
     key: "onHand",
     header: "On hand",
     cell: (row) => <Num value={row.quantityOnHand} />,
+  },
+  {
+    key: "value",
+    header: "Value",
+    cell: (row) => (
+      <Num value={row.valueMinor} money suffix={row.isEstimated ? "est." : undefined} />
+    ),
   },
 ];
 
@@ -103,7 +143,7 @@ export function AdminStockTableView({
   onRetry?: () => void;
 }) {
   if (state.status === "loading") {
-    return <LoadingTable summary={0} rows={8} columns={2} />;
+    return <LoadingTable summary={0} rows={8} columns={3} />;
   }
 
   if (state.status === "denied") {
@@ -119,11 +159,25 @@ export function AdminStockTableView({
     return <ErrorState what="stock" onRetry={onRetry} />;
   }
 
+  const totalMinor = state.rows.reduce((sum, row) => sum + (row.valueMinor ?? 0), 0);
+  const anyEstimated = state.rows.some((row) => row.isEstimated);
+
   return (
     <RecordTable
-      rows={state.levels}
+      rows={state.rows}
       columns={columns}
       rowKey={(row) => row.productId}
+      footer={
+        state.rows.length > 0 ? (
+          <TotalsRow>
+            <ChildCell align="left">Total</ChildCell>
+            <ChildCell />
+            <ChildCell>
+              <Num value={totalMinor} money suffix={anyEstimated ? "incl. est." : undefined} />
+            </ChildCell>
+          </TotalsRow>
+        ) : undefined
+      }
       empty={
         <EmptyFirstUse
           icon={<PackageOpen className="size-4" />}

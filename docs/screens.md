@@ -90,9 +90,10 @@ screens yet. Days worked and the pay figure (stage 7) landed via ticket
 ticket rather than deferred, since a pay figure with no record of what
 was already paid wasn't useful on its own — see ticket 35's notes.
 Reporting (stage 8) has its Profit panel (ticket 25); amounts owed
-landed via ticket 36 (Customers tab). Stock valuation and
-profit-by-arbitrary-period remain unbuilt. Added to this file as their
-tickets land, not speculatively ahead of them.
+landed via ticket 36 (Customers tab); product stock valuation landed via
+ticket 37 (AdminStockTable's value column). Profit-by-arbitrary-period
+remains unbuilt. Added to this file as their tickets land, not
+speculatively ahead of them.
 
 ## Note on naming
 

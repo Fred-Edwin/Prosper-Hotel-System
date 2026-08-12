@@ -4,7 +4,7 @@
 **Blocked by:** None (mirrors `getIngredientStockValueAtLocation`,
 already built for ticket 25 — this ticket is the product-side
 equivalent)
-**Status:** in-progress (claimed by /build session, 2026-08-12)
+**Status:** done
 
 ## Goal
 
@@ -77,21 +77,38 @@ quantities only, not per-unit cost."
 
 ## Acceptance criteria
 
-- [ ] `getProductStockValueAtLocation` returns quantity × unit cost per
+- [x] `getProductStockValueAtLocation` returns quantity × unit cost per
       product, matching formulas.md §4's cost-source table exactly
-      (real cost, recipe cost, or labelled 60% estimate, in that
-      priority).
-- [ ] A product valued via the 60% estimate is flagged as such in the
+      (recipe cost, real recorded cost, or labelled 60% estimate, in that
+      priority). Note: recipe cost is checked first since it only applies
+      to cooked_food, mirroring the existing (now-fixed) call sites.
+- [x] A product valued via the 60% estimate is flagged as such in the
       returned data.
-- [ ] The figure matches `getCurrentStockAtLocation`'s quantity exactly
+- [x] The figure matches `getCurrentStockAtLocation`'s quantity exactly
       (same quantity source, no drift between the two reads).
-- [ ] **Screen:** `admin-stock-table.tsx` gains a value column (and
+- [x] **Screen:** `admin-stock-table.tsx` gains a value column (and
       total), with estimated values visibly labelled as estimates, not
       presented as exact.
-- [ ] Loading and error states unchanged from the existing table's
+- [x] Loading and error states unchanged from the existing table's
       pattern.
-- [ ] Storybook: extend the existing admin stock table story with value
+- [x] Storybook: extend the existing admin stock table story with value
       figures visible, including at least one estimated-cost row.
+
+### Scope note: cost-source bug fixed alongside this ticket
+
+Ticket 25's existing product cost-source branch (inlined in both
+`recordNonSalesConsumption` and `correctStockCount`) only implemented two
+of formulas.md §4's three tiers — it checked `product.kind ===
+"cooked_food"` for recipe cost, then fell straight to the 60% estimate
+for everything else, silently skipping `Product.lastKnownCostMinor` (the
+running-average cost `recordProductCost` writes) for bought-in
+goods/packaging. This was a real bug: a bought-in soda with a recorded
+cost would have been valued at a 60% estimate instead of its real cost.
+Flagged to and confirmed by Edwinfred — fixed by extracting a shared
+`resolveProductCostBasis` helper implementing the correct three-tier
+order, used by both existing call sites and this ticket's new function.
+Covered by a new test in `wastage.integration.test.ts`. Existing tests
+were unaffected (their fixtures never set `lastKnownCostMinor`).
 
 ## Verification
 

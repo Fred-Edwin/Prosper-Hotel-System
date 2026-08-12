@@ -11,6 +11,7 @@ import {
   getCurrentRecipe,
   recordIngredientCost,
   recordProductCost,
+  type Product,
 } from "@/modules/catalogue";
 import { creditSaleQuantityByProductAtLocation } from "@/modules/sales";
 import {
@@ -53,6 +54,30 @@ import type {
 // known, cost is estimated at 60% of selling price, per the owner's own
 // discovery figure. See docs/formulas.md §4.
 const ESTIMATED_COST_RATE = 0.6;
+
+type ProductCostBasis = { costBasisMinor: number; isEstimated: boolean } | null;
+
+// formulas.md §4's cost-per-unit table, in priority order: a recipe's
+// ingredients-used ÷ yield first (cooked food only), then the product's
+// own recorded running average (bought-in goods/packaging — recordProductCost's
+// figure), then the labelled 60%-of-selling-price estimate as a last resort.
+// null means no cost figure can be produced at all (no recipe, no recorded
+// cost, no selling price to estimate from).
+function resolveProductCostBasis(
+  product: Pick<Product, "priceMinor" | "lastKnownCostMinor">,
+  recipe: { perUnitCostMinor: number | null } | null,
+): ProductCostBasis {
+  if (recipe?.perUnitCostMinor != null) {
+    return { costBasisMinor: recipe.perUnitCostMinor, isEstimated: false };
+  }
+  if (product.lastKnownCostMinor != null) {
+    return { costBasisMinor: product.lastKnownCostMinor, isEstimated: false };
+  }
+  if (product.priceMinor != null) {
+    return { costBasisMinor: Math.round(product.priceMinor * ESTIMATED_COST_RATE), isEstimated: true };
+  }
+  return null;
+}
 
 export type StockAccessResult =
   | { ok: true; levels: StockLevel[] }
@@ -716,16 +741,9 @@ export async function recordNonSalesConsumption(
     const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
     const sellingValueMinor = product.priceMinor;
 
-    let costBasisMinor: number;
-    let isEstimated: boolean;
-    if (recipe?.perUnitCostMinor != null) {
-      costBasisMinor = recipe.perUnitCostMinor;
-      isEstimated = false;
-    } else if (sellingValueMinor != null) {
-      costBasisMinor = Math.round(sellingValueMinor * ESTIMATED_COST_RATE);
-      isEstimated = true;
-    } else {
-      // No recipe cost and no selling price to estimate from.
+    const basis = resolveProductCostBasis(product, recipe);
+    if (!basis) {
+      // No recipe cost, no recorded cost, and no selling price to estimate from.
       return { ok: false, reason: "invalid_cost" };
     }
 
@@ -735,9 +753,9 @@ export async function recordNonSalesConsumption(
       quantity: -input.quantity,
       reason: input.category,
       staffMemberId: requester.staff.id,
-      costBasisMinor: costBasisMinor * input.quantity,
+      costBasisMinor: basis.costBasisMinor * input.quantity,
       sellingValueMinor: sellingValueMinor != null ? sellingValueMinor * input.quantity : null,
-      isEstimated,
+      isEstimated: basis.isEstimated,
     });
     return { ok: true, movement };
   }
@@ -1226,15 +1244,8 @@ export async function correctStockCount(
       const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
       const sellingValueMinor = product.priceMinor;
 
-      let costBasisMinor: number;
-      let isEstimated: boolean;
-      if (recipe?.perUnitCostMinor != null) {
-        costBasisMinor = recipe.perUnitCostMinor;
-        isEstimated = false;
-      } else if (sellingValueMinor != null) {
-        costBasisMinor = Math.round(sellingValueMinor * ESTIMATED_COST_RATE);
-        isEstimated = true;
-      } else {
+      const basis = resolveProductCostBasis(product, recipe);
+      if (!basis) {
         return { ok: false, reason: "invalid_cost" };
       }
 
@@ -1244,13 +1255,13 @@ export async function correctStockCount(
         quantity: delta,
         reason: "corrected",
         staffMemberId: requester.staff.id,
-        costBasisMinor: costBasisMinor * Math.abs(delta),
+        costBasisMinor: basis.costBasisMinor * Math.abs(delta),
         // A shortfall is a real, unexplained loss of sellable inventory —
         // value it the same way wastage does. A surplus is not profit
         // until it's actually sold, so no selling value is recognised.
         sellingValueMinor:
           delta < 0 && sellingValueMinor != null ? sellingValueMinor * Math.abs(delta) : null,
-        isEstimated,
+        isEstimated: basis.isEstimated,
       });
     } else {
       const [ingredient] = await findIngredientsByIds(db, [line.itemId]);
@@ -1305,6 +1316,61 @@ export async function getIngredientStockValueAtLocation(
     0,
   );
   return { ok: true, totalMinor };
+}
+
+export type ProductStockValue = {
+  productId: string;
+  productName: string;
+  quantityOnHand: number;
+  unitCostMinor: number;
+  valueMinor: number;
+  isEstimated: boolean;
+};
+
+export type ProductStockValueResult =
+  | { ok: true; values: ProductStockValue[] }
+  | { ok: false; reason: "forbidden" };
+
+// Product-side counterpart to getIngredientStockValueAtLocation — ticket 37.
+// Unlike ingredients (a single running-average cost), a product's unit cost
+// follows formulas.md §4's full three-tier table via resolveProductCostBasis,
+// so each row (not just a total) carries its own cost and estimate flag for
+// the UI to label. Quantities come from the same sumMovementsByProductAtLocation
+// query getCurrentStockAtLocation uses, so the two reads never drift.
+export async function getProductStockValueAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<ProductStockValueResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const sums = await sumMovementsByProductAtLocation(db, locationId);
+  const products = await findProductsByIds(db, sums.map((s) => s.productId));
+  const productById = new Map(products.map((p) => [p.id, p]));
+
+  const values: ProductStockValue[] = [];
+  for (const sum of sums) {
+    const product = productById.get(sum.productId);
+    if (!product) continue;
+
+    const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
+    const basis = resolveProductCostBasis(product, recipe);
+    if (!basis) continue;
+
+    values.push({
+      productId: product.id,
+      productName: product.name,
+      quantityOnHand: sum.quantityOnHand,
+      unitCostMinor: basis.costBasisMinor,
+      valueMinor: sum.quantityOnHand * basis.costBasisMinor,
+      isEstimated: basis.isEstimated,
+    });
+  }
+
+  values.sort((a, b) => a.productName.localeCompare(b.productName));
+  return { ok: true, values };
 }
 
 export type IngredientsBoughtResult =
