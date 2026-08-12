@@ -17,6 +17,7 @@
  * permission-denied page follows, one level down.
  */
 
+import { Children, cloneElement, isValidElement, useId } from "react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Lock } from "lucide-react";
@@ -64,9 +65,14 @@ export function Field({
   children: React.ReactNode;
 }) {
   const locked = !!lockedReason;
+  const generatedId = useId();
+  const child = Children.only(children);
+  const controlId =
+    (isValidElement(child) && (child.props as { id?: string }).id) || generatedId;
+  const control = isValidElement(child) ? cloneElement(child, { id: controlId } as never) : child;
   return (
     <div className={locked ? "opacity-70" : ""}>
-      <Label className="mb-1 flex items-center gap-1.5 text-[13px]">
+      <Label htmlFor={controlId} className="mb-1 flex items-center gap-1.5 text-[13px]">
         {label}
         {required && (
           <span className="text-muted-foreground" aria-hidden>
@@ -75,7 +81,7 @@ export function Field({
         )}
         {locked && <Lock className="size-3 text-muted-foreground" />}
       </Label>
-      {children}
+      {control}
       {error ? (
         <p role="alert" className="mt-1 text-xs text-danger">
           {error}
