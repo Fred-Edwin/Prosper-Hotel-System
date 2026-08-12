@@ -5,7 +5,7 @@
 interfaces — `getDashboardProfit` and friends already compute every figure
 the waterfall needs for one day; this ticket extends that to an
 arbitrary period and wires the shell)
-**Status:** planned
+**Status:** in-progress (claimed by /build, 2026-08-12)
 
 ## Goal
 
