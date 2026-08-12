@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * The People destination's Staff area — Staff and Days worked tabs.
- * Customers (ticket 06's own record) are a separate destination tab, out
- * of scope here. Days worked (ticket 35) reuses the CatalogueDestination
- * tabs shape.
+ * The People destination — Staff, Days worked and Customers tabs. Days
+ * worked (ticket 35) reuses the CatalogueDestination tabs shape.
+ * Customers (ticket 36) reads people's own customer list plus a balance
+ * from sales, the first people → sales cross-module read.
  *
  * Owner-only: the /people route denies non-owners before this ever
  * mounts, same as CatalogueDestination assumes an owner session.
@@ -15,7 +15,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { LoadingTable, ErrorState, PermissionDenied } from "@/components/patterns/states";
 import { StaffTab } from "./staff-tab";
 import { DaysWorkedTab, type DaysWorkedState } from "./days-worked-tab";
+import { CustomersTab } from "./customers-tab";
 import { fetchStaff, type StaffState } from "./staff-data";
+import { fetchCustomers, fetchCustomerHistory, type CustomersState } from "./customer-data";
 
 async function postJson(url: string, method: string, body: unknown) {
   const response = await fetch(url, {
@@ -123,6 +125,7 @@ function StaffDestinationReady({
       <TabsList className="mb-3">
         <TabsTrigger value="staff">Staff</TabsTrigger>
         <TabsTrigger value="days-worked">Days worked</TabsTrigger>
+        <TabsTrigger value="customers">Customers</TabsTrigger>
       </TabsList>
 
       <TabsContent value="staff">
@@ -151,6 +154,67 @@ function StaffDestinationReady({
           onPay={(staffMemberId) => postJson("/api/cash/wages", "POST", { staffMemberId, paymentMethod: "cash" })}
         />
       </TabsContent>
+
+      <TabsContent value="customers">
+        <CustomersTabContainer />
+      </TabsContent>
     </Tabs>
+  );
+}
+
+/** Owns its own fetch and live copy, same self-contained shape as
+ * DaysWorkedTab's per-selection state — customers are a separate domain
+ * from staff, not a slice of StaffState. Retry remounts via `key`, same
+ * idiom as StaffDestination/StaffDestinationForAttempt. */
+function CustomersTabContainer() {
+  const [attempt, setAttempt] = useState(0);
+  return <CustomersTabForAttempt key={attempt} onRetry={() => setAttempt((a) => a + 1)} />;
+}
+
+function CustomersTabForAttempt({ onRetry }: { onRetry: () => void }) {
+  const [state, setState] = useState<CustomersState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCustomers().then((result) => {
+      if (!cancelled) setState(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function refresh() {
+    const result = await fetchCustomers();
+    setState(result);
+  }
+
+  if (state.status === "loading") return <LoadingTable summary={2} columns={3} />;
+  if (state.status === "denied")
+    return (
+      <PermissionDenied
+        title="Only the owner can see customer balances"
+        body="Ask the owner if you need to know what a customer owes."
+      />
+    );
+  if (state.status === "error") return <ErrorState what="customers" onRetry={onRetry} />;
+
+  return (
+    <CustomersTab
+      customers={state.customers}
+      totalOwedMinor={state.totalOwedMinor}
+      onFetchHistory={fetchCustomerHistory}
+      onRecordRepayment={async (customerId, amountMinor) => {
+        const response = await fetch("/api/sales/repayments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ customerId, amountMinor }),
+        });
+        const body = await response.json();
+        if (!response.ok) return { ok: false as const, reason: body.error as string };
+        await refresh();
+        return { ok: true as const };
+      }}
+    />
   );
 }

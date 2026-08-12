@@ -18,6 +18,21 @@ export type PaymentLine = {
   customerId: string | null;
 };
 
+// Ticket 36 — formulas.md §11: a repayment against a customer's credit
+// balance. Not tied to a Sale — money coming in against existing credit,
+// not a sale of goods. Append-only, reversible only, same discipline as
+// DrawingRepayment.
+export type Repayment = {
+  id: string;
+  customerId: string;
+  locationId: string;
+  staffMemberId: string;
+  amountMinor: number;
+  occurredAt: Date;
+  reversed: boolean;
+  reversedAt: Date | null;
+};
+
 export type Sale = {
   id: string;
   locationId: string;

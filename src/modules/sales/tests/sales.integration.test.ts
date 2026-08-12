@@ -2,7 +2,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { getCurrentStockAtLocation } from "@/modules/stock";
-import { getCustomerBalance, listTodaysSalesForStaff, recordCounterSale, voidSale } from "../logic";
+import {
+  getCustomerBalance,
+  getCustomerBalanceForOwner,
+  getCustomerCreditHistory,
+  getTotalCustomerBalance,
+  listTodaysSalesForStaff,
+  recordCounterSale,
+  recordRepayment,
+  voidSale,
+} from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -85,6 +94,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await testDb.repayment.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
@@ -93,6 +103,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  await testDb.repayment.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
@@ -692,6 +703,224 @@ describe("voidSale", () => {
       staffAt("cashier", canteenId, "canteen"),
       recorded.sale.id,
     );
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("recordRepayment", () => {
+  test("reduces a customer's balance by the repaid amount", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Amani" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 3 }],
+      paymentLines: [{ method: "credit", amountMinor: 240, customerId: customer.id }],
+    });
+
+    const result = await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 100,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.repayment.amountMinor).toBe(100);
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(140);
+  });
+
+  test("any staff member at the customer's location may record a repayment, not owner-only", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Brian" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    const result = await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 80,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("a repayment is recorded at the staff member's own session location, regardless of the customer's other activity", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Otieno" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    const result = await recordRepayment(testDb, staffAt("cashier", canteenId, "canteen"), {
+      customerId: customer.id,
+      amountMinor: 80,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.repayment.locationId).toBe(canteenId);
+  });
+
+  test("rejects a non-positive amount", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Njeri" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    const result = await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 0,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "invalid_amount" });
+  });
+
+  test("rejects an amount larger than the current balance", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Wambui" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    const result = await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 81,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "exceeds_balance" });
+  });
+
+  test("rejects a repayment against an unknown customer", async () => {
+    const result = await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: "nonexistent",
+      amountMinor: 10,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "customer_not_found" });
+  });
+
+  test("a repayment recorded twice for the same customer both reduce the running balance", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Kimani" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 5 }],
+      paymentLines: [{ method: "credit", amountMinor: 400, customerId: customer.id }],
+    });
+
+    await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 100,
+    });
+    await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 100,
+    });
+
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(200);
+  });
+});
+
+describe("getCustomerBalance — repayments", () => {
+  test("a customer's balance is credit given minus repayments", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Achieng" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 3 }],
+      paymentLines: [{ method: "credit", amountMinor: 240, customerId: customer.id }],
+    });
+    await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 90,
+    });
+
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(150);
+  });
+
+  test("a fully repaid customer has a zero balance", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Kariuki" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+    await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 80,
+    });
+
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(0);
+  });
+});
+
+describe("getCustomerBalanceForOwner", () => {
+  test("matches getCustomerBalance exactly", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Fatuma" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "credit", amountMinor: 160, customerId: customer.id }],
+    });
+
+    const result = await getCustomerBalanceForOwner(testDb, staffAt("owner", restaurantId), customer.id);
+
+    expect(result).toEqual({ ok: true, balanceMinor: 160 });
+    expect(result.ok && result.balanceMinor).toBe(await getCustomerBalance(testDb, customer.id));
+  });
+
+  test("is forbidden for a non-owner", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Juma" } });
+
+    const result = await getCustomerBalanceForOwner(testDb, staffAt("cashier", restaurantId), customer.id);
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("getTotalCustomerBalance — repayments", () => {
+  test("the total owed is credit given minus repayments, summed across all customers", async () => {
+    const customerA = await testDb.customer.create({ data: { name: "Aisha" } });
+    const customerB = await testDb.customer.create({ data: { name: "Bakari" } });
+
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 3 }],
+      paymentLines: [{ method: "credit", amountMinor: 240, customerId: customerA.id }],
+    });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customerB.id }],
+    });
+    await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customerA.id,
+      amountMinor: 90,
+    });
+
+    const result = await getTotalCustomerBalance(testDb, staffAt("owner", restaurantId));
+
+    expect(result).toEqual({ ok: true, totalMinor: 230 });
+  });
+});
+
+describe("getCustomerCreditHistory", () => {
+  test("returns credit lines and repayments together for the customer, owner-only", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Chebet" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "credit", amountMinor: 160, customerId: customer.id }],
+    });
+    await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 60,
+    });
+
+    const result = await getCustomerCreditHistory(testDb, staffAt("owner", restaurantId), customer.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.entries).toEqual([
+      expect.objectContaining({ kind: "repayment", amountMinor: 60 }),
+      expect.objectContaining({ kind: "credit", amountMinor: 160 }),
+    ]);
+  });
+
+  test("is forbidden for a non-owner", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Mwangi" } });
+
+    const result = await getCustomerCreditHistory(testDb, staffAt("cashier", restaurantId), customer.id);
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
   });

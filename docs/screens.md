@@ -78,6 +78,8 @@ new destinations get added here as tickets that build them land, per
 |---|---|---|
 | Modules/People/StaffDestination | `src/modules/people/ui/staff-destination.stories.tsx` | approved |
 | Modules/People/DaysWorkedTab | `src/modules/people/ui/days-worked-tab.stories.tsx` | approved |
+| Modules/People/CustomersTab | `src/modules/people/ui/customers-tab.stories.tsx` | approved |
+| Modules/People/CustomerDetail | `src/modules/people/ui/customer-detail.stories.tsx` | approved |
 
 ## Not yet built
 
@@ -87,9 +89,10 @@ screens yet. Days worked and the pay figure (stage 7) landed via ticket
 35; pay disbursement tracking ("mark as paid") landed as part of the same
 ticket rather than deferred, since a pay figure with no record of what
 was already paid wasn't useful on its own — see ticket 35's notes.
-Reporting (stage 8) has its Profit panel (ticket 25); stock valuation,
-amounts owed and profit-by-arbitrary-period remain unbuilt. Added to
-this file as their tickets land, not speculatively ahead of them.
+Reporting (stage 8) has its Profit panel (ticket 25); amounts owed
+landed via ticket 36 (Customers tab). Stock valuation and
+profit-by-arbitrary-period remain unbuilt. Added to this file as their
+tickets land, not speculatively ahead of them.
 
 ## Note on naming
 

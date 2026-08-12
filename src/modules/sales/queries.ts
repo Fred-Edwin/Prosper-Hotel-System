@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { PaymentMethod, Sale, SaleFulfilment } from "./schema";
+import type { PaymentLine, PaymentMethod, Repayment, Sale, SaleFulfilment } from "./schema";
 
 export async function findSaleById(db: PrismaClient, saleId: string): Promise<Sale | null> {
   return db.sale.findUnique({
@@ -70,6 +70,58 @@ export async function sumCreditAcrossAllCustomers(db: PrismaClient): Promise<num
     _sum: { amountMinor: true },
   });
   return result._sum.amountMinor ?? 0;
+}
+
+// Ticket 36 — formulas.md §11: "owed by a customer = credit given −
+// repayments." Unreversed repayments only, symmetric to how credit sums
+// exclude void sales — a wrong repayment does not silently understate
+// what a customer owes.
+export async function sumRepaymentsForCustomer(db: PrismaClient, customerId: string): Promise<number> {
+  const result = await db.repayment.aggregate({
+    where: { customerId, reversed: false },
+    _sum: { amountMinor: true },
+  });
+  return result._sum.amountMinor ?? 0;
+}
+
+export async function sumRepaymentsAcrossAllCustomers(db: PrismaClient): Promise<number> {
+  const result = await db.repayment.aggregate({
+    where: { reversed: false },
+    _sum: { amountMinor: true },
+  });
+  return result._sum.amountMinor ?? 0;
+}
+
+export async function createRepaymentRecord(
+  db: PrismaClient,
+  data: { customerId: string; locationId: string; staffMemberId: string; amountMinor: number },
+): Promise<Repayment> {
+  return db.repayment.create({ data });
+}
+
+export async function findRepaymentsForCustomer(
+  db: PrismaClient,
+  customerId: string,
+): Promise<Repayment[]> {
+  return db.repayment.findMany({
+    where: { customerId, reversed: false },
+    orderBy: { occurredAt: "desc" },
+  });
+}
+
+// Ticket 36's customer detail view: credit lines with the sale's
+// occurredAt attached, so logic.ts can merge them with repayments into
+// one chronological ledger.
+export async function findCreditPaymentLinesForCustomer(
+  db: PrismaClient,
+  customerId: string,
+): Promise<(PaymentLine & { occurredAt: Date })[]> {
+  const lines = await db.paymentLine.findMany({
+    where: { customerId, method: "credit" },
+    include: { sale: true },
+    orderBy: { sale: { occurredAt: "desc" } },
+  });
+  return lines.map(({ sale, ...line }) => ({ ...line, occurredAt: sale.occurredAt }));
 }
 
 // Ticket 24: count-derived sales at the canteen subtracts recorded credit

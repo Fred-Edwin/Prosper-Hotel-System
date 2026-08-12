@@ -4,16 +4,21 @@ import { findProductsByIds } from "@/modules/catalogue";
 import { recordStockMovement } from "@/modules/stock";
 import { isDayClosedFor } from "@/modules/cash";
 import {
+  createRepaymentRecord,
   createSaleRecord,
+  findCreditPaymentLinesForCustomer,
+  findRepaymentsForCustomer,
   findSaleById,
   findSalesForStaffToday,
   markSaleVoided,
   sumCreditAcrossAllCustomers,
   sumCreditForCustomer,
   sumCreditSaleQuantityByProductAtLocation,
+  sumRepaymentsAcrossAllCustomers,
+  sumRepaymentsForCustomer,
   sumSalesRevenueMinorAtLocationInPeriod,
 } from "./queries";
-import type { PaymentMethod, Sale, SaleFulfilment } from "./schema";
+import type { PaymentMethod, Repayment, Sale, SaleFulfilment } from "./schema";
 
 export type RecordSaleResult =
   | { ok: true; sale: Sale }
@@ -119,10 +124,118 @@ export async function recordCounterSale(
   return { ok: true, sale };
 }
 
-// CONTEXT.md: a customer's balance is derived from unsettled credit
-// payment lines, never a stored figure.
+// formulas.md §11: "owed by a customer = credit given − repayments."
+// Derived, never a stored figure — same discipline as CONTEXT.md's credit
+// payment lines.
 export async function getCustomerBalance(db: PrismaClient, customerId: string): Promise<number> {
-  return sumCreditForCustomer(db, customerId);
+  const [creditMinor, repaidMinor] = await Promise.all([
+    sumCreditForCustomer(db, customerId),
+    sumRepaymentsForCustomer(db, customerId),
+  ]);
+  return creditMinor - repaidMinor;
+}
+
+export type GetCustomerBalanceForOwnerResult =
+  | { ok: true; balanceMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 36 — the first people → sales cross-module read: People's
+// Customers tab reads a per-customer balance through this owner-gated
+// wrapper rather than calling the ungated getCustomerBalance directly,
+// same "gate one layer below the route, inside logic.ts" rule as every
+// other location/owner-scoped read in this codebase.
+export async function getCustomerBalanceForOwner(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  customerId: string,
+): Promise<GetCustomerBalanceForOwnerResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const balanceMinor = await getCustomerBalance(db, customerId);
+  return { ok: true, balanceMinor };
+}
+
+export type RecordRepaymentResult =
+  | { ok: true; repayment: Repayment }
+  | { ok: false; reason: "forbidden" | "invalid_amount" | "customer_not_found" | "exceeds_balance" };
+
+// formulas.md §11: "Any staff member may give credit or record a
+// repayment" — any role, own location, same shape as recordCounterSale's
+// gate. Rejects an amount exceeding the current balance, mirroring
+// cash's recordDrawingRepayment/exceeds_outstanding — an overpayment
+// isn't a state this tracker represents.
+export async function recordRepayment(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { customerId: string; amountMinor: number },
+): Promise<RecordRepaymentResult> {
+  const locationId = requester.staff.locationId;
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.amountMinor <= 0) {
+    return { ok: false, reason: "invalid_amount" };
+  }
+
+  const customer = await findCustomerById(db, input.customerId);
+  if (!customer) return { ok: false, reason: "customer_not_found" };
+
+  const balance = await getCustomerBalance(db, input.customerId);
+  if (input.amountMinor > balance) {
+    return { ok: false, reason: "exceeds_balance" };
+  }
+
+  const repayment = await createRepaymentRecord(db, {
+    customerId: input.customerId,
+    locationId,
+    staffMemberId: requester.staff.id,
+    amountMinor: input.amountMinor,
+  });
+
+  return { ok: true, repayment };
+}
+
+export type CustomerCreditHistoryEntry =
+  | { kind: "credit"; amountMinor: number; occurredAt: Date }
+  | { kind: "repayment"; amountMinor: number; occurredAt: Date };
+
+export type GetCustomerCreditHistoryResult =
+  | { ok: true; entries: CustomerCreditHistoryEntry[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 36's customer detail view: credit lines and repayments merged
+// into one chronological ledger, newest first — the movement that
+// changes the balance shown alongside the arithmetic it changes.
+export async function getCustomerCreditHistory(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  customerId: string,
+): Promise<GetCustomerCreditHistoryResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const [creditLines, repayments] = await Promise.all([
+    findCreditPaymentLinesForCustomer(db, customerId),
+    findRepaymentsForCustomer(db, customerId),
+  ]);
+
+  const entries: CustomerCreditHistoryEntry[] = [
+    ...creditLines.map((line) => ({
+      kind: "credit" as const,
+      amountMinor: line.amountMinor,
+      occurredAt: line.occurredAt,
+    })),
+    ...repayments.map((repayment) => ({
+      kind: "repayment" as const,
+      amountMinor: repayment.amountMinor,
+      occurredAt: repayment.occurredAt,
+    })),
+  ].sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+
+  return { ok: true, entries };
 }
 
 // Ticket 24: stock's count-derived-sales formula reads this directly — the
@@ -252,8 +365,10 @@ export type TotalCustomerBalanceResult =
   | { ok: true; totalMinor: number }
   | { ok: false; reason: "forbidden" };
 
-// Ticket 33 — Dashboard's "Owed to you": the sum across all customers,
-// both locations, per formulas.md §11. Owner-only, same access pattern as
+// Ticket 33 — Dashboard's "Owed to you"; ticket 36 also reuses this for
+// the Customers tab's summary total, "don't recompute it a second way."
+// Credit given minus repayments, summed across all customers, both
+// locations, per formulas.md §11. Owner-only, same access pattern as
 // cash's getRunningCashBalance.
 export async function getTotalCustomerBalance(
   db: PrismaClient,
@@ -262,6 +377,9 @@ export async function getTotalCustomerBalance(
   if (!requireOwner(requester)) {
     return { ok: false, reason: "forbidden" };
   }
-  const totalMinor = await sumCreditAcrossAllCustomers(db);
-  return { ok: true, totalMinor };
+  const [creditMinor, repaidMinor] = await Promise.all([
+    sumCreditAcrossAllCustomers(db),
+    sumRepaymentsAcrossAllCustomers(db),
+  ]);
+  return { ok: true, totalMinor: creditMinor - repaidMinor };
 }
