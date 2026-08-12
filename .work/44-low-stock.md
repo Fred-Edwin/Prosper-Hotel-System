@@ -3,7 +3,39 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends `catalogue`'s Product/Ingredient records
 and `stock`'s existing on-hand quantity queries)
-**Status:** planned
+**Status:** blocked
+
+## Blocked — scope gaps found during context read (2026-08-12)
+
+1. **`AdminStockTable`/`getCurrentStockAtLocation` only cover products,
+   not ingredients.** `StockLevel` (stock/schema.ts) is
+   `{ productId, productName, quantityOnHand }` — there is no
+   ingredient-level equivalent feeding the admin stock table today. The
+   ticket's Scope says the low-stock filter applies to "items" generally
+   and `lowStockLevel` is scoped to both `Product` and `Ingredient`, but
+   the table this filter attaches to currently only renders products.
+   Options: (a) extend this ticket to also surface ingredients in
+   `AdminStockTable` (a materially bigger change than "add a filter
+   chip"), or (b) scope this ticket to products only for now and note
+   ingredient low-stock as a follow-up ticket once ingredients are
+   surfaced on the table at all.
+
+2. **The `/stock` admin page shows one location at a time** (the owner's
+   own `session.location.id`, no switcher — `src/app/stock/page.tsx`),
+   but the ticket needs restaurant (current on-hand) and canteen
+   (latest-count-derived) bases simultaneously, or at least reachable in
+   the same filter session. Today there is no way for the owner to view
+   the *other* location's stock table at all, low-stock or not. Options:
+   (a) this ticket also adds a location switcher to the stock page (bigger
+   than "a filter chip"), or (b) the low-stock filter's basis simply
+   follows whichever location is currently being viewed once a switcher
+   ships (deferred to whatever ticket adds that switcher), and this ticket
+   only wires the correct basis (on-hand vs. latest-count) per location
+   without adding the switcher itself.
+
+Neither of these is a local implementation call — both change what
+"just add a filter chip" means in practice. Surfaced to Edwinfred before
+writing any code.
 
 ## Goal
 

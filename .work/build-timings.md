@@ -15,3 +15,8 @@
 - ui-polish done: 13:20
 - self-verify done: 13:28  (verify: 8m)
 - merged: 13:29  (merge: 1m)
+
+## Ticket 44 — Low stock
+- claimed: 13:38
+- context read done: 13:50  (context: 12m)
+- blocked: 13:50  (scope gaps: ingredients not on admin stock table; no location switcher for restaurant+canteen basis)
