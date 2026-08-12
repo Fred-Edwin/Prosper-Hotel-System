@@ -15,3 +15,16 @@
 - ui-polish done: 13:20
 - self-verify done: 13:28  (verify: 8m)
 - merged: 13:29  (merge: 1m)
+
+## Ticket 44 — Low stock
+- claimed: 13:38
+- context read done: 13:50  (context: 12m)
+- blocked: 13:50  (scope gaps: ingredients not on admin stock table; no location switcher for restaurant+canteen basis)
+- resumed: 14:05  (user chose to extend ticket to cover both gaps)
+- plan proposed: 14:12
+- plan approved: 14:15  (waiting on user: 3m)
+- tests written: 14:22  (tests: 7m)
+- implementation done: 14:24  (implement: 2m, folded tightly with tests)
+- ui-polish done: 14:24
+- self-verify done: 14:28  (verify: 4m, plus earlier Storybook screenshot pass)
+- merged: 14:29  (merge: 1m)

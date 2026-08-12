@@ -61,6 +61,7 @@ export function ProductForm({
     kind: ProductKind;
     priceMinor: number | null;
     categoryId: string | null;
+    lowStockLevel: number | null;
     active: boolean;
   }) => void;
 }) {
@@ -70,6 +71,9 @@ export function ProductForm({
     product?.priceMinor != null ? String(product.priceMinor) : "",
   );
   const [categoryId, setCategoryId] = useState<string | null>(product?.categoryId ?? null);
+  const [lowStockLevel, setLowStockLevel] = useState(
+    product?.lowStockLevel != null ? String(product.lowStockLevel) : "",
+  );
   const [active, setActive] = useState(product?.active ?? true);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
@@ -99,6 +103,7 @@ export function ProductForm({
             kind,
             priceMinor: price.trim() === "" ? null : Math.round(Number(price)),
             categoryId,
+            lowStockLevel: lowStockLevel.trim() === "" ? null : Math.round(Number(lowStockLevel)),
             active,
           });
         }}
@@ -145,6 +150,19 @@ export function ProductForm({
             <Input
               value={price}
               onChange={(e) => setPrice(e.target.value)}
+              inputMode="numeric"
+              className="tabular h-9"
+            />
+          </Field>
+        </FormSection>
+        <FormSection
+          title="Low stock"
+          description="Leave blank to never flag this item as low"
+        >
+          <Field label="Low stock level">
+            <Input
+              value={lowStockLevel}
+              onChange={(e) => setLowStockLevel(e.target.value)}
               inputMode="numeric"
               className="tabular h-9"
             />

@@ -80,7 +80,13 @@ export async function updateProduct(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   id: string,
-  input: { name: string; kind: ProductKind; priceMinor?: number | null; categoryId?: string | null },
+  input: {
+    name: string;
+    kind: ProductKind;
+    priceMinor?: number | null;
+    categoryId?: string | null;
+    lowStockLevel?: number | null;
+  },
 ): Promise<ProductWriteResult<Product>> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
@@ -102,6 +108,7 @@ export async function updateProduct(
     kind: input.kind,
     priceMinor: input.priceMinor ?? null,
     categoryId: input.categoryId ?? null,
+    lowStockLevel: input.lowStockLevel ?? null,
   });
   return { ok: true, value: product };
 }
@@ -154,7 +161,12 @@ export async function updateIngredient(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   id: string,
-  input: { name: string; unitOfMeasure: string; lastKnownCostMinor?: number | null },
+  input: {
+    name: string;
+    unitOfMeasure: string;
+    lastKnownCostMinor?: number | null;
+    lowStockLevel?: number | null;
+  },
 ): Promise<WriteResult<Ingredient>> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
@@ -168,6 +180,7 @@ export async function updateIngredient(
 
   const ingredient = await updateIngredientRecord(db, id, {
     name: input.name,
+    lowStockLevel: input.lowStockLevel ?? null,
     unitOfMeasure: input.unitOfMeasure,
     lastKnownCostMinor: input.lastKnownCostMinor ?? null,
   });

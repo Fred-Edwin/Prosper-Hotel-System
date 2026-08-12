@@ -3,11 +3,11 @@ import { IngredientsTab } from "./ingredients-tab";
 import type { Ingredient } from "../schema";
 
 const ingredients: Ingredient[] = [
-  { id: "i1", name: "Maize flour", unitOfMeasure: "kg", lastKnownCostMinor: 120, active: true },
-  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 280, active: true },
-  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 80, active: true },
-  { id: "i4", name: "Beef", unitOfMeasure: "kg", lastKnownCostMinor: null, active: true },
-  { id: "i5", name: "Printing paper", unitOfMeasure: "ream", lastKnownCostMinor: 550, active: false },
+  { id: "i1", name: "Maize flour", unitOfMeasure: "kg", lastKnownCostMinor: 120, lowStockLevel: null, active: true },
+  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 280, lowStockLevel: null, active: true },
+  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 80, lowStockLevel: null, active: true },
+  { id: "i4", name: "Beef", unitOfMeasure: "kg", lastKnownCostMinor: null, lowStockLevel: null, active: true },
+  { id: "i5", name: "Printing paper", unitOfMeasure: "ream", lastKnownCostMinor: 550, lowStockLevel: null, active: false },
 ];
 
 const meta = {

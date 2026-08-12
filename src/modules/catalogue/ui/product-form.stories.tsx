@@ -14,6 +14,7 @@ const productWithCategory: Product = {
   kind: "goods",
   priceMinor: 80,
   lastKnownCostMinor: 50,
+  lowStockLevel: 10,
   active: true,
   categoryId: "c2",
 };
@@ -24,6 +25,7 @@ const productNoCategory: Product = {
   kind: "service",
   priceMinor: 5,
   lastKnownCostMinor: null,
+  lowStockLevel: null,
   active: true,
   categoryId: null,
 };
@@ -34,6 +36,7 @@ const productWithDeactivatedCategory: Product = {
   kind: "goods",
   priceMinor: 60,
   lastKnownCostMinor: 40,
+  lowStockLevel: null,
   active: true,
   categoryId: "c3",
 };
@@ -71,4 +74,14 @@ export const DeactivatedCategoryStillShownOnExistingProduct: Story = {
 export const NewProductNoCategory: Story = {
   name: "New product — no category yet",
   args: {},
+};
+
+export const LowStockLevelSet: Story = {
+  name: "Low stock level set",
+  args: { product: productWithCategory },
+};
+
+export const LowStockLevelUnset: Story = {
+  name: "Low stock level unset",
+  args: { product: productNoCategory },
 };

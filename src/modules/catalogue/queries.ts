@@ -36,7 +36,13 @@ export async function createProductRecord(
 export async function updateProductRecord(
   db: PrismaClient,
   id: string,
-  data: { name: string; kind: ProductKind; priceMinor: number | null; categoryId: string | null },
+  data: {
+    name: string;
+    kind: ProductKind;
+    priceMinor: number | null;
+    categoryId: string | null;
+    lowStockLevel: number | null;
+  },
 ): Promise<Product> {
   return db.product.update({ where: { id }, data });
 }
@@ -84,7 +90,12 @@ export async function createIngredientRecord(
 export async function updateIngredientRecord(
   db: PrismaClient,
   id: string,
-  data: { name: string; unitOfMeasure: string; lastKnownCostMinor: number | null },
+  data: {
+    name: string;
+    unitOfMeasure: string;
+    lastKnownCostMinor: number | null;
+    lowStockLevel: number | null;
+  },
 ): Promise<Ingredient> {
   return db.ingredient.update({ where: { id }, data });
 }

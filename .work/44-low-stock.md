@@ -3,7 +3,25 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends `catalogue`'s Product/Ingredient records
 and `stock`'s existing on-hand quantity queries)
-**Status:** planned
+**Status:** done
+
+## Scope expanded during context read (2026-08-12) — resolved with Edwinfred
+
+Two gaps found before implementation, both confirmed to fold into this
+same ticket rather than split off or defer:
+
+1. **`AdminStockTable`/`getCurrentStockAtLocation` only covered products,
+   not ingredients.** Extending this ticket to surface ingredient rows on
+   the table too (not deferred).
+2. **The `/stock` admin page showed one location at a time**, no
+   switcher. Adding a restaurant/canteen switcher to the stock page as
+   part of this ticket, so both low-stock bases (on-hand vs.
+   latest-count) are actually reachable.
+
+Additionally, since the table now mixes products and ingredients,
+Edwinfred confirmed adding a product/ingredient type filter (All /
+Products / Ingredients) alongside the low-stock chip, using
+`TableToolbar`'s existing `filters` select pattern.
 
 ## Goal
 
@@ -73,24 +91,36 @@ surfaced as a filter on the existing Stock table, not a new destination.
 
 ## Acceptance criteria
 
-- [ ] Owner can set a low-stock level on a product or ingredient from its
+- [x] Owner can set a low-stock level on a product or ingredient from its
       existing edit form; leaving it blank means the item never appears
       as low.
-- [ ] The Stock table's low-stock filter shows exactly the items at or
+- [x] The Stock table's low-stock filter shows exactly the items at or
       below their own threshold — a per-item comparison, not a single
       shared number.
-- [ ] Restaurant items compare against current on-hand quantity; canteen
+- [x] Restaurant items compare against current on-hand quantity; canteen
       items compare against the quantity as at the most recent count,
       with that count's date visible when the filter is active.
-- [ ] A canteen item with no count yet is excluded from the filter (no
+- [x] A canteen item with no count yet is excluded from the filter (no
       basis to compare), not shown as low or high.
-- [ ] The filter chip shows a count of matching items and clears cleanly.
-- [ ] Non-owner and non-matching-location roles see the same access
+- [x] The filter chip shows a count of matching items and clears cleanly.
+- [x] Non-owner and non-matching-location roles see the same access
       restriction the Stock table already enforces — no new gate needed,
       this only adds a filter to existing data.
-- [ ] Storybook story: the existing `AdminStockTable`/`StockList` stories
-      gain a low-stock-filter-active state, plus the edit form's new
-      threshold field (set, unset).
+- [x] Storybook story: `AdminStockTable` gains a low-stock-filter-active
+      state (plus ingredient rows and the item-type filter, since scope
+      expanded to cover both); `ProductForm` and a new `IngredientForm`
+      story file gain the threshold field (set, unset).
+
+## Scope note: beyond the original filter chip
+
+Also landed, per the scope-expansion decisions above:
+- Ingredient rows on `AdminStockTable` (new `getIngredientStockValuesAtLocation`
+  logic, mirroring the product value read).
+- A restaurant/canteen `Tabs` switcher on the `/stock` page
+  (`stock-page-client.tsx`), so both locations are reachable from one
+  screen — the owner's initial location still opens by default.
+- A product/ingredient type filter on the table (`TableToolbar`'s
+  existing `filters` select).
 
 ## Verification
 

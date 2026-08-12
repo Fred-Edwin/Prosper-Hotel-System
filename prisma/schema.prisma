@@ -92,6 +92,9 @@ model Product {
   // running-average update as Ingredient.lastKnownCostMinor (formulas.md
   // §3) — applies to purchased goods, not recipe-costed cooked food.
   lastKnownCostMinor Int?
+  // Ticket 44: null means no threshold defined, distinct from a threshold
+  // of zero — same nullable-until-set convention as priceMinor above.
+  lowStockLevel      Int?
   // docs/architecture.md: deactivated, never deleted — a sold product must
   // stay attributed on historical sales even after withdrawal from sale.
   active             Boolean         @default(true)
@@ -132,6 +135,8 @@ model Ingredient {
   // Convenience figure only, not the authoritative cost history (that's
   // stock's movement ledger once receiving is built). Null until known.
   lastKnownCostMinor Int?
+  // Ticket 44: same nullable-until-set convention as Product.lowStockLevel.
+  lowStockLevel      Int?
   active             Boolean              @default(true)
   createdAt          DateTime             @default(now())
   recipeLines        RecipeLine[]

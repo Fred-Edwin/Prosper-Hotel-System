@@ -31,6 +31,7 @@ export function IngredientForm({
     name: string;
     unitOfMeasure: string;
     lastKnownCostMinor: number | null;
+    lowStockLevel: number | null;
     active: boolean;
   }) => void;
 }) {
@@ -38,6 +39,9 @@ export function IngredientForm({
   const [unitOfMeasure, setUnitOfMeasure] = useState(ingredient?.unitOfMeasure ?? "");
   const [cost, setCost] = useState(
     ingredient?.lastKnownCostMinor != null ? String(ingredient.lastKnownCostMinor) : "",
+  );
+  const [lowStockLevel, setLowStockLevel] = useState(
+    ingredient?.lowStockLevel != null ? String(ingredient.lowStockLevel) : "",
   );
   const [active, setActive] = useState(ingredient?.active ?? true);
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
@@ -59,6 +63,7 @@ export function IngredientForm({
             name,
             unitOfMeasure,
             lastKnownCostMinor: cost.trim() === "" ? null : Math.round(Number(cost)),
+            lowStockLevel: lowStockLevel.trim() === "" ? null : Math.round(Number(lowStockLevel)),
             active,
           });
         }}
@@ -83,6 +88,19 @@ export function IngredientForm({
             <Input
               value={cost}
               onChange={(e) => setCost(e.target.value)}
+              inputMode="numeric"
+              className="tabular h-9"
+            />
+          </Field>
+        </FormSection>
+        <FormSection
+          title="Low stock"
+          description="Leave blank to never flag this item as low"
+        >
+          <Field label="Low stock level">
+            <Input
+              value={lowStockLevel}
+              onChange={(e) => setLowStockLevel(e.target.value)}
               inputMode="numeric"
               className="tabular h-9"
             />
