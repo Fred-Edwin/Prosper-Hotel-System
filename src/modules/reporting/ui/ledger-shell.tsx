@@ -9,12 +9,13 @@
  * data.
  *
  * Only the waterfall shows real figures in ticket 38. Ticket 39 wires the
- * Product tab (`product-ledger.tsx`) in via `productLedgerSlot`, supplied
- * only by the real page composition — never by this shell's own Storybook
- * story, which stories `ProductLedgerView` in isolation instead (same
- * split `dashboard-body.tsx` uses for `DashboardHandovers`). Store,
- * Non-sales and Cash still show their designed not-yet-wired state; Cash
- * lands in ticket 40, Store/Non-sales in a later ticket.
+ * Product tab (`product-ledger.tsx`) in via `productLedgerSlot`, ticket 40
+ * the Cash tab (`cash-ledger.tsx`) via `cashLedgerSlot`, ticket 42 the
+ * Store tab (`store-ledger.tsx`) via `storeLedgerSlot` — all supplied only
+ * by the real page composition, never by this shell's own Storybook
+ * story, which stories each *LedgerView in isolation instead (same split
+ * `dashboard-body.tsx` uses for `DashboardHandovers`). Non-sales still
+ * shows its designed not-yet-wired state — a later ticket.
  *
  * "Opening stock" / "Closing stock" on the waterfall are the restaurant's
  * ingredient stock value at the period's two boundaries — the same figure
@@ -43,6 +44,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Info, Maximize2, RotateCw, X } from "lucide-react";
 import { money } from "@/shared/money";
 import { ProductLedger } from "./product-ledger";
+import { StoreLedger } from "./store-ledger";
 import { CashLedger } from "./cash-ledger";
 
 export type LedgerSummaryData = {
@@ -150,6 +152,7 @@ function LedgerShellForPeriod({
       state={state}
       {...viewProps}
       productLedgerSlot={<ProductLedger periodStart={periodStart} periodEnd={periodEnd} />}
+      storeLedgerSlot={<StoreLedger periodStart={periodStart} periodEnd={periodEnd} />}
       cashLedgerSlot={<CashLedger periodStart={periodStart} periodEnd={periodEnd} />}
     />
   );
@@ -175,6 +178,7 @@ export function LedgerShellView({
   onCustomEndChange,
   onRetry = () => {},
   productLedgerSlot,
+  storeLedgerSlot,
   cashLedgerSlot,
 }: {
   state: LoadState;
@@ -185,12 +189,14 @@ export function LedgerShellView({
   onCustomStartChange: (v: string) => void;
   onCustomEndChange: (v: string) => void;
   onRetry?: () => void;
-  /** Real fetching Product/Cash ledgers, supplied by the page composition
-   * only — never by Storybook, which stories each view in isolation
-   * instead (same split as `dashboard-body.tsx` mounting `DashboardHandovers`
-   * outside any storied shell). Falls back to the not-built placeholder,
-   * same as every other not-yet-wired sub-ledger tab. */
+  /** Real fetching Product/Store/Cash ledgers, supplied by the page
+   * composition only — never by Storybook, which stories each view in
+   * isolation instead (same split as `dashboard-body.tsx` mounting
+   * `DashboardHandovers` outside any storied shell). Falls back to the
+   * not-built placeholder, same as every other not-yet-wired sub-ledger
+   * tab (Non-sales, for now). */
   productLedgerSlot?: React.ReactNode;
+  storeLedgerSlot?: React.ReactNode;
   cashLedgerSlot?: React.ReactNode;
 }) {
   const [active, setActive] = useState("products");
@@ -268,6 +274,8 @@ export function LedgerShellView({
             <RotatePrompt onExpand={() => setExpanded(l.key)} />
             {l.key === "products" && productLedgerSlot ? (
               productLedgerSlot
+            ) : l.key === "store" && storeLedgerSlot ? (
+              storeLedgerSlot
             ) : l.key === "cash" && cashLedgerSlot ? (
               cashLedgerSlot
             ) : (
@@ -292,6 +300,8 @@ export function LedgerShellView({
           <div className="flex-1 overflow-auto p-2">
             {expanded === "products" && productLedgerSlot ? (
               productLedgerSlot
+            ) : expanded === "store" && storeLedgerSlot ? (
+              storeLedgerSlot
             ) : expanded === "cash" && cashLedgerSlot ? (
               cashLedgerSlot
             ) : (

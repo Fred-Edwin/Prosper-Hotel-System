@@ -30,8 +30,10 @@ import {
   findStockCountById,
   markStockCountLineCorrected,
   sumIngredientMovementsAtLocationAsOf,
+  sumIngredientMovementsByReasonAtLocationInPeriod,
   sumIngredientsBoughtMinorAtLocationInPeriod,
   sumIngredientsIssuedByIngredientAtLocationInPeriod,
+  sumIngredientsPurchasedByIngredientAtLocationInPeriod,
   sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
   sumMovementsByProductAtLocationAsOf,
@@ -1324,6 +1326,26 @@ export async function getIngredientStockValueAtLocation(
   return { ok: true, totalMinor };
 }
 
+export type IngredientQuantityAtLocationResult =
+  | { ok: true; quantities: { ingredientId: string; quantityOnHand: number }[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 42: ingredient-side counterpart to getProductQuantityAtLocationAsOf
+// — quantity only, per ingredient, at a point in time, for the Store
+// ledger's opening/closing columns.
+export async function getIngredientQuantityAtLocationAsOf(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  asOf: Date,
+): Promise<IngredientQuantityAtLocationResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const quantities = await sumIngredientMovementsAtLocationAsOf(db, locationId, asOf);
+  return { ok: true, quantities };
+}
+
 export type ProductStockValue = {
   productId: string;
   productName: string;
@@ -1456,6 +1478,60 @@ export async function getIngredientsIssuedMinor(
     0,
   );
   return { ok: true, totalMinor };
+}
+
+export type IngredientPurchasesByIngredientResult =
+  | { ok: true; lines: { ingredientId: string; quantity: number; valueMinor: number }[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 42: per-ingredient purchased qty/value at a location in a period,
+// for the Store ledger's row — distinct from getIngredientsBoughtMinor's
+// single location-wide total.
+export async function getIngredientsPurchasedByIngredient(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<IngredientPurchasesByIngredientResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const lines = await sumIngredientsPurchasedByIngredientAtLocationInPeriod(
+    db,
+    locationId,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, lines };
+}
+
+export type IngredientMovementsByReasonResult =
+  | { ok: true; lines: { ingredientId: string; reason: StockMovementReason; quantity: number }[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 42: batched counterpart to getIngredientsIssuedMinor — the Store
+// ledger needs every reason (issued/transferred/wasted) for every
+// ingredient in one period at once.
+export async function getIngredientMovementsByReasonInPeriod(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  reasons: StockMovementReason[],
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<IngredientMovementsByReasonResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const lines = await sumIngredientMovementsByReasonAtLocationInPeriod(
+    db,
+    locationId,
+    reasons,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, lines };
 }
 
 export type ProductMovementByReasonResult =

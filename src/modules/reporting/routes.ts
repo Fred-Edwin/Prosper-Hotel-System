@@ -4,6 +4,7 @@ import {
   getDashboardProfit,
   getLedgerSummary,
   getProductLedger,
+  getStoreLedger,
   getCashLedger,
   type CashTransactionCategory,
 } from "./logic";
@@ -122,6 +123,40 @@ export async function productLedgerRoute(request: Request): Promise<Response> {
     categoryId,
     search,
   });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ rows: result.rows });
+}
+
+// Ticket 42's Store ledger tab — owner-only, same period-query shape as
+// the Product ledger, plus optional location/search filters (no category
+// — ingredients aren't categorised).
+export async function storeLedgerRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const periodStartParam = url.searchParams.get("periodStart");
+  const periodEndParam = url.searchParams.get("periodEnd");
+  if (!periodStartParam || !periodEndParam) {
+    return Response.json({ error: "periodStart and periodEnd are required" }, { status: 400 });
+  }
+
+  const periodStart = new Date(periodStartParam);
+  const periodEnd = new Date(periodEndParam);
+  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+    return Response.json({ error: "invalid period" }, { status: 400 });
+  }
+  if (periodStart >= periodEnd) {
+    return Response.json({ error: "periodStart must be before periodEnd" }, { status: 400 });
+  }
+
+  const locationId = url.searchParams.get("locationId") ?? undefined;
+  const search = url.searchParams.get("search") ?? undefined;
+
+  const result = await getStoreLedger(db, session, { periodStart, periodEnd, locationId, search });
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
