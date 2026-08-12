@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { LoadingTable, ErrorState, PermissionDenied } from "@/components/patterns/states";
 import { ProductsTab } from "./products-tab";
 import { IngredientsTab } from "./ingredients-tab";
+import { CategoriesTab } from "./categories-tab";
 import { RecipesTab } from "./recipes-tab";
 import { AssetsTab } from "./assets-tab";
 import { fetchCatalogue, parseRecipeVersions, type CatalogueState } from "./catalogue-data";
@@ -24,6 +25,7 @@ import type { Recipe } from "../schema";
 const tabs = [
   { key: "products", label: "Products" },
   { key: "ingredients", label: "Ingredients" },
+  { key: "categories", label: "Categories" },
   { key: "recipes", label: "Recipes" },
   { key: "assets", label: "Assets" },
 ];
@@ -92,7 +94,7 @@ function CatalogueTabs({ initial }: { initial: Extract<CatalogueState, { status:
   const [versionsByProduct, setVersionsByProduct] = useState<Record<string, Recipe[] | undefined>>({});
   const [versionsLoading, setVersionsLoading] = useState(false);
 
-  const { products, ingredients, recipes, assets, locations } = data;
+  const { products, ingredients, categories, recipes, assets, locations } = data;
   const cookedFoodProducts = products.filter((p) => p.kind === "cooked_food" && p.active);
 
   async function refresh() {
@@ -139,6 +141,7 @@ function CatalogueTabs({ initial }: { initial: Extract<CatalogueState, { status:
       <TabsContent value="products">
         <ProductsTab
           products={products}
+          categories={categories}
           saving={saving}
           error={error}
           onCreate={(input) => withSaving(() => postJson("/api/catalogue/products", "POST", input))}
@@ -162,6 +165,21 @@ function CatalogueTabs({ initial }: { initial: Extract<CatalogueState, { status:
           }
           onSetActive={(id, active) =>
             withSaving(() => postJson(`/api/catalogue/ingredients/${id}/active`, "PATCH", { active }))
+          }
+        />
+      </TabsContent>
+
+      <TabsContent value="categories">
+        <CategoriesTab
+          categories={categories}
+          saving={saving}
+          error={error}
+          onCreate={(input) => withSaving(() => postJson("/api/catalogue/categories", "POST", input))}
+          onUpdate={(id, input) =>
+            withSaving(() => postJson(`/api/catalogue/categories/${id}`, "PATCH", input))
+          }
+          onSetActive={(id, active) =>
+            withSaving(() => postJson(`/api/catalogue/categories/${id}/active`, "PATCH", { active }))
           }
         />
       </TabsContent>

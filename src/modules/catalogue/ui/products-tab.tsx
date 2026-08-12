@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Package, Plus } from "lucide-react";
 import { ProductForm } from "./product-form";
-import type { Product, ProductKind } from "../schema";
+import type { Category, Product, ProductKind } from "../schema";
 
 const KIND_LABEL: Record<ProductKind, string> = {
   goods: "Goods",
@@ -25,6 +25,7 @@ const KIND_LABEL: Record<ProductKind, string> = {
 
 export function ProductsTab({
   products,
+  categories,
   onCreate,
   onUpdate,
   onSetActive,
@@ -32,10 +33,16 @@ export function ProductsTab({
   error,
 }: {
   products: Product[];
-  onCreate: (input: { name: string; kind: ProductKind; priceMinor: number | null }) => void;
+  categories: Category[];
+  onCreate: (input: {
+    name: string;
+    kind: ProductKind;
+    priceMinor: number | null;
+    categoryId: string | null;
+  }) => void;
   onUpdate: (
     id: string,
-    input: { name: string; kind: ProductKind; priceMinor: number | null },
+    input: { name: string; kind: ProductKind; priceMinor: number | null; categoryId: string | null },
   ) => void;
   onSetActive: (id: string, active: boolean) => void;
   saving?: boolean;
@@ -123,6 +130,7 @@ export function ProductsTab({
       <ProductForm
         open={creating}
         onOpenChange={setCreating}
+        categories={categories}
         saving={saving}
         error={error}
         onSave={(input) => onCreate(input)}
@@ -131,6 +139,7 @@ export function ProductsTab({
         open={editing !== null}
         onOpenChange={(v) => !v && setEditing(null)}
         product={editing ?? undefined}
+        categories={categories}
         saving={saving}
         error={error}
         onSave={(input) => {

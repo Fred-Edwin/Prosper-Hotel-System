@@ -8,7 +8,7 @@
  * cheaper than four.
  */
 
-import type { Asset, Ingredient, Product, Recipe, RecipeWithCost } from "../schema";
+import type { Asset, Category, Ingredient, Product, Recipe, RecipeWithCost } from "../schema";
 import type { Location } from "@/modules/people";
 
 export type RecipeRow = { productId: string; recipe: RecipeWithCost | null };
@@ -21,6 +21,7 @@ export type CatalogueState =
       status: "ready";
       products: Product[];
       ingredients: Ingredient[];
+      categories: Category[];
       recipes: RecipeRow[];
       assets: Asset[];
       locations: Location[];
@@ -50,6 +51,7 @@ export async function fetchCatalogue(): Promise<CatalogueState> {
     if (
       !Array.isArray(body?.products) ||
       !Array.isArray(body?.ingredients) ||
+      !Array.isArray(body?.categories) ||
       !Array.isArray(body?.assets) ||
       !Array.isArray(body?.locations)
     ) {
@@ -65,6 +67,7 @@ export async function fetchCatalogue(): Promise<CatalogueState> {
       status: "ready",
       products: body.products,
       ingredients: body.ingredients,
+      categories: body.categories,
       recipes,
       assets: body.assets,
       locations: body.locations,
