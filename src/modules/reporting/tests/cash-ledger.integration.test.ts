@@ -237,6 +237,10 @@ describe("getCashLedger", () => {
     expect(result.days[0].date).toBe("2026-08-05");
     expect(result.days[0].transactions).toHaveLength(1);
     expect(result.days[0].transactions[0].category).toBe("stock");
+    // Category columns must narrow with the filter too, not just the transaction list —
+    // otherwise a filtered day row shows money in a category with nothing matching underneath it.
+    expect(result.days[0].stockMinor).toBe(4000);
+    expect(result.days[0].handoversMinor).toBe(0);
   });
 
   test("expanding a day shows its individual transactions with method, category, description, amount, and recorded-by", async () => {

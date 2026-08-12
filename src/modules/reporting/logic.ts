@@ -1035,16 +1035,8 @@ export async function getCashLedger(
       })),
     ];
 
-    const sumFor = (category: CashTransactionCategory) =>
-      transactions.filter((t) => t.category === category).reduce((sum, t) => sum + t.amountMinor, 0);
-
-    const handoversMinor = sumFor("handover");
-    const repaymentsMinor = sumFor("repayment");
-    const stockMinor = sumFor("stock");
-    const runningMinor = sumFor("running");
-    const assetsMinor = sumFor("asset");
-    const drawingsMinor = sumFor("drawing");
-
+    // Running balances always reconcile against the full, unfiltered transaction set — a
+    // category/search filter narrows what's displayed, not the actual cash movement.
     const isMoneyIn = (t: CashTransaction) => t.category === "handover" || t.category === "repayment";
     const sumWhere = (method: "cash" | "mpesa", moneyIn: boolean) =>
       transactions
@@ -1062,6 +1054,16 @@ export async function getCashLedger(
 
     const filteredTransactions = transactions.filter(matchesFilter);
     if (filteredTransactions.length === 0) continue;
+
+    const sumFor = (category: CashTransactionCategory) =>
+      filteredTransactions.filter((t) => t.category === category).reduce((sum, t) => sum + t.amountMinor, 0);
+
+    const handoversMinor = sumFor("handover");
+    const repaymentsMinor = sumFor("repayment");
+    const stockMinor = sumFor("stock");
+    const runningMinor = sumFor("running");
+    const assetsMinor = sumFor("asset");
+    const drawingsMinor = sumFor("drawing");
 
     result.push({
       date: day.label,
