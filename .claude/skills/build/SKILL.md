@@ -19,6 +19,56 @@ or the ticket itself.
 front, check each off the moment it's done. Don't defer this to the end.
 **Kindly DO NOT FORGET to use a TodoWrite checklist** — it is how the use get feedback on your progress without having to ask for it and waste time. If you don't use a checklist, the user will have to ask you for updates and you will be blocked until you respond.
 
+## Timing log
+
+Append a block to `.work/build-timings.md` (create it if missing) for
+every ticket built, so timing is comparable across tickets without
+relying on git history. Record a timestamp (`HH:MM`, local time) at each
+milestone below as you reach it — don't backfill at the end:
+
+- `claimed` — when Status is set to `in-progress` (Claiming step 3)
+- `context read done` — once the ticket, its Context pointers (design
+  reference, relevant module queries/schema/conventions), and any
+  scoping/precedent checks are read and resolved (Process step 1)
+- `plan approved` — when the user approves the plan and implementation
+  starts (Process step 2); log `plan proposed` at the same time as a
+  separate line if there's a real gap before approval
+- `tests written` — once failing tests are committed, for test-first
+  tickets only (Process step 3); omit this line for test-after tickets
+- `implementation done` — once the logic/routes/wiring described in the
+  ticket's Scope works end to end, before any Storybook story or docs
+  update (Process step 3)
+- `ui-polish done` — once the Storybook story and `docs/screens.md` (or
+  equivalent docs) are updated, for UI tickets only; omit for
+  logic/plumbing-only tickets
+- `self-verify done` — when tests/lint/typecheck/UI-check all pass
+  (Process step 5)
+- `merged` — when the branch lands on `main` (Process step 6)
+
+Compute each row's duration from the previous timestamp, and label the
+`plan proposed → plan approved` gap as "waiting on user" rather than
+folding it into implementation time — that gap isn't agent work and
+shouldn't look like it. Use this format (omit `tests written` /
+`ui-polish done` lines that don't apply to the ticket):
+
+```
+## Ticket <id> — <short title>
+- claimed: 10:03
+- context read done: 10:11  (context: 8m)
+- plan proposed: 10:13
+- plan approved: 10:16  (waiting on user: 3m)
+- tests written: 10:24  (tests: 8m)
+- implementation done: 10:44  (implement: 20m)
+- ui-polish done: 10:52  (ui-polish: 8m)
+- self-verify done: 11:05  (verify: 13m)
+- merged: 11:07  (merge: 2m)
+```
+
+If the ticket is blocked, rejected by `/review`, or resumed across a
+session gap, add a line noting it (e.g. `blocked: 14:20 (design
+direction)` / `resumed: next session, 09:10`) instead of letting the gap
+silently inflate whichever bucket it falls into.
+
 ## Claiming a ticket
 
 1. Scan `.work/*.md` for tickets with `Status: planned` whose declared
@@ -29,7 +79,8 @@ front, check each off the moment it's done. Don't defer this to the end.
 3. Set `Status: in-progress`, note the session/agent and timestamp, commit
    this status change immediately — this is the claim. If another agent
    later finds this ticket already `in-progress`, it moves on to a
-   different eligible ticket rather than duplicating work.
+   different eligible ticket rather than duplicating work. Record the
+   `claimed` timestamp in the timing log now (see Timing log below).
 4. Create a branch for this ticket (e.g. `ticket/<ticket-id>-<slug>`),
    off current `main`.
 
@@ -64,10 +115,17 @@ front, check each off the moment it's done. Don't defer this to the end.
    building the closest existing pattern directly; don't assume either
    way, ask.
 
+   If the ticket is set to `Status: blocked` at this point or any later
+   point, add a `blocked: <time> (<reason>)` line to the timing log entry
+   before stopping.
+
    **If the ticket's own cited precedent (a function or screen it says
    to mirror) turns out to be wrong or buggy**, that's a scope question,
    not a local judgment call — stop and ask whether to fix the precedent
    alongside the new work or leave it and only build the new code.
+
+   Record `context read done` in the timing log once this step's reading
+   and scoping checks are resolved.
 
 2. **Decide test-first or not, then state a plan and wait for approval.**
    Tickets don't reliably carry a `TDD: true/false` field — decide per
@@ -76,7 +134,9 @@ front, check each off the moment it's done. Don't defer this to the end.
    get tests after, per the Verification section. Then present a short
    plan — files/modules touched, approach, the test-first-or-not call and
    why, and (for UI tickets) which approved story is being matched — and
-   wait for explicit approval before writing any code.
+   wait for explicit approval before writing any code. Record `plan
+   proposed` in the timing log when the plan is handed to the user, and
+   `plan approved` the moment they approve it.
 
 3. **Implement the vertical slice** described in the ticket's Scope. Follow
    `docs/conventions.md` — use existing patterns and the canonical
@@ -89,12 +149,13 @@ front, check each off the moment it's done. Don't defer this to the end.
    **If test-first:** for the logic portion of the ticket, write the
    tests implied by the Acceptance Criteria *first*, run them, and confirm
    they fail for the expected reason (not a typo or setup error — an
-   actual absence of the behavior being specified). Only then implement,
-   iterating until they pass. Do not write the implementation first and
-   backfill tests afterward — that defeats the purpose of choosing
-   test-first in the first place. Pure UI-composition portions of a mixed
-   ticket don't need this discipline even when the logic portion is
-   test-first — apply it to the logic, not the markup.
+   actual absence of the behavior being specified). Record `tests
+   written` in the timing log once the failing tests are committed. Only
+   then implement, iterating until they pass. Do not write the
+   implementation first and backfill tests afterward — that defeats the
+   purpose of choosing test-first in the first place. Pure UI-composition
+   portions of a mixed ticket don't need this discipline even when the
+   logic portion is test-first — apply it to the logic, not the markup.
 
    When logic accepts a batch/list input, include at least one test case
    with a repeated key in that batch — a common gap otherwise.
@@ -114,15 +175,57 @@ front, check each off the moment it's done. Don't defer this to the end.
    the bar is: does resolving this require a decision `/alignment` or
    `/design` should have made.
 
-5. **Self-verify** using the ticket's Verification section: run tests,
-   lint, and typecheck — all must pass before moving on.
+5. Record `implementation done` in the timing log now that the logic,
+   routes, and wiring described in the ticket's Scope work end to end.
+   If the ticket touches UI, finish the Storybook story and
+   `docs/screens.md` (or equivalent docs) update now and record
+   `ui-polish done`; skip this line for logic/plumbing-only tickets.
 
-   **If the ticket touches UI**, remember `/design` already built,
-   self-critiqued, and got approval for this screen's composition against
-   `references/ui-rules.md` — that work is done and committed. Don't
-   redo a full ui-rules.md audit here. Instead check the narrower thing
-   `/design` couldn't have: that the already-approved screen still
-   renders as approved now that real data/logic is wired behind it.
+   Then **self-verify**:
+
+   **Tests.** Run only the test file(s) this ticket's logic touches
+   (`vitest run --project integration <path>`), not the full suite —
+   the integration suite runs sequentially against a shared test DB
+   (`fileParallelism: false`, see `vitest.config.ts`) specifically
+   because it's slow to run end to end, so treat a full `pnpm test` as
+   a single pre-merge gate, not a rerun-after-every-change reflex. If a
+   full-suite run already passed earlier this session and nothing
+   outside this ticket's files changed since, that earlier pass still
+   counts — don't rerun it a second time before merge. Lint and
+   typecheck run at their normal (fast, whole-project) scope — there's
+   no equivalent partial mode for those.
+
+   **UI check.** Remember `/design` already built, self-critiqued, and
+   got approval for this screen's composition against
+   `references/ui-rules.md` — that work is done and committed. The user
+   also typically has the dev server open and is watching changes land
+   on localhost live as `/build` works, which already covers casual
+   visual confirmation. So:
+
+   - **Default:** confirm the dev server (`pnpm dev`) is running —
+     start it if not, and reuse an already-running instance rather than
+     starting a second one — then tell the user the exact URL/route for
+     this ticket's screen (not just the app root), e.g. "the store
+     ledger tab is at `localhost:3000/ledger?tab=store`", so there's no
+     hunting for where the change landed. Do not launch Storybook or any
+     browser automation. Mark the UI check satisfied on this basis alone
+     if the ticket only wires or reuses an already-approved story with
+     no new state/composition.
+   - **Automated Storybook pass required, without waiting to be asked,
+     when the ticket introduces UI surface `/design` didn't already
+     cover** — a new state, a genuinely new composition not in the
+     approved story. That's the case a human glancing at the happy path
+     on localhost is most likely to miss (empty/error/permission-denied
+     states in particular), and it needs the same rigor `/design` would
+     have applied. Follow the Storybook procedure below for that case
+     only.
+   - **If unsure which case applies**, ask rather than guessing either
+     direction.
+
+   Record `self-verify done` once tests/lint/typecheck pass and the UI
+   check (whichever form it took) is satisfied.
+
+   ### Storybook procedure (new UI surface only)
 
    1. Start Storybook (`pnpm storybook`) and note the port it prints.
       Check `ps aux | grep storybook` first — a prior step in this same
@@ -176,11 +279,9 @@ front, check each off the moment it's done. Don't defer this to the end.
       underlying correctness (e.g. that a total actually equals quantity
       × cost) — reason about that from the code together with the
       screenshot, not the screenshot alone.
-   8. **Only fall back to a full `references/ui-rules.md` item-by-item
-      audit if the ticket introduced markup `/design` didn't cover** — a
-      new state, a genuinely new composition not in the approved story.
-      That's new UI surface, not re-verification of existing surface, and
-      needs the same rigor `/design` would have applied.
+   8. Run a full `references/ui-rules.md` item-by-item audit of the new
+      surface specifically — the new state or composition, not the whole
+      screen — since this is new UI `/design` never reviewed.
 
    This is mechanical verification; it is not a substitute for `/review`,
    which checks things a machine can't and is optional per the merge step
@@ -190,13 +291,20 @@ front, check each off the moment it's done. Don't defer this to the end.
    the ticket's `Status: done`. `/review` is optional and user-invoked —
    run it yourself before this step if you want that ticket gated, or
    after merge as a post-hoc audit; `/build` doesn't wait for it by
-   default.
+   default. Record `merged` in the timing log to close out the entry.
 
 ## On review feedback
 
 If `/review` is run (before or after merge) and rejects the work, `/build`
 resumes: read the review findings, address them on the same branch (or a
-follow-up branch if already merged), re-verify, and merge again.
+follow-up branch if already merged), re-verify, and merge again. Add a
+`rejected: <time> (<reason>)` line to that ticket's timing log entry, and
+a fresh `implementation done` / `self-verify done` pair once the rework
+is complete.
+
+If `/build` resumes a ticket found already `in-progress`/`blocked` from
+an earlier session, add a `resumed: <time>` line rather than treating the
+gap since the last timestamp as work time.
 
 ## Output
 
