@@ -4,11 +4,14 @@
 // interfaces only, per docs/architecture.md's "reporting owns no data."
 import type { PrismaClient } from "@/generated/prisma/client";
 import { type AuthenticatedStaff, findLocationByCode, findStaffMembersByIds, listLocations } from "@/modules/people";
-import { getCurrentRecipe, findProductsByIds } from "@/modules/catalogue";
+import { getCurrentRecipe, findProductsByIds, findIngredientsByIds } from "@/modules/catalogue";
 import {
   getIngredientStockValueAtLocation,
+  getIngredientQuantityAtLocationAsOf,
   getIngredientsBoughtMinor,
   getIngredientsIssuedMinor,
+  getIngredientsPurchasedByIngredient,
+  getIngredientMovementsByReasonInPeriod,
   getProductMovementByReasonInPeriod,
   getProductMovementsByReasonInPeriod,
   getProductQuantityAtLocationAsOf,
@@ -883,6 +886,188 @@ export async function getProductLedger(
   );
 
   filtered.sort((a, b) => a.productName.localeCompare(b.productName) || a.locationCode.localeCompare(b.locationCode));
+
+  return { ok: true, rows: filtered };
+}
+
+// Ticket 42's Store ledger — one row per ingredient per location for the
+// selected period, no day-expansion (unlike Product/Cash — the design
+// reference's Store ledger has no chevron, and this ticket doesn't add
+// one the design didn't ask for). Opening/closing quantities come from
+// stock's as-of reads (ground truth), purchased/issued/transferred/
+// spoilage from the same period's per-reason sums, so the two reconcile
+// by construction, same principle as getProductLedger.
+const STORE_OUT_REASONS = ["issued", "transferred", "wasted"] as const;
+
+export type StoreLedgerRow = {
+  ingredientId: string;
+  ingredientName: string;
+  unitOfMeasure: string;
+  locationId: string;
+  locationCode: string;
+  openingQty: number;
+  purchasedQty: number;
+  purchasedValueMinor: number;
+  issuedToKitchen: number;
+  transferredOut: number;
+  spoilage: number;
+  closingQty: number;
+  closingValueMinor: number;
+  unitCostMinor: number;
+  previousUnitCostMinor: number;
+};
+
+export type StoreLedgerResult =
+  | { ok: true; rows: StoreLedgerRow[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// The reference shows the *previous* running-average cost alongside the
+// current one to indicate movement (formulas.md §3's weighted average has
+// no historical snapshots). Reconstructed algebraically by reversing this
+// period's purchases out of the current average, treating them as a
+// single combined delivery — the running-average formula is linear, so
+// this reverse is exact even though the real average may have moved in
+// several individual steps during the period.
+function previousUnitCostMinor(input: {
+  currentAverageMinor: number;
+  closingQty: number;
+  purchasedQty: number;
+  purchasedValueMinor: number;
+}): number {
+  const { currentAverageMinor, closingQty, purchasedQty, purchasedValueMinor } = input;
+  const qtyBeforePurchases = closingQty - purchasedQty;
+  if (purchasedQty <= 0 || qtyBeforePurchases <= 0) return currentAverageMinor;
+
+  const valueBeforePurchases = closingQty * currentAverageMinor - purchasedValueMinor;
+  if (valueBeforePurchases < 0) return currentAverageMinor;
+  return Math.round(valueBeforePurchases / qtyBeforePurchases);
+}
+
+export async function getStoreLedger(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    periodStart: Date;
+    periodEnd: Date;
+    locationId?: string;
+    search?: string;
+  },
+): Promise<StoreLedgerResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const allLocations = await listLocations(db);
+  const targetLocations = input.locationId
+    ? allLocations.filter((l) => l.id === input.locationId)
+    : allLocations;
+  if (targetLocations.length === 0) return { ok: false, reason: "not_found" };
+
+  const rows: StoreLedgerRow[] = [];
+
+  for (const location of targetLocations) {
+    const [openingQuantities, closingQuantities, purchases, movements] = await Promise.all([
+      getIngredientQuantityAtLocationAsOf(db, requester, location.id, input.periodStart),
+      getIngredientQuantityAtLocationAsOf(db, requester, location.id, input.periodEnd),
+      getIngredientsPurchasedByIngredient(db, requester, location.id, input.periodStart, input.periodEnd),
+      getIngredientMovementsByReasonInPeriod(
+        db,
+        requester,
+        location.id,
+        [...STORE_OUT_REASONS],
+        input.periodStart,
+        input.periodEnd,
+      ),
+    ]);
+    if (!openingQuantities.ok) return openingQuantities;
+    if (!closingQuantities.ok) return closingQuantities;
+    if (!purchases.ok) return purchases;
+    if (!movements.ok) return movements;
+
+    const openingByIngredient = new Map(
+      openingQuantities.quantities.map((q) => [q.ingredientId, q.quantityOnHand]),
+    );
+    const closingByIngredient = new Map(
+      closingQuantities.quantities.map((q) => [q.ingredientId, q.quantityOnHand]),
+    );
+    const purchasesByIngredient = new Map(purchases.lines.map((p) => [p.ingredientId, p]));
+
+    const outByIngredient = new Map<
+      string,
+      { issuedToKitchen: number; transferredOut: number; spoilage: number }
+    >();
+    for (const line of movements.lines) {
+      const sums = outByIngredient.get(line.ingredientId) ?? {
+        issuedToKitchen: 0,
+        transferredOut: 0,
+        spoilage: 0,
+      };
+      // Out-reason quantities are stored negative (stock leaving); flip to
+      // positive "out" figures for the ledger's columns. `transferred` on
+      // IngredientMovement carries both directions (see stock's transfer
+      // logic) — only the negative (outbound) side belongs in this
+      // location's "transferred out" column, same convention
+      // getProductLedger's foldReasonLines uses for products.
+      if (line.reason === "issued") sums.issuedToKitchen += -line.quantity;
+      else if (line.reason === "transferred" && line.quantity < 0) sums.transferredOut += -line.quantity;
+      else if (line.reason === "wasted") sums.spoilage += -line.quantity;
+      outByIngredient.set(line.ingredientId, sums);
+    }
+
+    const ingredientIds = new Set<string>([
+      ...openingQuantities.quantities.map((q) => q.ingredientId),
+      ...closingQuantities.quantities.map((q) => q.ingredientId),
+      ...purchases.lines.map((p) => p.ingredientId),
+      ...movements.lines.map((l) => l.ingredientId),
+    ]);
+    if (ingredientIds.size === 0) continue;
+
+    const ingredients = await findIngredientsByIds(db, Array.from(ingredientIds));
+    const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+    for (const ingredientId of ingredientIds) {
+      const ingredient = ingredientById.get(ingredientId);
+      if (!ingredient) continue;
+
+      const openingQty = openingByIngredient.get(ingredientId) ?? 0;
+      const closingQty = closingByIngredient.get(ingredientId) ?? openingQty;
+      const purchase = purchasesByIngredient.get(ingredientId) ?? { quantity: 0, valueMinor: 0 };
+      const out = outByIngredient.get(ingredientId) ?? {
+        issuedToKitchen: 0,
+        transferredOut: 0,
+        spoilage: 0,
+      };
+
+      const unitCostMinor = ingredient.lastKnownCostMinor ?? 0;
+      const previousCostMinor = previousUnitCostMinor({
+        currentAverageMinor: unitCostMinor,
+        closingQty,
+        purchasedQty: purchase.quantity,
+        purchasedValueMinor: purchase.valueMinor,
+      });
+
+      rows.push({
+        ingredientId: ingredient.id,
+        ingredientName: ingredient.name,
+        unitOfMeasure: ingredient.unitOfMeasure,
+        locationId: location.id,
+        locationCode: location.code,
+        openingQty,
+        purchasedQty: purchase.quantity,
+        purchasedValueMinor: purchase.valueMinor,
+        issuedToKitchen: out.issuedToKitchen,
+        transferredOut: out.transferredOut,
+        spoilage: out.spoilage,
+        closingQty,
+        closingValueMinor: closingQty * unitCostMinor,
+        unitCostMinor,
+        previousUnitCostMinor: previousCostMinor,
+      });
+    }
+  }
+
+  const search = input.search?.trim().toLowerCase();
+  const filtered = rows.filter((row) => !search || row.ingredientName.toLowerCase().includes(search));
+
+  filtered.sort((a, b) => a.ingredientName.localeCompare(b.ingredientName) || a.locationCode.localeCompare(b.locationCode));
 
   return { ok: true, rows: filtered };
 }

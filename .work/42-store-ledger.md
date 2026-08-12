@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** 38 (needs the Ledger shell to host this tab in — already
 built and merged)
-**Status:** in-progress
+**Status:** done
 
 **Claimed:** Claude Code — 2026-08-12.
 
@@ -68,17 +68,17 @@ history requirement, this time for ingredients rather than products.
 
 ## Acceptance criteria
 
-- [ ] Store ledger row's quantities reconcile: opening + purchased − out
+- [x] Store ledger row's quantities reconcile: opening + purchased − out
       = closing, for a constructed multi-day fixture with purchases,
       kitchen issues, transfers, and wastage.
-- [ ] Unit cost shown is the ingredient's current running average; where
+- [x] Unit cost shown is the ingredient's current running average; where
       it changed during the period, the previous value and direction are
       shown (matches the reference's up/down indicator).
-- [ ] Searching by name narrows correctly; empty and filtered-empty
+- [x] Searching by name narrows correctly; empty and filtered-empty
       states are visually distinct.
-- [ ] Non-owner roles cannot reach this data (route-level check, same
+- [x] Non-owner roles cannot reach this data (route-level check, same
       gate as the rest of `reporting`).
-- [ ] Storybook story: populated table, cost-moved indicator shown, empty,
+- [x] Storybook story: populated table, cost-moved indicator shown, empty,
       filtered-empty, loading.
 
 ## Verification

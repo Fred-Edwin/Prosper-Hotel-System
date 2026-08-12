@@ -76,6 +76,7 @@ new destinations get added here as tickets that build them land, per
 | Modules/Reporting/LedgerShell | `src/modules/reporting/ui/ledger-shell.stories.tsx` | approved |
 | Modules/Reporting/ProductLedger | `src/modules/reporting/ui/product-ledger.stories.tsx` | approved |
 | Modules/Reporting/CashLedger | `src/modules/reporting/ui/cash-ledger.stories.tsx` | approved |
+| Modules/Reporting/StoreLedger | `src/modules/reporting/ui/store-ledger.stories.tsx` | approved |
 
 ## People
 
@@ -103,9 +104,11 @@ location filter, owner-managed category filter from ticket 41,
 day-expansion) landed via ticket 39. The Cash ledger tab (search, category
 filter, day-expansion to individual transactions with method, running
 cash and M-Pesa balances kept independent throughout) landed via ticket
-40. Store and Non-sales still show their not-yet-wired state — a later
-ticket. Added to this file as their tickets land, not
-speculatively ahead of them.
+40. The Store ledger tab (search, location filter, running-average
+cost-move indicator, no day-expansion — the reference has no chevron for
+this sub-ledger) landed via ticket 42. Non-sales still shows its
+not-yet-wired state — a later ticket. Added to this file as their
+tickets land, not speculatively ahead of them.
 
 ## Note on naming
 

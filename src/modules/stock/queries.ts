@@ -311,6 +311,57 @@ export async function sumIngredientsIssuedByIngredientAtLocationInPeriod(
   return grouped.map((g) => ({ ingredientId: g.ingredientId, quantity: -(g._sum.quantity ?? 0) }));
 }
 
+// Ticket 42: per-ingredient counterpart to sumIngredientsBoughtMinorAtLocationInPeriod
+// (which only returns a location-wide total) — the Store ledger needs each
+// ingredient's own purchased qty/value for its row, not one summed figure.
+export async function sumIngredientsPurchasedByIngredientAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ ingredientId: string; quantity: number; valueMinor: number }[]> {
+  const received = await db.ingredientMovement.findMany({
+    where: {
+      locationId,
+      reason: "received",
+      occurredAt: { gt: periodStart, lte: periodEnd },
+    },
+    select: { ingredientId: true, quantity: true, unitCostMinor: true },
+  });
+  const byIngredient = new Map<string, { quantity: number; valueMinor: number }>();
+  for (const r of received) {
+    const existing = byIngredient.get(r.ingredientId) ?? { quantity: 0, valueMinor: 0 };
+    existing.quantity += r.quantity;
+    existing.valueMinor += r.quantity * (r.unitCostMinor ?? 0);
+    byIngredient.set(r.ingredientId, existing);
+  }
+  return Array.from(byIngredient.entries()).map(([ingredientId, v]) => ({ ingredientId, ...v }));
+}
+
+// Ticket 42: ingredient-side counterpart to
+// sumMovementsByProductReasonAtLocationInPeriod — the Store ledger needs
+// every reason (received/issued/transferred/wasted) for every ingredient
+// in one period at once, grouped the same way the Product ledger groups
+// StockMovement.
+export async function sumIngredientMovementsByReasonAtLocationInPeriod(
+  db: PrismaClient,
+  locationId: string,
+  reasons: StockMovementReason[],
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ ingredientId: string; reason: StockMovementReason; quantity: number }[]> {
+  const grouped = await db.ingredientMovement.groupBy({
+    by: ["ingredientId", "reason"],
+    where: { locationId, reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd } },
+    _sum: { quantity: true },
+  });
+  return grouped.map((g) => ({
+    ingredientId: g.ingredientId,
+    reason: g.reason,
+    quantity: g._sum.quantity ?? 0,
+  }));
+}
+
 // Ticket 25: formulas.md §6's canteen restaurant-food half and §5's
 // transfer valuation both need product `transferred`-in movements at a
 // location in a period, per product — reusing the existing
