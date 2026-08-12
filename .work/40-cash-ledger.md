@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** 38 (needs the Ledger shell and its period picker to host
 this tab in)
-**Status:** planned
+**Status:** in-progress (claude, 2026-08-12)
 
 ## Goal
 
