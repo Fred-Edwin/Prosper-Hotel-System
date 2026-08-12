@@ -3,7 +3,7 @@
 **Type:** plumbing (test-after)
 **Blocked by:** 46 (needs profit-by-period to exist so the chart has more
 than one day's figure to plot)
-**Status:** planned
+**Status:** in-progress (claimed 2026-08-12 16:50, this session)
 
 ## Goal
 
@@ -36,6 +36,16 @@ real; this is the only chart left unbuilt).
   business-wide chart; a day with zero sales because it's a slow day is
   real data, not a gap. Confirm the distinction with Edwinfred if
   genuinely ambiguous rather than silently picking one reading.
+  **Resolved (2026-08-12):** confirmed with Edwinfred there is no
+  business-wide "closed" flag anywhere in the schema — `isDayClosedFor`
+  (ticket 28) is per-person/per-location and doesn't apply here, and
+  `Sale`/`Takings` tables have no separate open/closed marker. The gap
+  heuristic: a day is a gap (null) when it has **zero `Sale` rows AND
+  zero `Takings` rows across both locations**; any day with at least one
+  recorded row (even one that nets to zero) is real trading data, shown
+  as a value, not a gap. This is a known limitation — a freak
+  all-zero-but-traded day would render as a gap — accepted as the best
+  available signal given the current data model.
 
 ## Scope
 
