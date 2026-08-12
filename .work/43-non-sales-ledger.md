@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** 38 (needs the Ledger shell to host this tab in — already
 built and merged)
-**Status:** planned
+**Status:** in-progress (claimed by build session, 2026-08-12 13:08)
 
 ## Goal
 
