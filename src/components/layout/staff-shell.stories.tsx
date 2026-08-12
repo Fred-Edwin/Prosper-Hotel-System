@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { StaffShellHome, StaffHome } from "./staff-shell";
+import { HelpCircle } from "lucide-react";
 
 /**
  * The staff shell — Launcher.
@@ -94,6 +95,34 @@ export const InsideATask: Story = {
       active="sell"
       title="New sale"
       onHome={() => {}}
+    >
+      <div className="p-3 text-[13px] text-muted-foreground">
+        Task content lives in its own module.
+      </div>
+    </StaffShellHome>
+  ),
+};
+
+/** The task header's actions slot, top-right — populated here with a
+ * placeholder to confirm it doesn't crowd the back-chevron/title. Real
+ * content (the HelpPanel trigger) is wired per-screen in a later ticket. */
+export const InsideATaskWithActions: Story = {
+  name: "Task — with header action",
+  render: () => (
+    <StaffShellHome
+      staffName="Sarah"
+      locationName="restaurant"
+      active="sell"
+      title="New sale"
+      onHome={() => {}}
+      actions={
+        <button
+          className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+          aria-label="Help"
+        >
+          <HelpCircle className="size-4.5" />
+        </button>
+      }
     >
       <div className="p-3 text-[13px] text-muted-foreground">
         Task content lives in its own module.

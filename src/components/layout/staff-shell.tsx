@@ -45,6 +45,7 @@ export function StaffShellHome({
   active,
   title,
   onHome,
+  actions,
   children,
 }: {
   /** The signed-in staff member's display name. */
@@ -54,6 +55,8 @@ export function StaffShellHome({
   active: string | null;
   title: string;
   onHome?: () => void;
+  /** Page-level action for the current task, top-right of the task header. */
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const inTask = active !== null;
@@ -79,6 +82,9 @@ export function StaffShellHome({
                 {locationName} · {staffName}
               </div>
             </div>
+            {actions && (
+              <div className="flex shrink-0 items-center gap-2">{actions}</div>
+            )}
           </>
         ) : (
           <>

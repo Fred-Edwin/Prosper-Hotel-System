@@ -2,7 +2,7 @@
 
 **Type:** plumbing (test-after)
 **Blocked by:** None
-**Status:** in-progress
+**Status:** done
 
 ## Goal
 
@@ -46,15 +46,15 @@ already can.
 
 ## Acceptance criteria
 
-- [ ] `StaffShellHome` accepts an optional right-side content prop and
+- [x] `StaffShellHome` accepts an optional right-side content prop and
       renders it top-right of the task header when provided.
-- [ ] When not provided (every existing call site, until ticket 52
+- [x] When not provided (every existing call site, until ticket 52
       lands), the header renders exactly as it does today — no visual
       regression.
-- [ ] The slot is reachable from `staff-page-client.tsx`'s per-task
+- [x] The slot is reachable from `staff-page-client.tsx`'s per-task
       rendering, so a future ticket can pass different content per
       active task.
-- [ ] Storybook story for `StaffShellHome` (or the existing
+- [x] Storybook story for `StaffShellHome` (or the existing
       `Shells/StaffShell` story) covers the header both with and without
       the new slot populated.
 
