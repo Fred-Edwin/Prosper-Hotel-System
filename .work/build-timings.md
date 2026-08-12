@@ -92,3 +92,12 @@
 - ui-polish done: 21:41  (ui-polish: 1m — Storybook story; docs/screens.md unchanged, table only points at the stories file)
 - self-verify done: 21:43  (verify: 2m — lint/tsc pass, diff read confirms additive-only change, existing call site unaffected since actions is unset everywhere; pure reuse/wiring tier, dev server already running)
 - merged: 21:44  (merge: 1m)
+
+## Ticket 52 — Wire HelpPanel into every staff task screen
+- claimed: 21:40
+- context read done: 21:42  (context: 2m — HelpPanel, help-content.ts, staff-shell.tsx, staff-page-client.tsx already read this session)
+- plan proposed: 21:43  (measured all 9 bottom-bar heights first: consistent h-12 button + py-3/p-3 wrapper + border = 73px across New sale, Wastage, Handover, Takings, Credit sale, Receiving, Stock count, Transfer stock, To kitchen, Production)
+- plan approved: 21:43  (auto mode, no genuine ambiguity)
+- implementation done: 21:43  (implement: <1m — one lookup table + actions prop wiring in staff-page-client.tsx)
+- self-verify done: 22:03  (verify: 20m — lint/tsc clean; Playwright pass across Store Manager's 10 links + Attendant's Takings/Credit sale confirmed correct trigger, correct topic content, staff-stock vs stock distinction holds; found New sale's "Complete sale" bar doesn't reliably sit flush with viewport bottom due to a pre-existing `min-h-full` layout quirk in till.tsx unrelated to this ticket — flagged to user, user verified in browser and confirmed not an issue, proceeded with the same 73px offset used elsewhere)
+- merged: 22:04  (merge: 1m)
