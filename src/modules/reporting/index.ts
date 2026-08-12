@@ -15,6 +15,8 @@ export {
   getNonSalesLedgerReport,
   getCashLedger,
   getActivity,
+  getDashboardStockMovements,
+  getDashboardStoreMovements,
 } from "./logic";
 export type {
   TransferCostLine,
@@ -44,6 +46,11 @@ export type {
   ActivityKind,
   ActivityEntry,
   GetActivityResult,
+  DashboardStockMovementReason,
+  DashboardStockMovementRow,
+  GetDashboardStockMovementsResult,
+  DashboardStoreMovementRow,
+  GetDashboardStoreMovementsResult,
 } from "./logic";
 export {
   dashboardProfitRoute,
@@ -55,4 +62,6 @@ export {
   nonSalesLedgerRoute,
   cashLedgerRoute,
   activityRoute,
+  dashboardStockMovementsRoute,
+  dashboardStoreMovementsRoute,
 } from "./routes";

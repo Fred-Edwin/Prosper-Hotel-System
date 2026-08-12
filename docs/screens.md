@@ -74,6 +74,8 @@ new destinations get added here as tickets that build them land, per
 | Story | Path | Status |
 |---|---|---|
 | Modules/Reporting/DashboardProfit | `src/modules/reporting/ui/dashboard-profit.stories.tsx` | approved |
+| Modules/Reporting/DashboardStockMovements | `src/modules/reporting/ui/dashboard-stock-movements.stories.tsx` | approved |
+| Modules/Reporting/DashboardStoreMovements | `src/modules/reporting/ui/dashboard-store-movements.stories.tsx` | approved |
 | Modules/Reporting/LedgerShell | `src/modules/reporting/ui/ledger-shell.stories.tsx` | approved |
 | Modules/Reporting/ProductLedger | `src/modules/reporting/ui/product-ledger.stories.tsx` | approved |
 | Modules/Reporting/CashLedger | `src/modules/reporting/ui/cash-ledger.stories.tsx` | approved |
