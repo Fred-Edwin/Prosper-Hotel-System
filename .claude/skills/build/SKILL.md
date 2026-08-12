@@ -17,6 +17,7 @@ or the ticket itself.
 
 **Track every step below in TodoWrite as you go** — add the steps up
 front, check each off the moment it's done. Don't defer this to the end.
+**Kindly DO NOT FORGET to use a TodoWrite checklist** — it is how the use get feedback on your progress without having to ask for it and waste time. If you don't use a checklist, the user will have to ask you for updates and you will be blocked until you respond.
 
 ## Claiming a ticket
 
