@@ -3,7 +3,7 @@
 **Type:** plumbing (test-after)
 **Blocked by:** 51 (staff shell header needs an actions slot to wire
 this into)
-**Status:** in-progress
+**Status:** done
 
 ## Goal
 
