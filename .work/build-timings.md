@@ -40,3 +40,13 @@
 - implementation done: 15:17  (implement: 17m)
 - ui-polish done: 15:30  (ui-polish: 13m, includes Storybook stories + docs/screens.md)
 - self-verify done: 15:30  (verify: folded into ui-polish — full suite/lint/typecheck/build/Storybook all passed)
+
+## Ticket 46 — Profit by day, week, month, and per location
+- claimed: 16:34
+- context read done: 16:45  (context: 11m)
+- plan proposed: 16:47
+- plan approved: 16:48  (waiting on user: 1m — location-split composition question)
+- tests written: 16:58  (tests: 10m)
+- implementation done: 17:10  (implement: 12m)
+- ui-polish done: 17:18  (ui-polish: 8m)
+- self-verify done: 17:24  (verify: 6m)

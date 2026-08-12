@@ -538,17 +538,20 @@ export type RunningCostsResult =
   | { ok: false; reason: "forbidden" };
 
 // Ticket 25 — formulas.md §7's running costs, owner-only same as every
-// other dashboard-feeding read here.
+// other dashboard-feeding read here. `locationId` is optional — omitted,
+// this is the business-wide figure; passed, it scopes to that location's
+// own Expense rows (ticket 46, for the Profit panel's per-location split).
 export async function getRunningCosts(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   periodStart: Date,
   periodEnd: Date,
+  locationId?: string,
 ): Promise<RunningCostsResult> {
   if (!requireOwner(requester)) {
     return { ok: false, reason: "forbidden" };
   }
-  const totalMinor = await sumRunningCostsMinorInPeriod(db, periodStart, periodEnd);
+  const totalMinor = await sumRunningCostsMinorInPeriod(db, periodStart, periodEnd, locationId);
   return { ok: true, totalMinor };
 }
 

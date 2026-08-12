@@ -448,6 +448,15 @@ export async function computeCountCorrection(
   };
 }
 
+export type DashboardProfitLocationBreakdown = {
+  revenueMinor: number;
+  costOfGoodsMinor: number;
+  grossProfitMinor: number;
+  runningCostsMinor: number;
+  netProfitMinor: number;
+  provisional: boolean;
+};
+
 export type DashboardProfitResult =
   | {
       ok: true;
@@ -465,6 +474,10 @@ export type DashboardProfitResult =
       canteenCostRate: number | null;
       lastCanteenCount: Date | null;
       correction: CountCorrectionResult;
+      byLocation: {
+        restaurant: DashboardProfitLocationBreakdown;
+        canteen: DashboardProfitLocationBreakdown;
+      };
     }
   | { ok: false; reason: "forbidden" | "not_found" };
 
@@ -487,20 +500,32 @@ export async function getDashboardProfit(
   const { restaurant, canteen } = await locations(db);
   if (!restaurant || !canteen) return { ok: false, reason: "not_found" };
 
-  const [restaurantRevenue, canteenTakings, restaurantCogs, canteenCogs, runningCosts, correction] =
-    await Promise.all([
-      getSalesRevenueAtLocation(db, requester, restaurant.id, input.dayStart, input.dayEnd),
-      getTakingsAtLocation(db, requester, canteen.id, input.dayStart, input.dayEnd),
-      computeRestaurantCostOfGoods(db, requester, input),
-      computeCanteenCostOfGoods(db, requester, input),
-      getRunningCosts(db, requester, input.dayStart, input.dayEnd),
-      computeCountCorrection(db, requester),
-    ]);
+  const [
+    restaurantRevenue,
+    canteenTakings,
+    restaurantCogs,
+    canteenCogs,
+    runningCosts,
+    restaurantRunningCosts,
+    canteenRunningCosts,
+    correction,
+  ] = await Promise.all([
+    getSalesRevenueAtLocation(db, requester, restaurant.id, input.dayStart, input.dayEnd),
+    getTakingsAtLocation(db, requester, canteen.id, input.dayStart, input.dayEnd),
+    computeRestaurantCostOfGoods(db, requester, input),
+    computeCanteenCostOfGoods(db, requester, input),
+    getRunningCosts(db, requester, input.dayStart, input.dayEnd),
+    getRunningCosts(db, requester, input.dayStart, input.dayEnd, restaurant.id),
+    getRunningCosts(db, requester, input.dayStart, input.dayEnd, canteen.id),
+    computeCountCorrection(db, requester),
+  ]);
   if (!restaurantRevenue.ok) return restaurantRevenue;
   if (!canteenTakings.ok) return canteenTakings;
   if (!restaurantCogs.ok) return restaurantCogs;
   if (!canteenCogs.ok) return canteenCogs;
   if (!runningCosts.ok) return runningCosts;
+  if (!restaurantRunningCosts.ok) return restaurantRunningCosts;
+  if (!canteenRunningCosts.ok) return canteenRunningCosts;
 
   const canteenRevenueMinor = canteenTakings.cashMinor + canteenTakings.mpesaMinor;
   const revenue = {
@@ -517,6 +542,10 @@ export async function getDashboardProfit(
   const grossProfitMinor = revenue.total - costOfGoods.total;
   const netProfitMinor = grossProfitMinor - runningCosts.totalMinor;
 
+  const canteenCostOfGoodsMinor = canteenCogs.exactMinor + canteenCogs.estimatedMinor;
+  const restaurantGrossProfitMinor = revenue.restaurant - costOfGoods.restaurant;
+  const canteenGrossProfitMinor = revenue.canteen - canteenCostOfGoodsMinor;
+
   return {
     ok: true,
     period: { dayStart: input.dayStart, dayEnd: input.dayEnd },
@@ -528,6 +557,27 @@ export async function getDashboardProfit(
     canteenCostRate: canteenCogs.canteenCostRate,
     lastCanteenCount: canteenCogs.lastCanteenCount,
     correction,
+    byLocation: {
+      restaurant: {
+        revenueMinor: revenue.restaurant,
+        costOfGoodsMinor: costOfGoods.restaurant,
+        grossProfitMinor: restaurantGrossProfitMinor,
+        runningCostsMinor: restaurantRunningCosts.totalMinor,
+        netProfitMinor: restaurantGrossProfitMinor - restaurantRunningCosts.totalMinor,
+        provisional: false,
+      },
+      canteen: {
+        revenueMinor: revenue.canteen,
+        costOfGoodsMinor: canteenCostOfGoodsMinor,
+        grossProfitMinor: canteenGrossProfitMinor,
+        runningCostsMinor: canteenRunningCosts.totalMinor,
+        netProfitMinor: canteenGrossProfitMinor - canteenRunningCosts.totalMinor,
+        // The canteen's own-goods cost is always an estimate between counts
+        // (formulas.md §6) — provisional whenever there's any estimated
+        // portion, same framing the combined "partly provisional" badge uses.
+        provisional: canteenCogs.estimatedMinor !== 0 || canteenCogs.canteenCostRate == null,
+      },
+    },
   };
 }
 
