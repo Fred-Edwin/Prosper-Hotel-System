@@ -31,6 +31,7 @@ import {
 import { DashboardDrawings } from "@/modules/cash/ui/dashboard-drawings";
 import { DashboardOwedToYou } from "@/modules/sales/ui/dashboard-owed-to-you";
 import { DashboardProfit } from "@/modules/reporting/ui/dashboard-profit";
+import { DashboardRevenueProfitChart } from "@/modules/reporting/ui/dashboard-revenue-profit-chart";
 
 function Card({
   title,
@@ -75,7 +76,7 @@ export function DashboardBody() {
 
       <div className="mb-5">
         <Card title="Revenue and profit">
-          <SectionNotBuilt section="Revenue and profit" />
+          <DashboardRevenueProfitChart />
         </Card>
       </div>
 

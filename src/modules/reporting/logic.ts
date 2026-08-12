@@ -581,6 +581,96 @@ export async function getDashboardProfit(
   };
 }
 
+export type RevenueProfitTrendPoint = {
+  date: string;
+  revenue: number | null;
+  netProfit: number | null;
+};
+
+export type RevenueProfitTrendResult =
+  | { ok: true; points: RevenueProfitTrendPoint[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// Local-time day boundary, matching the rest of the dashboard's day/week/
+// month convention (routes.ts's todayBounds, dashboard-profit.tsx's
+// periodBounds) rather than UTC — a sale at 11pm local time belongs to
+// that local day, not the next UTC day.
+function dayKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Ticket 47 — the Dashboard's Revenue and profit chart. One point per day
+// over a rolling window ending `windowEnd`, combining both locations (the
+// chart has no per-location toggle — that's the separate "By location"
+// card). Reuses getDashboardProfit's own per-day assembly rather than
+// duplicating it, since the trend is nothing more than that same
+// computation repeated across the window.
+//
+// Gap detection: there is no business-wide "day open/closed" flag
+// anywhere in the schema — isDayClosedFor (ticket 28) is per-person,
+// per-location, and doesn't describe whether the business traded at all.
+// A day is a gap (null) only when it has zero Sale rows AND zero Takings
+// rows across both locations; a day with at least one recorded row, even
+// one that nets to zero, is real trading data (2026-08-12, confirmed with
+// Edwinfred — see this ticket's file for the full note).
+export async function getRevenueProfitTrend(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { windowEnd: Date; days: number },
+): Promise<RevenueProfitTrendResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const { restaurant, canteen } = await locations(db);
+  if (!restaurant || !canteen) return { ok: false, reason: "not_found" };
+
+  const windowEndOfDay = new Date(input.windowEnd);
+  windowEndOfDay.setHours(23, 59, 59, 999);
+  const windowStart = new Date(windowEndOfDay);
+  windowStart.setDate(windowStart.getDate() - (input.days - 1));
+  windowStart.setHours(0, 0, 0, 0);
+
+  const [sales, takings] = await Promise.all([
+    listSalesInPeriod(db, windowStart, windowEndOfDay),
+    listTakingsInPeriod(db, windowStart, windowEndOfDay),
+  ]);
+  const tradedDays = new Set<string>([
+    ...sales.map((s) => dayKey(s.occurredAt)),
+    ...takings.map((t) => dayKey(t.occurredAt)),
+  ]);
+
+  const dayBounds: { date: string; dayStart: Date; dayEnd: Date }[] = [];
+  for (let i = 0; i < input.days; i++) {
+    const dayStart = new Date(windowStart);
+    dayStart.setDate(dayStart.getDate() + i);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setHours(23, 59, 59, 999);
+    dayBounds.push({ date: dayKey(dayStart), dayStart, dayEnd });
+  }
+
+  const results = await Promise.all(
+    dayBounds.map(({ dayStart, dayEnd }) => getDashboardProfit(db, requester, { dayStart, dayEnd })),
+  );
+
+  const points: RevenueProfitTrendPoint[] = [];
+  for (let i = 0; i < dayBounds.length; i++) {
+    const { date } = dayBounds[i];
+    const day = results[i];
+    if (!day.ok) return day;
+
+    const traded = tradedDays.has(date);
+    points.push({
+      date,
+      revenue: traded ? day.revenue.total : null,
+      netProfit: traded ? day.netProfitMinor : null,
+    });
+  }
+
+  return { ok: true, points };
+}
+
 export type LedgerSummaryResult =
   | {
       ok: true;

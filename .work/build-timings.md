@@ -51,3 +51,14 @@
 - ui-polish done: 17:18  (ui-polish: 8m)
 - self-verify done: 17:24  (verify: 6m)
 - merged: 17:30  (merge: 6m)
+
+## Ticket 47 — Dashboard revenue and profit chart
+- claimed: 16:50
+- context read done: 16:56  (context: 6m)
+- plan proposed: 17:00
+- plan approved: 17:00  (waiting on user: 0m — gap-detection ambiguity resolved via 2 questions during context read)
+- tests written: 16:56  (tests: written same block as context read, per test-first for the gap-detection branching)
+- implementation done: 17:02  (implement: 6m)
+- ui-polish done: 17:04  (ui-polish: 2m — Storybook story)
+- self-verify done: 17:12  (verify: 8m, includes Storybook screenshot pass, a real hover-opacity color bug found and fixed, dev server check)
+- merged: 17:15  (merge: 3m)
