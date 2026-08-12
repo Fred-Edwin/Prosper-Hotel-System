@@ -18,6 +18,7 @@ export {
   recordDaysWorked,
   updateCustomer,
   updateStaffMember,
+  getDaysWorkedForActivity,
 } from "./logic";
 export type { LoginResult, AuthenticatedStaff, PayForStaff } from "./logic";
 export {

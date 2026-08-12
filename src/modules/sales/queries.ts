@@ -31,6 +31,10 @@ export async function createSaleRecord(
     deliveryFeeMinor?: number | null;
     lines: { productId: string; quantity: number; priceMinor: number }[];
     paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
+    occurredAt?: Date;
+    effectiveAt?: Date;
+    isCorrection?: boolean;
+    correctionReason?: string;
   },
 ): Promise<Sale> {
   return db.sale.create({
@@ -49,8 +53,27 @@ export async function createSaleRecord(
           customerId: p.customerId ?? null,
         })),
       },
+      ...(data.occurredAt ? { occurredAt: data.occurredAt } : {}),
+      effectiveAt: data.effectiveAt ?? data.occurredAt ?? new Date(),
+      isCorrection: data.isCorrection ?? false,
+      correctionReason: data.correctionReason ?? null,
     },
     include: { lines: true, paymentLines: true },
+  });
+}
+
+// Ticket 45 — Activity's sale/void/correction rows: every sale across
+// both locations in a period, including voided (Activity shows voids as
+// their own kind, so they must not be filtered out here).
+export async function listSalesInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Sale[]> {
+  return db.sale.findMany({
+    where: { occurredAt: { gt: periodStart, lte: periodEnd } },
+    include: { lines: true, paymentLines: true },
+    orderBy: { occurredAt: "desc" },
   });
 }
 

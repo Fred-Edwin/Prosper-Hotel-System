@@ -34,6 +34,8 @@ export {
   resolveProductCostBasis,
   getLowStockItems,
   getIngredientStockValuesAtLocation,
+  getMovementsForActivity,
+  getStockCountsForActivity,
 } from "./logic";
 export type {
   ProductCostBasis,
@@ -73,6 +75,8 @@ export type {
   LowStockAccessResult,
   IngredientStockValue,
   IngredientStockValuesResult,
+  ActivityMovementsResult,
+  ActivityStockCountsResult,
 } from "./logic";
 export {
   stockAtLocationRoute,
@@ -107,3 +111,4 @@ export type {
   DerivedSaleLine,
   LowStockItem,
 } from "./schema";
+export type { NonSalesMovementLineWithLocation } from "./queries";

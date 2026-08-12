@@ -11,6 +11,7 @@ export {
   getSalesRevenueAtLocation,
   getTotalCustomerBalance,
   recordRepayment,
+  recordSaleCorrection,
 } from "./logic";
 export type {
   RecordSaleResult,
@@ -22,7 +23,9 @@ export type {
   GetCustomerCreditHistoryResult,
   CustomerCreditHistoryEntry,
   RecordRepaymentResult,
+  RecordSaleCorrectionResult,
 } from "./logic";
+export { listSalesInPeriod } from "./queries";
 export {
   recordCounterSaleRoute,
   todaysSalesRoute,
@@ -31,5 +34,6 @@ export {
   customerBalanceRoute,
   customerCreditHistoryRoute,
   recordRepaymentRoute,
+  recordSaleCorrectionRoute,
 } from "./routes";
 export type { Sale, SaleLine, PaymentLine, PaymentMethod, SaleFulfilment, Repayment } from "./schema";

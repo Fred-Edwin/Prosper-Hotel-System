@@ -14,6 +14,7 @@ import {
   listCustomers as listCustomersQuery,
   listDaysWorked,
   listDaysWorkedInPeriod,
+  listDaysWorkedInPeriodAllStaff,
   listUnpaidDaysWorkedInPeriod,
   markDaysWorkedPaid as markDaysWorkedPaidQuery,
   setStaffMemberActive,
@@ -340,6 +341,23 @@ export async function listDaysWorkedForStaff(
   if (!staffMember) return { ok: false, reason: "not_found" };
 
   return { ok: true, value: await listDaysWorked(db, staffMemberId) };
+}
+
+type DaysWorkedForActivityResult =
+  | { ok: true; value: DaysWorked[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 45 — Activity's days-worked rows, business-wide (every staff
+// member) in a period. Owner-only, same gate as listDaysWorkedForStaff.
+export async function getDaysWorkedForActivity(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<DaysWorkedForActivityResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  return { ok: true, value: await listDaysWorkedInPeriodAllStaff(db, periodStart, periodEnd) };
 }
 
 export type PayForStaff = {

@@ -10,6 +10,7 @@ import {
   listTodaysSalesForStaff,
   recordCounterSale,
   recordRepayment,
+  recordSaleCorrection,
   voidSale,
 } from "../logic";
 import { testDb } from "@/shared/test-db";
@@ -923,5 +924,108 @@ describe("getCustomerCreditHistory", () => {
     const result = await getCustomerCreditHistory(testDb, staffAt("cashier", restaurantId), customer.id);
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("recordSaleCorrection", () => {
+  function threeDaysAgo(): Date {
+    const d = new Date();
+    d.setDate(d.getDate() - 3);
+    d.setHours(12, 0, 0, 0);
+    return d;
+  }
+
+  test("records a backdated correction: today's occurredAt, the given effectiveAt, reason, and stock decremented as an ordinary sale", async () => {
+    const effectiveDate = threeDaysAgo();
+    const before = new Date();
+
+    const result = await recordSaleCorrection(testDb, staffAt("owner", restaurantId), {
+      staffMemberId: "staff-1",
+      locationId: restaurantId,
+      effectiveDate,
+      reason: "M-Pesa message arrived late",
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "cash", amountMinor: 160 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sale.isCorrection).toBe(true);
+    expect(result.sale.correctionReason).toBe("M-Pesa message arrived late");
+    expect(result.sale.effectiveAt.getTime()).toBe(effectiveDate.getTime());
+    expect(result.sale.occurredAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(result.sale.voided).toBe(false);
+
+    const stock = await getCurrentStockAtLocation(testDb, staffAt("owner", restaurantId), restaurantId);
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual([
+      expect.objectContaining({ productId: sodaId, quantityOnHand: -2 }),
+    ]);
+  });
+
+  test("the corrected day's original sale is unchanged", async () => {
+    const original = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(original.ok).toBe(true);
+    if (!original.ok) return;
+    const originalOccurredAt = original.sale.occurredAt.getTime();
+    const originalEffectiveAt = original.sale.effectiveAt.getTime();
+
+    await recordSaleCorrection(testDb, staffAt("owner", restaurantId), {
+      staffMemberId: "staff-1",
+      locationId: restaurantId,
+      effectiveDate: threeDaysAgo(),
+      reason: "omitted sale found",
+      lines: [{ productId: sodaId, quantity: 5 }],
+      paymentLines: [{ method: "cash", amountMinor: 400 }],
+    });
+
+    const untouched = await testDb.sale.findUnique({ where: { id: original.sale.id } });
+    expect(untouched?.occurredAt.getTime()).toBe(originalOccurredAt);
+    expect(untouched?.effectiveAt.getTime()).toBe(originalEffectiveAt);
+    expect(untouched?.totalMinor).toBe(80);
+    expect(untouched?.isCorrection).toBe(false);
+  });
+
+  test("a required reason is enforced", async () => {
+    const result = await recordSaleCorrection(testDb, staffAt("owner", restaurantId), {
+      staffMemberId: "staff-1",
+      locationId: restaurantId,
+      effectiveDate: threeDaysAgo(),
+      reason: "   ",
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "reason_required" });
+  });
+
+  test("a non-owner cannot record a correction", async () => {
+    const result = await recordSaleCorrection(testDb, staffAt("cashier", restaurantId), {
+      staffMemberId: "staff-1",
+      locationId: restaurantId,
+      effectiveDate: threeDaysAgo(),
+      reason: "omitted sale found",
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("payment lines that don't sum to the total are rejected, same as an ordinary sale", async () => {
+    const result = await recordSaleCorrection(testDb, staffAt("owner", restaurantId), {
+      staffMemberId: "staff-1",
+      locationId: restaurantId,
+      effectiveDate: threeDaysAgo(),
+      reason: "omitted sale found",
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "payment_mismatch" });
   });
 });

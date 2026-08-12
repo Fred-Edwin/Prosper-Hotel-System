@@ -237,11 +237,13 @@ export async function recordTakings(
     ? await updateTakingsAmounts(db, existing.id, {
         cashMinor: input.cashMinor,
         mpesaMinor: input.mpesaMinor,
+        staffMemberId: requester.staff.id,
       })
     : await createTakingsRecord(db, {
         locationId,
         cashMinor: input.cashMinor,
         mpesaMinor: input.mpesaMinor,
+        staffMemberId: requester.staff.id,
       });
 
   return { ok: true, takings };

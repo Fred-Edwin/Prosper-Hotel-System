@@ -66,6 +66,7 @@ model StaffMember {
   daysWorked          DaysWorked[]         @relation("DaysWorkedByStaff")
   daysWorkedRecorded  DaysWorked[]         @relation("DaysWorkedRecordedBy")
   repayments          Repayment[]
+  takings             Takings[]
 
   @@map("staff_members")
 }
@@ -286,6 +287,15 @@ model Sale {
   lines            SaleLine[]
   paymentLines     PaymentLine[]
   occurredAt       DateTime       @default(now())
+  // Ticket 45 — architecture.md's "Changing a closed day": every entry
+  // carries an effective date and an entered date (occurredAt), normally
+  // identical. Defaults to occurredAt for every ordinarily-recorded sale;
+  // set explicitly, in the past, only by recordSaleCorrection.
+  effectiveAt      DateTime       @default(now())
+  // Set only by recordSaleCorrection — marks this Sale as a backdated
+  // correction rather than an ordinary sale, so Activity can flag it.
+  isCorrection     Boolean        @default(false)
+  correctionReason String?
   // Reversal, not deletion — docs/architecture.md's data-lifecycle rule.
   // Unset by anything in this ticket; the void action itself is ticket 10.
   voided           Boolean        @default(false)
@@ -516,14 +526,20 @@ model Handover {
 // expected figure to compare against (there's nothing recorded per-sale
 // to expect from). One record per location per day, same-day editable.
 model Takings {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-  cashMinor  Int
-  mpesaMinor Int
-  occurredAt DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String      @id @default(cuid())
+  locationId    String
+  location      Location    @relation(fields: [locationId], references: [id])
+  cashMinor     Int
+  mpesaMinor    Int
+  // Ticket 45 — who recorded it (or last edited it, since a same-day
+  // re-entry overwrites the amounts in place already). Nullable so
+  // existing rows, recorded before this column existed, don't need a
+  // fabricated attribution.
+  staffMemberId String?
+  staffMember   StaffMember? @relation(fields: [staffMemberId], references: [id])
+  occurredAt    DateTime    @default(now())
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   @@map("takings")
 }
