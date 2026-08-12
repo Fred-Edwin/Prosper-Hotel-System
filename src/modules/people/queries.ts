@@ -170,6 +170,20 @@ export async function listDaysWorked(
   });
 }
 
+// Ticket 45 — Activity's days-worked rows, every staff member, in a
+// period. Unlike listDaysWorkedInPeriod (one staff member's pay history)
+// this is business-wide, matching the other Activity composition reads.
+export async function listDaysWorkedInPeriodAllStaff(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<DaysWorked[]> {
+  return db.daysWorked.findMany({
+    where: { date: { gte: periodStart, lt: periodEnd } },
+    orderBy: { date: "asc" },
+  });
+}
+
 export async function listDaysWorkedInPeriod(
   db: PrismaClient,
   staffMemberId: string,

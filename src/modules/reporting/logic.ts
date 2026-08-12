@@ -3,7 +3,13 @@
 // (profit). Reads through stock/sales/cash/catalogue/people's
 // interfaces only, per docs/architecture.md's "reporting owns no data."
 import type { PrismaClient } from "@/generated/prisma/client";
-import { type AuthenticatedStaff, findLocationByCode, findStaffMembersByIds, listLocations } from "@/modules/people";
+import {
+  type AuthenticatedStaff,
+  findLocationByCode,
+  findStaffMembersByIds,
+  listLocations,
+  getDaysWorkedForActivity,
+} from "@/modules/people";
 import { getCurrentRecipe, findProductsByIds, findIngredientsByIds } from "@/modules/catalogue";
 import {
   getIngredientStockValueAtLocation,
@@ -20,14 +26,17 @@ import {
   getPreviousStockCount,
   getNonSalesConsumptionValue,
   getNonSalesLedger,
+  getMovementsForActivity,
+  getStockCountsForActivity,
   type DerivedSalesDetail,
   type NonSalesCategory,
 } from "@/modules/stock";
-import { getSalesRevenueAtLocation } from "@/modules/sales";
+import { getSalesRevenueAtLocation, listSalesInPeriod } from "@/modules/sales";
 import {
   getTakingsAtLocation,
   getRunningCosts,
   getCashLedgerTransactions,
+  listTakingsInPeriod,
   type ExpenseCategory,
 } from "@/modules/cash";
 
@@ -1349,4 +1358,341 @@ export async function getCashLedger(
   }
 
   return { ok: true, days: result };
+}
+
+// Ticket 45 — the Activity trail's row kinds. Matches the design
+// reference's ActivityKind minus recipe/person (out of this ticket's
+// scope) plus the split this ticket's Scope calls for explicitly:
+// takings and days_worked get their own kind rather than folding into
+// "sale"/"movement", since the reference's fixture predates this
+// codebase's actual domain model.
+export type ActivityKind =
+  | "sale"
+  | "void"
+  | "correction"
+  | "movement"
+  | "handover"
+  | "takings"
+  | "expense"
+  | "repayment"
+  | "days_worked";
+
+export type ActivityEntry = {
+  id: string;
+  enteredAt: Date;
+  effectiveOn: Date;
+  kind: ActivityKind;
+  who: string;
+  whoId: string | null;
+  what: string;
+  locationName: string | null;
+  amountMinor: number | null;
+  reason: string | null;
+};
+
+export type GetActivityResult =
+  | { ok: true; rows: ActivityEntry[]; total: number }
+  | { ok: false; reason: "forbidden" };
+
+const ACTIVITY_DEFAULT_PERIOD_DAYS = 90;
+
+// Ticket 45 — the owner's audit trail: one row per action across sales
+// (including voids and corrections), stock (wastage/consumption/
+// complimentary/counts), cash (handovers, takings, expenses,
+// repayments), people (days worked). Reads through each module's
+// index.ts only, per docs/architecture.md's "reporting owns no data."
+// Owner-only, same gate as every other business-wide read here.
+export async function getActivity(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    periodStart?: Date;
+    periodEnd?: Date;
+    personId?: string;
+    kind?: ActivityKind;
+    search?: string;
+    page: number;
+    pageSize: number;
+  },
+): Promise<GetActivityResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const periodEnd = input.periodEnd ?? new Date();
+  const periodStart =
+    input.periodStart ??
+    new Date(periodEnd.getTime() - ACTIVITY_DEFAULT_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+
+  const [
+    sales,
+    movements,
+    stockCounts,
+    cashTransactions,
+    takings,
+    daysWorked,
+    locations,
+  ] = await Promise.all([
+    listSalesInPeriod(db, periodStart, periodEnd),
+    getMovementsForActivity(db, requester, periodStart, periodEnd),
+    getStockCountsForActivity(db, requester, periodStart, periodEnd),
+    getCashLedgerTransactions(db, requester, periodStart, periodEnd),
+    listTakingsInPeriod(db, periodStart, periodEnd),
+    getDaysWorkedForActivity(db, requester, periodStart, periodEnd),
+    listLocations(db),
+  ]);
+  if (!movements.ok) return movements;
+  if (!stockCounts.ok) return stockCounts;
+  if (!cashTransactions.ok) return cashTransactions;
+  if (!daysWorked.ok) return daysWorked;
+
+  const locationNameById = new Map(locations.map((l) => [l.id, l.name]));
+
+  const productIds = new Set<string>();
+  const ingredientIds = new Set<string>();
+  for (const sale of sales) {
+    for (const line of sale.lines) productIds.add(line.productId);
+  }
+  for (const m of movements.lines) {
+    if (m.itemType === "product") productIds.add(m.itemId);
+    else ingredientIds.add(m.itemId);
+  }
+  for (const count of stockCounts.counts) {
+    for (const line of count.lines) {
+      if (line.itemType === "product") productIds.add(line.itemId);
+      else ingredientIds.add(line.itemId);
+    }
+  }
+
+  const [products, ingredients] = await Promise.all([
+    findProductsByIds(db, Array.from(productIds)),
+    findIngredientsByIds(db, Array.from(ingredientIds)),
+  ]);
+  const productNameById = new Map(products.map((p) => [p.id, p.name]));
+  const ingredientNameById = new Map(ingredients.map((i) => [i.id, i.name]));
+
+  const staffIds = new Set<string>([
+    ...sales.map((s) => s.staffMemberId),
+    ...sales.filter((s) => s.voidedBy).map((s) => s.voidedBy!),
+    ...movements.lines.map((m) => m.staffMemberId),
+    ...stockCounts.counts.map((c) => c.staffMemberId),
+    ...cashTransactions.handovers.map((h) => h.staffMemberId),
+    ...cashTransactions.expenses.map((e) => e.staffMemberId),
+    ...cashTransactions.repayments.map((r) => r.recordedBy),
+    ...takings.filter((t) => t.staffMemberId).map((t) => t.staffMemberId!),
+    ...daysWorked.value.map((d) => d.staffMemberId),
+  ]);
+  const staff = await findStaffMembersByIds(db, Array.from(staffIds));
+  const staffNameById = new Map(staff.map((s) => [s.id, s.name]));
+  const nameFor = (id: string | null) => (id ? (staffNameById.get(id) ?? "Unknown") : "—");
+
+  const rows: ActivityEntry[] = [];
+
+  for (const sale of sales) {
+    const itemSummary = sale.lines
+      .map((l) => `${l.quantity} × ${productNameById.get(l.productId) ?? "item"}`)
+      .join(", ");
+    const locationName = locationNameById.get(sale.locationId) ?? null;
+
+    if (sale.isCorrection) {
+      rows.push({
+        id: `sale-correction-${sale.id}`,
+        enteredAt: sale.occurredAt,
+        effectiveOn: sale.effectiveAt,
+        kind: "correction",
+        who: nameFor(sale.staffMemberId),
+        whoId: sale.staffMemberId,
+        what: `Sale corrected — ${itemSummary}`,
+        locationName,
+        amountMinor: sale.totalMinor,
+        reason: sale.correctionReason,
+      });
+      continue;
+    }
+
+    rows.push({
+      id: `sale-${sale.id}`,
+      enteredAt: sale.occurredAt,
+      effectiveOn: sale.effectiveAt,
+      kind: "sale",
+      who: nameFor(sale.staffMemberId),
+      whoId: sale.staffMemberId,
+      what: `Sale — ${itemSummary}`,
+      locationName,
+      amountMinor: sale.totalMinor,
+      reason: null,
+    });
+
+    if (sale.voided) {
+      rows.push({
+        id: `sale-void-${sale.id}`,
+        enteredAt: sale.voidedAt ?? sale.occurredAt,
+        effectiveOn: sale.voidedAt ?? sale.occurredAt,
+        kind: "void",
+        who: nameFor(sale.voidedBy),
+        whoId: sale.voidedBy,
+        what: `Sale voided — ${itemSummary}`,
+        locationName,
+        amountMinor: sale.totalMinor,
+        reason: null,
+      });
+    }
+  }
+
+  for (const m of movements.lines) {
+    const itemName =
+      m.itemType === "product"
+        ? (productNameById.get(m.itemId) ?? "Unknown item")
+        : (ingredientNameById.get(m.itemId) ?? "Unknown item");
+    const reasonLabel = m.reason === "wasted" ? "wasted" : m.reason === "consumed" ? "consumed" : "given away";
+    rows.push({
+      id: `movement-${m.itemType}-${m.itemId}-${m.occurredAt.getTime()}-${m.staffMemberId}`,
+      enteredAt: m.occurredAt,
+      effectiveOn: m.occurredAt,
+      kind: "movement",
+      who: nameFor(m.staffMemberId),
+      whoId: m.staffMemberId,
+      what: `${Math.abs(m.quantity)} × ${itemName} — ${reasonLabel}`,
+      locationName: locationNameById.get(m.locationId) ?? null,
+      amountMinor: m.costBasisMinor,
+      reason: null,
+    });
+  }
+
+  for (const count of stockCounts.counts) {
+    const locationName = locationNameById.get(count.locationId) ?? null;
+
+    rows.push({
+      id: `count-${count.id}`,
+      enteredAt: count.occurredAt,
+      effectiveOn: count.occurredAt,
+      kind: "movement",
+      who: nameFor(count.staffMemberId),
+      whoId: count.staffMemberId,
+      what: `Stock count — ${count.lines.length} ${count.lines.length === 1 ? "item" : "items"}`,
+      locationName,
+      amountMinor: null,
+      reason: null,
+    });
+
+    // docs/architecture.md: "only the owner may correct" — a count
+    // correction is its own row, read from the corrected line itself
+    // (not the underlying StockMovement, which shares reason "corrected"
+    // with voidSale's unrelated stock reversal — see
+    // findAllNonSalesMovementsInPeriod's comment).
+    for (const line of count.lines) {
+      if (!line.correctedAt || !line.correctedBy) continue;
+      const itemName =
+        line.itemType === "product"
+          ? (productNameById.get(line.itemId) ?? "Unknown item")
+          : (ingredientNameById.get(line.itemId) ?? "Unknown item");
+      rows.push({
+        id: `count-correction-${line.id}`,
+        enteredAt: line.correctedAt,
+        effectiveOn: line.correctedAt,
+        kind: "movement",
+        who: nameFor(line.correctedBy),
+        whoId: line.correctedBy,
+        what: `${itemName} count corrected — counted ${line.countedQuantity}, expected ${line.expectedQuantity}`,
+        locationName,
+        amountMinor: null,
+        reason: null,
+      });
+    }
+  }
+
+  for (const h of cashTransactions.handovers) {
+    rows.push({
+      id: `handover-${h.id}`,
+      enteredAt: h.occurredAt,
+      effectiveOn: h.occurredAt,
+      kind: "handover",
+      who: nameFor(h.staffMemberId),
+      whoId: h.staffMemberId,
+      what: "Handed over cash and M-Pesa",
+      locationName: locationNameById.get(h.locationId) ?? null,
+      amountMinor: h.actualCashMinor + h.actualMpesaMinor,
+      reason: null,
+    });
+  }
+
+  for (const t of takings) {
+    rows.push({
+      id: `takings-${t.id}`,
+      enteredAt: t.occurredAt,
+      effectiveOn: t.occurredAt,
+      kind: "takings",
+      who: nameFor(t.staffMemberId),
+      whoId: t.staffMemberId,
+      what: "Canteen takings recorded",
+      locationName: locationNameById.get(t.locationId) ?? null,
+      amountMinor: t.cashMinor + t.mpesaMinor,
+      reason: null,
+    });
+  }
+
+  for (const e of cashTransactions.expenses) {
+    rows.push({
+      id: `expense-${e.id}`,
+      enteredAt: e.occurredAt,
+      effectiveOn: e.occurredAt,
+      kind: "expense",
+      who: nameFor(e.staffMemberId),
+      whoId: e.staffMemberId,
+      what: e.note ? `Money out — ${e.category} — ${e.note}` : `Money out — ${e.category}`,
+      locationName: locationNameById.get(e.locationId) ?? null,
+      amountMinor: e.amountMinor,
+      reason: null,
+    });
+  }
+
+  for (const r of cashTransactions.repayments) {
+    rows.push({
+      id: `repayment-${r.id}`,
+      enteredAt: r.occurredAt,
+      effectiveOn: r.occurredAt,
+      kind: "repayment",
+      who: nameFor(r.recordedBy),
+      whoId: r.recordedBy,
+      what: "Drawing repayment",
+      locationName: null,
+      amountMinor: r.amountMinor,
+      reason: null,
+    });
+  }
+
+  for (const d of daysWorked.value) {
+    // DaysWorked has no separate recorded-at timestamp distinct from the
+    // day itself — unlike a correction, there is no effective/entered gap
+    // here, so both columns show the same date.
+    rows.push({
+      id: `days-worked-${d.id}`,
+      enteredAt: d.date,
+      effectiveOn: d.date,
+      kind: "days_worked",
+      who: nameFor(d.staffMemberId),
+      whoId: d.staffMemberId,
+      what: `${nameFor(d.staffMemberId)} — day worked`,
+      locationName: null,
+      amountMinor: null,
+      reason: null,
+    });
+  }
+
+  rows.sort((a, b) => b.enteredAt.getTime() - a.enteredAt.getTime());
+
+  const search = input.search?.trim().toLowerCase();
+  const filtered = rows.filter(
+    (r) =>
+      (!input.personId || r.whoId === input.personId) &&
+      (!input.kind || r.kind === input.kind) &&
+      (!search ||
+        r.what.toLowerCase().includes(search) ||
+        r.who.toLowerCase().includes(search) ||
+        (r.reason?.toLowerCase().includes(search) ?? false)),
+  );
+
+  const total = filtered.length;
+  const start = (input.page - 1) * input.pageSize;
+  const paged = filtered.slice(start, start + input.pageSize);
+
+  return { ok: true, rows: paged, total };
 }

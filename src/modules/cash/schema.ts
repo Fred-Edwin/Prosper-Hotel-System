@@ -42,6 +42,10 @@ export type Takings = {
   locationId: string;
   cashMinor: number;
   mpesaMinor: number;
+  // Ticket 45 — who recorded it (or last re-entered it, since a same-day
+  // edit overwrites the amounts in place). Null for rows recorded before
+  // this column existed.
+  staffMemberId: string | null;
   occurredAt: Date;
 };
 

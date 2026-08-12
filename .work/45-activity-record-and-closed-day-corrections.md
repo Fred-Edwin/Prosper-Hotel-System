@@ -4,7 +4,7 @@
 **Blocked by:** 28 (day-close state — this ticket builds the correction
 mechanism that ticket 28 deliberately deferred; needs `isDayClosedFor`
 and the closed-day enforcement it added)
-**Status:** in-progress (claimed by /build, 2026-08-12 14:47)
+**Status:** done
 
 ## Goal
 
@@ -118,27 +118,27 @@ recorded" genuinely differ.
 
 ## Acceptance criteria
 
-- [ ] The owner can record a correction to a specific closed day's sales:
+- [x] The owner can record a correction to a specific closed day's sales:
       it appears as a new `Sale` with today's `occurredAt`, the backdated
       `effectiveAt`, a required reason, and adjusts current stock exactly
       as an ordinary sale would.
-- [ ] The original closed day's sales are unchanged — querying that day's
+- [x] The original closed day's sales are unchanged — querying that day's
       historical figures still returns exactly what was recorded then.
-- [ ] A non-owner cannot record a correction (route-level check).
-- [ ] Activity lists every action type in scope (sales, voids,
+- [x] A non-owner cannot record a correction (route-level check).
+- [x] Activity lists every action type in scope (sales, voids,
       corrections, wastage/consumption/complimentary, counts, handovers,
       takings, expenses, repayments, days worked) with who, when
       recorded, when effective, and where, for a constructed multi-
       person, multi-location fixture.
-- [ ] A correction's row visually distinguishes itself (effective date ≠
+- [x] A correction's row visually distinguishes itself (effective date ≠
       entered date, highlighted) from an ordinary same-day entry.
-- [ ] Filtering by person and by date range narrows correctly and
+- [x] Filtering by person and by date range narrows correctly and
       combines; search matches on description/reason text.
-- [ ] Pagination works correctly past one page (construct a fixture with
+- [x] Pagination works correctly past one page (construct a fixture with
       more than one page's worth of rows).
-- [ ] Non-owner roles are redirected/denied, matching the existing
+- [x] Non-owner roles are redirected/denied, matching the existing
       `/activity` page gate.
-- [ ] Storybook story for the Activity page: populated (including a
+- [x] Storybook story for the Activity page: populated (including a
       correction row), loading, empty (first use), permission-denied,
       filtered-empty; and for the correction-recording UI: form, and its
       validation (reason required).

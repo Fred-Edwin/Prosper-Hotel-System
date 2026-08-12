@@ -42,6 +42,9 @@ import {
   sumNonSalesValueAtLocationInPeriod,
   sumProductMovementsByReasonAtLocationInPeriod,
   findNonSalesMovementsAtLocationInPeriod,
+  findAllNonSalesMovementsInPeriod,
+  listStockCountsInPeriod,
+  type NonSalesMovementLineWithLocation,
 } from "./queries";
 import type {
   DerivedSaleLine,
@@ -1833,4 +1836,43 @@ export async function getNonSalesLedger(
   }));
 
   return { ok: true, lines };
+}
+
+export type ActivityMovementsResult =
+  | { ok: true; lines: NonSalesMovementLineWithLocation[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 45 — Activity's movement rows: wastage/consumption/
+// complimentary, business-wide (both locations) in a period. Owner-only,
+// same gate as every other business-wide read (getCashLedgerTransactions,
+// getTotalCustomerBalance).
+export async function getMovementsForActivity(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<ActivityMovementsResult> {
+  if (requester.staff.role !== "owner") {
+    return { ok: false, reason: "forbidden" };
+  }
+  const lines = await findAllNonSalesMovementsInPeriod(db, periodStart, periodEnd);
+  return { ok: true, lines };
+}
+
+export type ActivityStockCountsResult =
+  | { ok: true; counts: StockCount[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 45 — Activity's count rows, business-wide in a period.
+export async function getStockCountsForActivity(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<ActivityStockCountsResult> {
+  if (requester.staff.role !== "owner") {
+    return { ok: false, reason: "forbidden" };
+  }
+  const counts = await listStockCountsInPeriod(db, periodStart, periodEnd);
+  return { ok: true, counts };
 }

@@ -28,3 +28,15 @@
 - ui-polish done: 14:24
 - self-verify done: 14:28  (verify: 4m, plus earlier Storybook screenshot pass)
 - merged: 14:29  (merge: 1m)
+
+## Ticket 45 — Activity record and closed-day corrections
+- claimed: 14:47
+- context read done: 14:47  (context: extensive, spans prior session)
+- plan proposed: 14:52
+- plan approved: 14:58  (waiting on user: 6m, includes takings-attribution scope call)
+- plan proposed: 14:52
+- plan approved: 14:58  (waiting on user: 6m, includes takings-attribution scope call)
+- tests written: 15:00  (tests: 2m)
+- implementation done: 15:17  (implement: 17m)
+- ui-polish done: 15:30  (ui-polish: 13m, includes Storybook stories + docs/screens.md)
+- self-verify done: 15:30  (verify: folded into ui-polish — full suite/lint/typecheck/build/Storybook all passed)

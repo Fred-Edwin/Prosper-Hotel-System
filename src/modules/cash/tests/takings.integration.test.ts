@@ -1,10 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { AuthenticatedStaff } from "@/modules/people";
+import { hashPin } from "@/modules/people";
 import { getTodaysTakingsForStaff, recordTakings } from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
 let canteenId: string;
+let attendantId: string;
+let ownerId: string;
 
 function staffAt(
   role: "owner" | "attendant",
@@ -13,9 +16,9 @@ function staffAt(
 ): AuthenticatedStaff {
   return {
     staff: {
-      id: "staff-1",
-      name: "Test Attendant",
-      phone: "+254700111334",
+      id: role === "owner" ? ownerId : attendantId,
+      name: role === "owner" ? "Test Owner" : "Test Attendant",
+      phone: role === "owner" ? "+254700111335" : "+254700111334",
       role,
       locationId,
       dailyRateMinor: 0,
@@ -34,6 +37,32 @@ beforeAll(async () => {
   });
   restaurantId = restaurant.id;
   canteenId = canteen.id;
+
+  const pinHash = await hashPin("1234");
+  const [attendant, owner] = await Promise.all([
+    testDb.staffMember.create({
+      data: {
+        name: "Test Attendant",
+        phone: "+254700111334",
+        pinHash,
+        role: "attendant",
+        locationId: canteen.id,
+        dailyRateMinor: 0,
+      },
+    }),
+    testDb.staffMember.create({
+      data: {
+        name: "Test Owner",
+        phone: "+254700111335",
+        pinHash,
+        role: "owner",
+        locationId: restaurant.id,
+        dailyRateMinor: 0,
+      },
+    }),
+  ]);
+  attendantId = attendant.id;
+  ownerId = owner.id;
 });
 
 beforeEach(async () => {
@@ -42,6 +71,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await testDb.takings.deleteMany({});
+  await testDb.staffMember.deleteMany({});
   await testDb.location.deleteMany({});
   await testDb.$disconnect();
 });

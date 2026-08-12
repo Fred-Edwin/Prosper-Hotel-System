@@ -34,9 +34,27 @@ export type RecordSaleResult =
         | "customer_not_found";
     };
 
-export async function recordCounterSale(
+type PriceAndCreateSaleResult =
+  | { ok: true; sale: Sale }
+  | {
+      ok: false;
+      reason:
+        | "invalid_quantity"
+        | "inactive_product"
+        | "payment_mismatch"
+        | "credit_requires_customer"
+        | "delivery_requires_customer"
+        | "customer_not_found";
+    };
+
+// Shared by recordCounterSale and recordSaleCorrection (ticket 45) — an
+// ordinary sale and a backdated correction price, validate and decrement
+// stock identically; only staffMemberId/occurredAt/effectiveAt/correction
+// attribution differ, which the caller sets on top of this.
+async function priceAndCreateSale(
   db: PrismaClient,
   requester: AuthenticatedStaff,
+  locationId: string,
   input: {
     fulfilment?: SaleFulfilment;
     customerId?: string | null;
@@ -44,12 +62,14 @@ export async function recordCounterSale(
     lines: { productId: string; quantity: number }[];
     paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
   },
-): Promise<RecordSaleResult> {
-  const locationId = requester.staff.locationId;
-  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
-    return { ok: false, reason: "forbidden" };
-  }
-
+  saleAttribution: {
+    staffMemberId: string;
+    occurredAt?: Date;
+    effectiveAt?: Date;
+    isCorrection?: boolean;
+    correctionReason?: string;
+  },
+): Promise<PriceAndCreateSaleResult> {
   const fulfilment = input.fulfilment ?? "counter";
 
   if (input.lines.some((line) => line.quantity <= 0)) {
@@ -102,13 +122,17 @@ export async function recordCounterSale(
 
   const sale = await createSaleRecord(db, {
     locationId,
-    staffMemberId: requester.staff.id,
+    staffMemberId: saleAttribution.staffMemberId,
     fulfilment,
     customerId: input.customerId ?? null,
     totalMinor,
     deliveryFeeMinor,
     lines: saleLines,
     paymentLines: input.paymentLines,
+    occurredAt: saleAttribution.occurredAt,
+    effectiveAt: saleAttribution.effectiveAt,
+    isCorrection: saleAttribution.isCorrection,
+    correctionReason: saleAttribution.correctionReason,
   });
 
   for (const { line, product } of priced) {
@@ -122,6 +146,80 @@ export async function recordCounterSale(
   }
 
   return { ok: true, sale };
+}
+
+export async function recordCounterSale(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    fulfilment?: SaleFulfilment;
+    customerId?: string | null;
+    deliveryFeeMinor?: number | null;
+    lines: { productId: string; quantity: number }[];
+    paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
+  },
+): Promise<RecordSaleResult> {
+  const locationId = requester.staff.locationId;
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  return priceAndCreateSale(db, requester, locationId, input, {
+    staffMemberId: requester.staff.id,
+  });
+}
+
+export type RecordSaleCorrectionResult =
+  | { ok: true; sale: Sale }
+  | {
+      ok: false;
+      reason:
+        | "forbidden"
+        | "reason_required"
+        | "invalid_quantity"
+        | "inactive_product"
+        | "payment_mismatch"
+        | "credit_requires_customer"
+        | "delivery_requires_customer"
+        | "customer_not_found";
+    };
+
+// architecture.md's "Changing a closed day": the owner does not edit a
+// closed figure, she records a new entry with occurredAt = now and
+// effectiveAt = the day it corrects. Reuses priceAndCreateSale — the same
+// pricing/validation/stock-decrement path as an ordinary sale — so "stock
+// adjusted accordingly" (proposal.md §8) comes for free. Purely additive:
+// the corrected day's original Sale(s) are never touched.
+export async function recordSaleCorrection(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    staffMemberId: string;
+    locationId: string;
+    effectiveDate: Date;
+    reason: string;
+    fulfilment?: SaleFulfilment;
+    customerId?: string | null;
+    deliveryFeeMinor?: number | null;
+    lines: { productId: string; quantity: number }[];
+    paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
+  },
+): Promise<RecordSaleCorrectionResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  if (input.reason.trim() === "") {
+    return { ok: false, reason: "reason_required" };
+  }
+
+  return priceAndCreateSale(db, requester, input.locationId, input, {
+    staffMemberId: input.staffMemberId,
+    occurredAt: new Date(),
+    effectiveAt: input.effectiveDate,
+    isCorrection: true,
+    correctionReason: input.reason.trim(),
+  });
 }
 
 // formulas.md §11: "owed by a customer = credit given − repayments."

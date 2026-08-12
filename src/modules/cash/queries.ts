@@ -79,7 +79,7 @@ export async function findTodaysTakings(
 
 export async function createTakingsRecord(
   db: PrismaClient,
-  data: { locationId: string; cashMinor: number; mpesaMinor: number },
+  data: { locationId: string; cashMinor: number; mpesaMinor: number; staffMemberId: string },
 ): Promise<Takings> {
   return db.takings.create({ data });
 }
@@ -87,9 +87,22 @@ export async function createTakingsRecord(
 export async function updateTakingsAmounts(
   db: PrismaClient,
   id: string,
-  data: { cashMinor: number; mpesaMinor: number },
+  data: { cashMinor: number; mpesaMinor: number; staffMemberId: string },
 ): Promise<Takings> {
   return db.takings.update({ where: { id }, data });
+}
+
+// Ticket 45 — Activity's takings rows, business-wide across both
+// locations in a period.
+export async function listTakingsInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Takings[]> {
+  return db.takings.findMany({
+    where: { occurredAt: { gt: periodStart, lte: periodEnd } },
+    orderBy: { occurredAt: "asc" },
+  });
 }
 
 export async function createExpense(

@@ -7,7 +7,9 @@ import {
   getStoreLedger,
   getNonSalesLedgerReport,
   getCashLedger,
+  getActivity,
   type CashTransactionCategory,
+  type ActivityKind,
 } from "./logic";
 import type { NonSalesCategory } from "@/modules/stock";
 
@@ -232,4 +234,54 @@ export async function cashLedgerRoute(request: Request): Promise<Response> {
   }
 
   return Response.json({ days: result.days });
+}
+
+// Ticket 45 — Activity's paginated trail. periodStart/periodEnd are
+// optional (getActivity defaults to a trailing window) — the reference
+// UI has no date-range control, only kind/who/search filters, so no
+// route-level validation forces both to be present together the way the
+// other ledger routes do.
+export async function activityRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const periodStartParam = url.searchParams.get("periodStart");
+  const periodEndParam = url.searchParams.get("periodEnd");
+
+  let periodStart: Date | undefined;
+  let periodEnd: Date | undefined;
+  if (periodStartParam) {
+    periodStart = new Date(periodStartParam);
+    if (Number.isNaN(periodStart.getTime())) {
+      return Response.json({ error: "invalid period" }, { status: 400 });
+    }
+  }
+  if (periodEndParam) {
+    periodEnd = new Date(periodEndParam);
+    if (Number.isNaN(periodEnd.getTime())) {
+      return Response.json({ error: "invalid period" }, { status: 400 });
+    }
+  }
+
+  const personId = url.searchParams.get("personId") ?? undefined;
+  const kind = (url.searchParams.get("kind") ?? undefined) as ActivityKind | undefined;
+  const search = url.searchParams.get("search") ?? undefined;
+  const page = Number(url.searchParams.get("page") ?? "1") || 1;
+  const pageSize = Number(url.searchParams.get("pageSize") ?? "50") || 50;
+
+  const result = await getActivity(db, session, {
+    periodStart,
+    periodEnd,
+    personId,
+    kind,
+    search,
+    page,
+    pageSize,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ rows: result.rows, total: result.total });
 }

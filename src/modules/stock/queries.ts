@@ -493,6 +493,96 @@ export async function findNonSalesMovementsAtLocationInPeriod(
   ];
 }
 
+export type NonSalesMovementLineWithLocation = NonSalesMovementLine & { locationId: string };
+
+// Ticket 45 — Activity's movement rows: wastage/consumption/complimentary,
+// across both locations in a period. Deliberately excludes reason
+// "corrected" — that reason is shared by two unrelated origins (an
+// owner's stock-count correction, and voidSale's own stock reversal,
+// which already gets its own "void" Activity row) with nothing on the
+// StockMovement itself to tell them apart. A genuine count correction is
+// read from StockCountLine.correctedAt/correctedBy instead (see
+// getActivity), which unambiguously means "the owner corrected a count."
+export async function findAllNonSalesMovementsInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<NonSalesMovementLineWithLocation[]> {
+  const reasons: StockMovementReason[] = ["wasted", "consumed", "given_away"];
+
+  const [productMovements, ingredientMovements] = await Promise.all([
+    db.stockMovement.findMany({
+      where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd } },
+      select: {
+        productId: true,
+        locationId: true,
+        quantity: true,
+        reason: true,
+        costBasisMinor: true,
+        sellingValueMinor: true,
+        isEstimated: true,
+        staffMemberId: true,
+        occurredAt: true,
+      },
+    }),
+    db.ingredientMovement.findMany({
+      where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd } },
+      select: {
+        ingredientId: true,
+        locationId: true,
+        quantity: true,
+        reason: true,
+        costBasisMinor: true,
+        sellingValueMinor: true,
+        isEstimated: true,
+        staffMemberId: true,
+        occurredAt: true,
+      },
+    }),
+  ]);
+
+  return [
+    ...productMovements.map((m) => ({
+      itemType: "product" as const,
+      itemId: m.productId,
+      locationId: m.locationId,
+      quantity: m.quantity,
+      reason: m.reason,
+      costBasisMinor: m.costBasisMinor,
+      sellingValueMinor: m.sellingValueMinor,
+      isEstimated: m.isEstimated,
+      staffMemberId: m.staffMemberId,
+      occurredAt: m.occurredAt,
+    })),
+    ...ingredientMovements.map((m) => ({
+      itemType: "ingredient" as const,
+      itemId: m.ingredientId,
+      locationId: m.locationId,
+      quantity: m.quantity,
+      reason: m.reason,
+      costBasisMinor: m.costBasisMinor,
+      sellingValueMinor: m.sellingValueMinor,
+      isEstimated: m.isEstimated,
+      staffMemberId: m.staffMemberId,
+      occurredAt: m.occurredAt,
+    })),
+  ];
+}
+
+// Ticket 45 — Activity's count rows, across both locations in a period.
+export async function listStockCountsInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<StockCount[]> {
+  const counts = await db.stockCount.findMany({
+    where: { occurredAt: { gt: periodStart, lte: periodEnd } },
+    include: { lines: true },
+    orderBy: { occurredAt: "asc" },
+  });
+  return counts as StockCount[];
+}
+
 // The count immediately before a given one at the same location — the
 // "previous count" formulas.md's derived-sales formula reads from. None
 // for the first-ever count at a location.

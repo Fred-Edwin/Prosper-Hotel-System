@@ -23,6 +23,7 @@ export type {
 } from "./logic";
 export { recordTakingsRoute, todaysTakingsRoute } from "./routes";
 export type { Takings } from "./schema";
+export { listTakingsInPeriod } from "./queries";
 
 export {
   recordExpense,

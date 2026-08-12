@@ -79,6 +79,8 @@ new destinations get added here as tickets that build them land, per
 | Modules/Reporting/CashLedger | `src/modules/reporting/ui/cash-ledger.stories.tsx` | approved |
 | Modules/Reporting/StoreLedger | `src/modules/reporting/ui/store-ledger.stories.tsx` | approved |
 | Modules/Reporting/NonSalesLedger | `src/modules/reporting/ui/non-sales-ledger.stories.tsx` | approved |
+| Modules/Reporting/Activity | `src/modules/reporting/ui/activity.stories.tsx` | approved |
+| Modules/Reporting/RecordCorrectionDialog | `src/modules/reporting/ui/record-correction-dialog.stories.tsx` | approved |
 
 ## People
 
@@ -117,8 +119,14 @@ AdminStockTable, not a separate destination — ingredient rows alongside
 products, a product/ingredient type filter, and the low-stock threshold
 field on ProductForm/IngredientForm) landed via ticket 44, which also
 added a restaurant/canteen switcher to the Stock page so both locations
-are reachable from one screen. Added to this file as their tickets land,
-not speculatively ahead of them.
+are reachable from one screen. The Activity trail (recorded/effective-
+date columns with the correction row's warning treatment, kind/who
+filters, search including reason text, pagination "1–N of total" rather
+than infinite scroll, and the owner's minimal correction-recording
+dialog reachable from its toolbar) landed via ticket 45, which also added
+`Sale.effectiveAt`/`isCorrection`/`correctionReason` and
+`Takings.staffMemberId` to the schema. Added to this file as their
+tickets land, not speculatively ahead of them.
 
 ## Note on naming
 
