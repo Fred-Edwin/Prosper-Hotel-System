@@ -1921,3 +1921,147 @@ export async function getActivity(
 
   return { ok: true, rows: paged, total };
 }
+
+// Ticket 49's Dashboard "Stock movements" card — today's product movements
+// folded by reason and location rather than by product, a thin regrouping
+// of ticket 39's getProductLedger for the same day so the two always
+// reconcile by construction (same underlying rows, different fold).
+export type DashboardStockMovementReason =
+  | "produced"
+  | "received"
+  | "transferred_in"
+  | "transferred_out"
+  | "sold"
+  | "wasted"
+  | "consumed"
+  | "given_away";
+
+export type DashboardStockMovementRow = {
+  reason: DashboardStockMovementReason;
+  locationCode: string;
+  qty: number;
+  valueMinor: number;
+};
+
+export type GetDashboardStockMovementsResult =
+  | { ok: true; rows: DashboardStockMovementRow[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+export async function getDashboardStockMovements(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { today: Date },
+): Promise<GetDashboardStockMovementsResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const dayStart = new Date(input.today);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const ledger = await getProductLedger(db, requester, { periodStart: dayStart, periodEnd: dayEnd });
+  if (!ledger.ok) return ledger;
+
+  const totals = new Map<string, DashboardStockMovementRow>();
+  const add = (reason: DashboardStockMovementReason, locationCode: string, qty: number, valueMinor: number) => {
+    if (qty === 0) return;
+    const key = `${reason}:${locationCode}`;
+    const existing = totals.get(key);
+    if (existing) {
+      existing.qty += qty;
+      existing.valueMinor += valueMinor;
+    } else {
+      totals.set(key, { reason, locationCode, qty, valueMinor });
+    }
+  };
+
+  for (const row of ledger.rows) {
+    const unitCostMinor = row.unitCostMinor ?? 0;
+    add("produced", row.locationCode, row.produced, row.produced * unitCostMinor);
+    add("received", row.locationCode, row.received, row.received * unitCostMinor);
+    add("transferred_in", row.locationCode, row.transferredIn, row.transferredIn * unitCostMinor);
+    add("transferred_out", row.locationCode, row.transferredOut, row.transferredOut * unitCostMinor);
+    add("sold", row.locationCode, row.sold, row.salesValueMinor);
+    // nonSales folds wasted/consumed/given-away together in getProductLedger;
+    // this card shows them as three separate danger-toned rows per the
+    // design reference, which the ledger's own folding doesn't distinguish
+    // — re-derive that split from the day's raw lines instead of the
+    // already-folded nonSales total.
+  }
+
+  const rowByProductLocation = new Map(ledger.rows.map((r) => [`${r.productId}:${r.locationId}`, r]));
+  const allLocations = await listLocations(db);
+  for (const location of allLocations) {
+    const nonSalesLines = await getProductMovementsByReasonInPeriod(
+      db,
+      requester,
+      location.id,
+      ["wasted", "consumed", "given_away"],
+      dayStart,
+      dayEnd,
+    );
+    if (!nonSalesLines.ok) continue;
+    for (const line of nonSalesLines.lines) {
+      const ledgerRow = rowByProductLocation.get(`${line.productId}:${location.id}`);
+      const unitCostMinor = ledgerRow?.unitCostMinor ?? 0;
+      const qty = -line.quantity;
+      const reason = line.reason as "wasted" | "consumed" | "given_away";
+      add(reason, location.code, qty, qty * unitCostMinor);
+    }
+  }
+
+  const rows = Array.from(totals.values());
+  rows.sort((a, b) => a.reason.localeCompare(b.reason) || a.locationCode.localeCompare(b.locationCode));
+
+  return { ok: true, rows };
+}
+
+// Ticket 49's Dashboard "Store movements" card — today's per-ingredient
+// flow at the restaurant only (the design reference's "Restaurant store"
+// title), a thin reshape of ticket 42's getStoreLedger for the same day.
+export type DashboardStoreMovementRow = {
+  ingredientName: string;
+  unitOfMeasure: string;
+  received: number;
+  issuedToKitchen: number;
+  transferredOut: number;
+  closingQty: number;
+};
+
+export type GetDashboardStoreMovementsResult =
+  | { ok: true; rows: DashboardStoreMovementRow[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+export async function getDashboardStoreMovements(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { today: Date },
+): Promise<GetDashboardStoreMovementsResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const dayStart = new Date(input.today);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const restaurant = await findLocationByCode(db, "restaurant");
+  if (!restaurant) return { ok: false, reason: "not_found" };
+
+  const ledger = await getStoreLedger(db, requester, {
+    periodStart: dayStart,
+    periodEnd: dayEnd,
+    locationId: restaurant.id,
+  });
+  if (!ledger.ok) return ledger;
+
+  const rows: DashboardStoreMovementRow[] = ledger.rows.map((row) => ({
+    ingredientName: row.ingredientName,
+    unitOfMeasure: row.unitOfMeasure,
+    received: row.purchasedQty,
+    issuedToKitchen: row.issuedToKitchen,
+    transferredOut: row.transferredOut,
+    closingQty: row.closingQty,
+  }));
+
+  return { ok: true, rows };
+}

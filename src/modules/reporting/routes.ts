@@ -10,6 +10,8 @@ import {
   getNonSalesLedgerReport,
   getCashLedger,
   getActivity,
+  getDashboardStockMovements,
+  getDashboardStoreMovements,
   type CashTransactionCategory,
   type ActivityKind,
 } from "./logic";
@@ -348,4 +350,34 @@ export async function activityRoute(request: Request): Promise<Response> {
   }
 
   return Response.json({ rows: result.rows, total: result.total });
+}
+
+// Ticket 49's Dashboard "Stock movements" card — today's product movements
+// by reason and location, owner-only, same gate as the rest of the
+// Dashboard's cards.
+export async function dashboardStockMovementsRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const result = await getDashboardStockMovements(db, session, { today: new Date() });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ rows: result.rows });
+}
+
+// Ticket 49's Dashboard "Store movements" card — today's per-ingredient
+// flow at the restaurant, owner-only, same gate as the rest of the
+// Dashboard's cards.
+export async function dashboardStoreMovementsRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const result = await getDashboardStoreMovements(db, session, { today: new Date() });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ rows: result.rows });
 }

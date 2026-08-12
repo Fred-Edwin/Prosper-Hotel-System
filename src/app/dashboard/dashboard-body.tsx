@@ -28,7 +28,7 @@
  * one card's body — never re-derive the layout.
  */
 
-import { SectionHeader, SectionNotBuilt } from "@/components/patterns/states";
+import { SectionHeader } from "@/components/patterns/states";
 import { DashboardHandovers } from "@/modules/cash/ui/dashboard-handovers";
 import {
   DashboardCashFigures,
@@ -40,6 +40,8 @@ import { DashboardOwedToYou } from "@/modules/sales/ui/dashboard-owed-to-you";
 import { DashboardProfit } from "@/modules/reporting/ui/dashboard-profit";
 import { DashboardRevenueProfitChart } from "@/modules/reporting/ui/dashboard-revenue-profit-chart";
 import { DashboardExceptions } from "@/modules/reporting/ui/dashboard-exceptions";
+import { DashboardStockMovements } from "@/modules/reporting/ui/dashboard-stock-movements";
+import { DashboardStoreMovements } from "@/modules/reporting/ui/dashboard-store-movements";
 
 function Card({
   title,
@@ -100,10 +102,10 @@ export function DashboardBody() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Stock movements">
-          <SectionNotBuilt section="Stock movements" />
+          <DashboardStockMovements />
         </Card>
         <Card title="Restaurant store">
-          <SectionNotBuilt section="Store movements" />
+          <DashboardStoreMovements />
         </Card>
       </div>
     </>

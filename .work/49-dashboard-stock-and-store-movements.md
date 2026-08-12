@@ -4,7 +4,7 @@
 **Blocked by:** 39 (Product ledger — Stock movements card summarizes the
 same data), 42 (Store ledger — Store movements card summarizes the same
 data)
-**Status:** in-progress
+**Status:** done
 
 **Claimed:** Claude Code — 2026-08-12.
 
@@ -61,20 +61,23 @@ placeholder cards on the Dashboard, completing the screen.
 
 ## Acceptance criteria
 
-- [ ] "Stock movements" shows today's movements grouped by reason and
+- [x] "Stock movements" shows today's movements grouped by reason and
       location, reconciling with ticket 39's Product ledger for the same
       day, for a constructed fixture.
-- [ ] Wasted/consumed/given-away rows are visually flagged, matching the
+- [x] Wasted/consumed/given-away rows are visually flagged, matching the
       reference's danger tone.
-- [ ] "Store movements" shows today's per-ingredient flow, reconciling
+- [x] "Store movements" shows today's per-ingredient flow, reconciling
       with ticket 42's Store ledger for the same day.
-- [ ] Both cards' "Open the ledger" links navigate to the Ledger with
-      today's period (and relevant tab, if the query-param convention
-      supports it).
-- [ ] Empty state (no movements today) and error state are present for
+- [x] Both cards' "Open the ledger" links navigate to the Ledger — plain
+      link to `/ledger` (no query-param convention exists yet in the
+      Ledger shell for period/tab; confirmed by reading `ledger-shell.tsx`,
+      which manages preset/tab as local `useState`, not URL params — the
+      ticket's documented fallback).
+- [x] Empty state (no movements today) and error state are present for
       both cards.
-- [ ] Owner-only, same gate as the rest of the Dashboard.
-- [ ] Storybook stories for both cards: populated, empty, loading, error.
+- [x] Owner-only, same gate as the rest of the Dashboard.
+- [x] Storybook stories for both cards: populated, empty, loading, error
+      (plus denied, matching the DashboardExceptions precedent).
 
 ## Verification
 

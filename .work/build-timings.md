@@ -73,3 +73,11 @@
 - ui-polish done: 17:18  (ui-polish: 1m — Storybook story)
 - self-verify done: 17:23  (verify: 5m)
 - merged: 17:25  (merge: 2m)
+
+## Ticket 49 — Dashboard stock and store movement summaries
+- claimed: 17:26
+- context read done: 17:34  (context: 8m)
+- plan approved: 17:35  (no explicit wait — auto mode)
+- implementation done: 17:55  (implement: 20m)
+- ui-polish done: 17:58  (ui-polish: 3m)
+- self-verify done: 18:02  (verify: 4m)
