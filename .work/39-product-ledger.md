@@ -6,7 +6,9 @@ this tab in), 41 (product categories — the category filter below needs a
 real category concept; split out of this ticket during `/build`,
 2026-08-12, since the design reference's `category` field has no
 equivalent in this codebase's domain model)
-**Status:** planned
+**Status:** in-progress
+
+**Claimed:** Claude Code — 2026-08-12.
 
 ## Goal
 
