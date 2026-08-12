@@ -3,7 +3,57 @@
 **Type:** logic (test-first)
 **Blocked by:** 38 (needs the Ledger shell and its period picker to host
 this tab in)
-**Status:** done (2026-08-12)
+**Status:** done
+
+## Review findings (2026-08-12, rejected)
+
+- **Blocking correctness bug:** `getCashLedger` (`src/modules/reporting/logic.ts`,
+  around line 1041) computes each day's category-column totals
+  (`handoversMinor`, `repaymentsMinor`, `stockMinor`, `runningMinor`,
+  `assetsMinor`, `drawingsMinor`) from the day's *unfiltered* transaction
+  set, but only the `transactions` array used for day-expansion is
+  filtered (`filteredTransactions`, ~line 1063). When a category/search
+  filter is active, a day row's summary columns can show money in a
+  category with zero matching transactions underneath it when expanded —
+  e.g. filter to "Stock" on a day that also had a handover: the
+  "Handovers" column stays non-zero, but expanding the row shows no
+  handover line to explain it. Violates this ticket's own acceptance
+  criterion: "Filtering by category narrows both the day rows... and the
+  expanded transaction list to that category" — only the transaction list
+  narrows today. Fix: derive the column sums (`sumFor` and the
+  `cashIn`/`cashOut`/`mpesaIn`/`mpesaOut` running-balance inputs, if they
+  are meant to reflect the filter too — confirm intent) from
+  `filteredTransactions` instead of `transactions`, or explicitly decide
+  the columns should stay unfiltered and add a test asserting that on a
+  day where the filter excludes some but not all transactions.
+- The existing test for this criterion
+  (`src/modules/reporting/tests/cash-ledger.integration.test.ts:221`)
+  doesn't catch this — its fixture never asserts on the category columns
+  under an active filter, only on `transactions` length/category. Add
+  that assertion once fixed.
+
+### Fix (2026-08-12)
+
+Derived the category column sums (`handoversMinor`, `repaymentsMinor`,
+`stockMinor`, `runningMinor`, `assetsMinor`, `drawingsMinor`) from
+`filteredTransactions` instead of the day's unfiltered `transactions`, so a
+filtered day row only shows money in categories with matching transactions
+underneath it. The running/opening/closing cash and M-Pesa balance inputs
+(`cashIn`/`cashOut`/`mpesaIn`/`mpesaOut`, `runningCash`/`runningMpesa`) stay
+derived from unfiltered `transactions` — those are a true reconciliation
+figure, already covered by this ticket's own acceptance criteria against
+unfiltered fixtures, and must not move under a filter.
+
+Extended the existing filter test
+(`cash-ledger.integration.test.ts:221`) to assert `stockMinor` is non-zero
+and `handoversMinor` is zero on the filtered day row. Full integration
+suite (26 files, 341 tests), lint, and `tsc --noEmit` all pass.
+- Everything else reviewed clean: module seams, reconciliation/running-
+  balance arithmetic, the `DrawingRepayment.paymentMethod` and
+  `getRunningCashBalance` fixes, UI composition and states, Storybook +
+  `docs/screens.md`. Non-blocking note: the "before period" balance query
+  uses `new Date(0)` as its lower bound (unbounded history scan on every
+  request) — fine now, worth revisiting at scale.
 
 ## Build notes
 
