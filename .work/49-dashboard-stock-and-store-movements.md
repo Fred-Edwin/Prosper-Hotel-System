@@ -4,7 +4,9 @@
 **Blocked by:** 39 (Product ledger — Stock movements card summarizes the
 same data), 42 (Store ledger — Store movements card summarizes the same
 data)
-**Status:** planned
+**Status:** in-progress
+
+**Claimed:** Claude Code — 2026-08-12.
 
 ## Goal
 
