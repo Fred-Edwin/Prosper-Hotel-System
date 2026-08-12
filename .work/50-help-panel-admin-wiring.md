@@ -3,7 +3,7 @@
 **Type:** plumbing (test-after)
 **Blocked by:** None — `HelpPanel` and its `helpContent` map are already
 built and approved (`docs/screens.md`'s `Patterns/HelpPanel` row).
-**Status:** in-progress (claimed by build session, 2026-08-12)
+**Status:** done
 
 ## Goal
 
