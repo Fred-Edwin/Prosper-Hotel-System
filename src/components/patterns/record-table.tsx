@@ -156,6 +156,9 @@ export function RecordTable<T>({
   /** A caveat under the table, inside the border. */
   footnote,
   empty,
+  /** Namespaces this table's row testid so screens sharing this component
+   * don't collide — e.g. "products-table" vs. "staff-table". */
+  testIdPrefix,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -172,6 +175,7 @@ export function RecordTable<T>({
   footnote?: string;
   /** Shown in place of the table when there is nothing. */
   empty?: ReactNode;
+  testIdPrefix?: string;
 }) {
   if (rows.length === 0 && empty)
     return <div className="overflow-hidden rounded-lg border bg-card">{empty}</div>;
@@ -242,7 +246,10 @@ export function RecordTable<T>({
 
               return (
                 <Fragment key={key}>
-                  <tr className="group border-b hover:bg-muted/40">
+                  <tr
+                    className="group border-b hover:bg-muted/40"
+                    data-testid={testIdPrefix ? `${testIdPrefix}-row` : undefined}
+                  >
                     {columns.map((c, i) => {
                       const align = c.align ?? "right";
                       const frozen = wide && i === 0;
@@ -346,9 +353,11 @@ export function TotalsRow({
 export function RowAction({
   label,
   onClick,
+  testId,
 }: {
   label: string;
   onClick?: () => void;
+  testId?: string;
 }) {
   return (
     <Button
@@ -356,6 +365,7 @@ export function RowAction({
       size="sm"
       className="h-6 text-[11px]"
       onClick={onClick}
+      data-testid={testId}
     >
       {label}
     </Button>

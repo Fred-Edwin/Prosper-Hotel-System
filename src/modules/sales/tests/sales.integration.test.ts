@@ -21,7 +21,7 @@ let sodaId: string;
 let photocopyId: string;
 
 function staffAt(
-  role: "owner" | "cashier",
+  role: "owner" | "cashier" | "store_manager",
   locationId: string,
   locationCode: "restaurant" | "canteen" = "restaurant",
 ): AuthenticatedStaff {
@@ -31,7 +31,7 @@ function staffAt(
 function staffMemberAt(
   id: string,
   name: string,
-  role: "owner" | "cashier",
+  role: "owner" | "cashier" | "store_manager",
   locationId: string,
   locationCode: "restaurant" | "canteen" = "restaurant",
 ): AuthenticatedStaff {
@@ -307,6 +307,30 @@ describe("recordCounterSale — credit", () => {
   });
 });
 
+describe("recordCounterSale — store manager", () => {
+  test("a store manager cannot record a counter sale", async () => {
+    const result = await recordCounterSale(testDb, staffAt("store_manager", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("a store manager can record a delivery sale", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Njeri" } });
+
+    const result = await recordCounterSale(testDb, staffAt("store_manager", restaurantId), {
+      fulfilment: "delivery",
+      customerId: customer.id,
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe("recordCounterSale — delivery", () => {
   test("rejects a delivery sale with no customer, even paid in cash", async () => {
     const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
@@ -543,26 +567,6 @@ describe("voidSale", () => {
     expect(result.sale.voidedAt).not.toBeNull();
   });
 
-  test("a different staff member at the same location can also void the sale", async () => {
-    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
-      lines: [{ productId: sodaId, quantity: 1 }],
-      paymentLines: [{ method: "cash", amountMinor: 80 }],
-    });
-    expect(recorded.ok).toBe(true);
-    if (!recorded.ok) return;
-
-    const result = await voidSale(
-      testDb,
-      staffMemberAt("staff-2", "Other Cashier", "cashier", restaurantId),
-      recorded.sale.id,
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.sale.voided).toBe(true);
-    expect(result.sale.voidedBy).toBe("staff-2");
-  });
-
   test("voiding a sale returns every stocked line's quantity to its pre-sale level", async () => {
     const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
       lines: [{ productId: sodaId, quantity: 3 }],
@@ -689,6 +693,20 @@ describe("voidSale", () => {
     const result = await voidSale(testDb, staffAt("owner", restaurantId), recorded.sale.id);
 
     expect(result.ok).toBe(true);
+  });
+
+  test("a cashier cannot void a colleague's sale, only their own", async () => {
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    const colleague = staffMemberAt("staff-2", "Colleague", "cashier", restaurantId);
+    const result = await voidSale(testDb, colleague, recorded.sale.id);
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
   });
 
   test("a cashier at a different location cannot void a sale there", async () => {

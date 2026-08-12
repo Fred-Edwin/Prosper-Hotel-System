@@ -93,6 +93,7 @@ export function ProductForm({
       saving={saving}
       saveLabel={product ? "Save changes" : "Create product"}
       formId="product-form"
+      testIdPrefix="product"
     >
       <form
         id="product-form"
@@ -110,7 +111,12 @@ export function ProductForm({
       >
         <FormSection title="Identity">
           <Field label="Name" required error={error}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-9"
+              data-testid="product-name-input"
+            />
           </Field>
           <Field label="Kind" required>
             <Select value={kind} onValueChange={(v) => setKind(v as ProductKind)}>

@@ -64,7 +64,9 @@ export function CategoriesTab({
       key: "actions",
       header: "",
       align: "right",
-      cell: (c) => <RowAction label="Edit" onClick={() => setEditing(c)} />,
+      cell: (c) => (
+        <RowAction label="Edit" onClick={() => setEditing(c)} testId={`category-row-edit-${c.id}`} />
+      ),
     },
   ];
 
@@ -78,6 +80,7 @@ export function CategoriesTab({
           count={filtered.length}
           total={categories.length}
           noun="categories"
+          testIdPrefix="category"
         />
         <Button size="sm" className="h-8" onClick={() => setCreating(true)}>
           <Plus className="size-3.5" /> Add category
@@ -88,6 +91,7 @@ export function CategoriesTab({
         rows={filtered}
         columns={columns}
         rowKey={(c) => c.id}
+        testIdPrefix="category"
         empty={
           categories.length === 0 ? (
             <EmptyFirstUse

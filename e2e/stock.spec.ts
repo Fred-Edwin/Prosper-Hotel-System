@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// Seeded cashier is Sarah Njeri, restaurant. See prisma/seed.ts.
+// Seeded cashier is Restaurant Cashier, restaurant. See prisma/seed.ts.
 test("a logged-in staff member sees their location's current stock", async ({ page }) => {
   await page.goto("/staff");
 

@@ -32,3 +32,5 @@ blob-report
 .agents/
 .codex/
 .mcp.json
+
+.scratch/

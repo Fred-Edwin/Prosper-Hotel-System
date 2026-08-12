@@ -44,6 +44,8 @@ export function TableToolbar({
   noun = "rows",
   disabled,
   children,
+  /** Namespaces this toolbar's search/filter testids — e.g. "products". */
+  testIdPrefix,
 }: {
   query: string;
   onQuery: (v: string) => void;
@@ -63,6 +65,7 @@ export function TableToolbar({
   noun?: string;
   disabled?: boolean;
   children?: React.ReactNode;
+  testIdPrefix?: string;
 }) {
   return (
     <>
@@ -74,6 +77,7 @@ export function TableToolbar({
           placeholder={placeholder}
           disabled={disabled}
           className="h-8 pl-8 text-[13px]"
+          data-testid={testIdPrefix ? `${testIdPrefix}-search` : undefined}
         />
         {query && (
           <button
@@ -97,6 +101,7 @@ export function TableToolbar({
             size="sm"
             className="h-8 text-[13px]"
             style={{ width: f.width ?? "9rem" }}
+            data-testid={testIdPrefix ? `${testIdPrefix}-filter-${f.key}` : undefined}
           >
             <SelectValue />
           </SelectTrigger>

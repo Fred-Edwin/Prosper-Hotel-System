@@ -54,6 +54,7 @@ export function IngredientForm({
       saving={saving}
       saveLabel={ingredient ? "Save changes" : "Create ingredient"}
       formId="ingredient-form"
+      testIdPrefix="ingredient"
     >
       <form
         id="ingredient-form"

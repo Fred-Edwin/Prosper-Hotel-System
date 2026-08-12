@@ -144,6 +144,8 @@ export function EditSheet({
    * in the DOM. Omit for sheets with nothing to submit. */
   formId,
   children,
+  /** Namespaces this sheet's testids — e.g. "product-edit". */
+  testIdPrefix,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -154,10 +156,14 @@ export function EditSheet({
   saving?: boolean;
   formId?: string;
   children: React.ReactNode;
+  testIdPrefix?: string;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+      <SheetContent
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+        data-testid={testIdPrefix ? `${testIdPrefix}-sheet` : undefined}
+      >
         <SheetHeader className="border-b">
           <SheetTitle>{title}</SheetTitle>
           {description && <SheetDescription>{description}</SheetDescription>}
@@ -170,6 +176,7 @@ export function EditSheet({
             type={formId ? "submit" : "button"}
             form={formId}
             disabled={saving}
+            data-testid={testIdPrefix ? `${testIdPrefix}-save` : undefined}
           >
             {saving ? "Saving…" : saveLabel}
           </Button>
@@ -179,6 +186,7 @@ export function EditSheet({
             className="h-8"
             disabled={saving}
             onClick={() => onOpenChange(false)}
+            data-testid={testIdPrefix ? `${testIdPrefix}-cancel` : undefined}
           >
             Cancel
           </Button>

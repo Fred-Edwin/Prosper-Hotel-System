@@ -88,14 +88,35 @@ Non-obvious things that cost real time. Add to this file, don't rediscover.
   MCP server fails even with a fully-populated `~/.cache/ms-playwright/`.
   `.mcp.json` is gitignored (local machine config, not shared) — each
   session sets it up independently, so this can recur on a fresh
-  machine. **`.mcp.json.example` is the tracked template with the fix
-  already applied** (`--browser chromium` in the server's `args`) — if
-  `.mcp.json` doesn't exist yet, copy it from there; if it already
-  exists but predates this fix, diff it against the example and add the
-  missing flag, then restart the MCP connection. Don't install system
-  Chrome as a workaround. If you don't want to touch `.mcp.json`, the
-  throwaway-script fallback below already launches bundled chromium
-  explicitly and is unaffected either way.
+  machine.
+- **`--browser chromium` (this doc's old advice) is not a valid value
+  for `@playwright/mcp@0.0.79`.** That version's `--browser` flag only
+  accepts `chrome`/`firefox`/`webkit`/`msedge` — passing `chromium`
+  is silently ignored and it falls back to resolving a **Chrome-for-
+  Testing** binary (a third, separate download, distinct from both
+  Playwright's bundled chromium and system Chrome), which usually isn't
+  cached, so the server fails with `Browser "chrome-for-testing" is not
+  installed`. Confirmed 2026-08-12: a manual `npx @playwright/mcp
+  install-browser chrome-for-testing` was attempted as the error message
+  suggests, and was OOM-killed on a 7.7GB machine — don't rely on that
+  path. **The actual fix is `--executable-path`, pointed straight at the
+  already-cached bundled chromium** (the same binary
+  `@playwright/test` uses, so no extra download): resolve it with
+  `node -e "console.log(require('playwright').chromium.executablePath())"`
+  from the repo root, and put that path in `.mcp.json`'s `args` as
+  `"--executable-path", "<resolved path>"` in place of `--browser
+  chromium`. **`.mcp.json.example` is the tracked template with this fix
+  applied** — if `.mcp.json` doesn't exist yet, copy it from there; if it
+  predates this fix, diff against the example, and re-resolve the path
+  above since the version-numbered cache directory
+  (`chromium-<build>`) changes across `pnpm install`s — don't assume the
+  example's literal path is still correct on a different machine or
+  after a dependency bump. Restart the MCP connection after editing
+  `.mcp.json` — an already-running MCP server process doesn't pick up
+  the file change. Don't install system Chrome as a workaround either
+  way. If you don't want to touch `.mcp.json`, the throwaway-script
+  fallback below already launches bundled chromium explicitly via the
+  `playwright` package directly and is unaffected by any of this.
 - **"Chromium isn't installed" — check the shared cache before installing
   anything.** `~/.cache/ms-playwright/` is a home-directory cache, shared
   by every git worktree on the machine (they share one home directory).

@@ -164,6 +164,14 @@ export async function recordCounterSale(
     return { ok: false, reason: "forbidden" };
   }
 
+  // proposal.md §2: the store manager "records delivery orders" but "does
+  // not have access to counter sales" — the fulfilment kind, not the role
+  // alone, decides access, since both paths share this one function.
+  const fulfilment = input.fulfilment ?? "counter";
+  if (requester.staff.role === "store_manager" && fulfilment !== "delivery") {
+    return { ok: false, reason: "forbidden" };
+  }
+
   return priceAndCreateSale(db, requester, locationId, input, {
     staffMemberId: requester.staff.id,
   });
@@ -403,6 +411,9 @@ export async function voidSale(
   dayStart.setHours(0, 0, 0, 0);
 
   if (requester.staff.role !== "owner") {
+    // proposal.md §8: "A staff member may cancel an entry they made" —
+    // not a colleague's, at the same location.
+    if (sale.staffMemberId !== requester.staff.id) return { ok: false, reason: "forbidden" };
     if (sale.occurredAt < dayStart) return { ok: false, reason: "not_same_day" };
     const closed = await isDayClosedFor(db, sale.staffMemberId, sale.locationId, dayStart);
     if (closed) return { ok: false, reason: "day_closed" };

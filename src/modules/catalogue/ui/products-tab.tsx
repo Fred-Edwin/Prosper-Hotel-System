@@ -85,7 +85,9 @@ export function ProductsTab({
       key: "actions",
       header: "",
       align: "right",
-      cell: (p) => <RowAction label="Edit" onClick={() => setEditing(p)} />,
+      cell: (p) => (
+        <RowAction label="Edit" onClick={() => setEditing(p)} testId={`product-row-edit-${p.id}`} />
+      ),
     },
   ];
 
@@ -99,6 +101,7 @@ export function ProductsTab({
           count={filtered.length}
           total={products.length}
           noun="products"
+          testIdPrefix="product"
         />
         <Button size="sm" className="h-8" onClick={() => setCreating(true)}>
           <Plus className="size-3.5" /> Add product
@@ -109,6 +112,7 @@ export function ProductsTab({
         rows={filtered}
         columns={columns}
         rowKey={(p) => p.id}
+        testIdPrefix="product"
         empty={
           products.length === 0 ? (
             <EmptyFirstUse

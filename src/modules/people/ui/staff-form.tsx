@@ -80,6 +80,7 @@ export function StaffForm({
       saving={saving}
       saveLabel={staff ? "Save changes" : "Add staff member"}
       formId="staff-form"
+      testIdPrefix="staff"
     >
       <form
         id="staff-form"

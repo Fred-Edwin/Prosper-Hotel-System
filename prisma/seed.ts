@@ -144,7 +144,10 @@ async function main() {
   const [sodas, mukimo, chips, paper, biscuits, photocopy, deliveryBox] = await Promise.all([
     db.product.create({ data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 80 } }),
     db.product.create({ data: { name: "Mukimo", kind: "cooked_food", priceMinor: 150 } }),
-    db.product.create({ data: { name: "Chips", kind: "cooked_food", priceMinor: 100 } }),
+    // lowStockLevel set (and never restocked below) so the dashboard's
+    // low-stock indicator has a real example to show, not just the
+    // fully-depleted chips edge case above zero.
+    db.product.create({ data: { name: "Chips", kind: "cooked_food", priceMinor: 100, lowStockLevel: 5 } }),
     db.product.create({ data: { name: "Printing paper (ream)", kind: "goods", priceMinor: 550 } }),
     db.product.create({ data: { name: "Biscuits (packet)", kind: "goods", priceMinor: 50 } }),
     // Edge case: fourth ProductKind (service) so the catalogue's kind filter

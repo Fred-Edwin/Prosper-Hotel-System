@@ -41,6 +41,7 @@ export function CategoryForm({
       saving={saving}
       saveLabel={category ? "Save changes" : "Create category"}
       formId="category-form"
+      testIdPrefix="category"
     >
       <form
         id="category-form"

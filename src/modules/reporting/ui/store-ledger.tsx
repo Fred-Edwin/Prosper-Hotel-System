@@ -39,6 +39,7 @@ export type StoreLedgerRowData = {
   purchasedQty: number;
   purchasedValueMinor: number;
   issuedToKitchen: number;
+  transferredIn: number;
   transferredOut: number;
   spoilage: number;
   closingQty: number;
@@ -323,7 +324,7 @@ export function StoreLedgerView({
                       </span>
                     </Td>
                     <Td border><Num value={r.issuedToKitchen} strong /></Td>
-                    <Td><Num value={r.transferredOut} muted /></Td>
+                    <Td><Num value={r.transferredIn - r.transferredOut} muted /></Td>
                     <Td><Num value={r.spoilage} muted tone="danger" /></Td>
                     <Td border><Num value={r.closingQty} strong /></Td>
                     <Td><Num value={r.closingValueMinor} asMoney strong /></Td>

@@ -114,7 +114,9 @@ export function StaffTab({
       key: "actions",
       header: "",
       align: "right",
-      cell: (s) => <RowAction label="Edit" onClick={() => setEditing(s)} />,
+      cell: (s) => (
+        <RowAction label="Edit" onClick={() => setEditing(s)} testId={`staff-row-edit-${s.id}`} />
+      ),
     },
   ];
 
@@ -128,6 +130,7 @@ export function StaffTab({
           count={filtered.length}
           total={staff.length}
           noun="staff"
+          testIdPrefix="staff"
           filters={[
             {
               key: "location",
@@ -148,6 +151,7 @@ export function StaffTab({
         rows={filtered}
         columns={columns}
         rowKey={(s) => s.id}
+        testIdPrefix="staff"
         empty={
           staff.length === 0 ? (
             <EmptyFirstUse

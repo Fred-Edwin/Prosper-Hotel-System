@@ -52,6 +52,7 @@ export function AssetForm({
       saving={saving}
       saveLabel={asset ? "Save changes" : "Add asset"}
       formId="asset-form"
+      testIdPrefix="asset"
     >
       <form
         id="asset-form"

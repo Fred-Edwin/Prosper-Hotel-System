@@ -76,7 +76,9 @@ export function IngredientsTab({
       key: "actions",
       header: "",
       align: "right",
-      cell: (i) => <RowAction label="Edit" onClick={() => setEditing(i)} />,
+      cell: (i) => (
+        <RowAction label="Edit" onClick={() => setEditing(i)} testId={`ingredient-row-edit-${i.id}`} />
+      ),
     },
   ];
 
@@ -90,6 +92,7 @@ export function IngredientsTab({
           count={filtered.length}
           total={ingredients.length}
           noun="ingredients"
+          testIdPrefix="ingredient"
         />
         <Button size="sm" className="h-8" onClick={() => setCreating(true)}>
           <Plus className="size-3.5" /> Add ingredient
@@ -100,6 +103,7 @@ export function IngredientsTab({
         rows={filtered}
         columns={columns}
         rowKey={(i) => i.id}
+        testIdPrefix="ingredient"
         empty={
           ingredients.length === 0 ? (
             <EmptyFirstUse

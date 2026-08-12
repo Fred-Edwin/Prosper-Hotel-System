@@ -3,7 +3,7 @@ import { test as setup, expect } from "@playwright/test";
 const STORAGE_STATE = "e2e/.auth/staff.json";
 
 // Seeded by prisma/seed.ts — see prisma/seed.ts for the full roster.
-const SEED_NAME = "Sarah Njeri"; // cashier, restaurant
+const SEED_NAME = "Restaurant Cashier"; // cashier, restaurant
 const SEED_PIN = "1234";
 
 // Through the real login page rather than a direct API call — this is what

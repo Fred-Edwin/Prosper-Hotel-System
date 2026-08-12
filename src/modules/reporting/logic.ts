@@ -1145,6 +1145,7 @@ export type StoreLedgerRow = {
   purchasedQty: number;
   purchasedValueMinor: number;
   issuedToKitchen: number;
+  transferredIn: number;
   transferredOut: number;
   spoilage: number;
   closingQty: number;
@@ -1228,22 +1229,24 @@ export async function getStoreLedger(
 
     const outByIngredient = new Map<
       string,
-      { issuedToKitchen: number; transferredOut: number; spoilage: number }
+      { issuedToKitchen: number; transferredIn: number; transferredOut: number; spoilage: number }
     >();
     for (const line of movements.lines) {
       const sums = outByIngredient.get(line.ingredientId) ?? {
         issuedToKitchen: 0,
+        transferredIn: 0,
         transferredOut: 0,
         spoilage: 0,
       };
       // Out-reason quantities are stored negative (stock leaving); flip to
       // positive "out" figures for the ledger's columns. `transferred` on
       // IngredientMovement carries both directions (see stock's transfer
-      // logic) — only the negative (outbound) side belongs in this
-      // location's "transferred out" column, same convention
+      // logic) — this location can be either end, so both the positive
+      // (inbound) and negative (outbound) sides are folded, same convention
       // getProductLedger's foldReasonLines uses for products.
       if (line.reason === "issued") sums.issuedToKitchen += -line.quantity;
       else if (line.reason === "transferred" && line.quantity < 0) sums.transferredOut += -line.quantity;
+      else if (line.reason === "transferred" && line.quantity > 0) sums.transferredIn += line.quantity;
       else if (line.reason === "wasted") sums.spoilage += -line.quantity;
       outByIngredient.set(line.ingredientId, sums);
     }
@@ -1268,6 +1271,7 @@ export async function getStoreLedger(
       const purchase = purchasesByIngredient.get(ingredientId) ?? { quantity: 0, valueMinor: 0 };
       const out = outByIngredient.get(ingredientId) ?? {
         issuedToKitchen: 0,
+        transferredIn: 0,
         transferredOut: 0,
         spoilage: 0,
       };
@@ -1290,6 +1294,7 @@ export async function getStoreLedger(
         purchasedQty: purchase.quantity,
         purchasedValueMinor: purchase.valueMinor,
         issuedToKitchen: out.issuedToKitchen,
+        transferredIn: out.transferredIn,
         transferredOut: out.transferredOut,
         spoilage: out.spoilage,
         closingQty,

@@ -123,6 +123,7 @@ export function CustomersTab({
           noun="customers"
           count={rows.length}
           total={customers.length}
+          testIdPrefix="customer"
           toggles={[
             {
               key: "owing",
@@ -139,6 +140,7 @@ export function CustomersTab({
         rows={rows}
         columns={columns}
         rowKey={(c) => c.id}
+        testIdPrefix="customer"
         minWidth={480}
         footnote="A balance is credit extended less repayments — it is never edited directly. Taking a repayment happens on the customer."
         empty={

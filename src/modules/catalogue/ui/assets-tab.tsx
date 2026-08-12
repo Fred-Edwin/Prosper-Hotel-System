@@ -64,7 +64,9 @@ export function AssetsTab({
       key: "actions",
       header: "",
       align: "right",
-      cell: (a) => <RowAction label="Edit" onClick={() => setEditing(a)} />,
+      cell: (a) => (
+        <RowAction label="Edit" onClick={() => setEditing(a)} testId={`asset-row-edit-${a.id}`} />
+      ),
     },
   ];
 
@@ -78,6 +80,7 @@ export function AssetsTab({
           count={filtered.length}
           total={assets.length}
           noun="assets"
+          testIdPrefix="asset"
         />
         <Button size="sm" className="h-8" onClick={() => setCreating(true)}>
           <Plus className="size-3.5" /> Add asset
@@ -88,6 +91,7 @@ export function AssetsTab({
         rows={filtered}
         columns={columns}
         rowKey={(a) => a.id}
+        testIdPrefix="asset"
         empty={
           assets.length === 0 ? (
             <EmptyFirstUse
