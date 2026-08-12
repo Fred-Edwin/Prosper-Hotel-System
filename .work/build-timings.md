@@ -20,3 +20,6 @@
 - claimed: 13:38
 - context read done: 13:50  (context: 12m)
 - blocked: 13:50  (scope gaps: ingredients not on admin stock table; no location switcher for restaurant+canteen basis)
+- resumed: 14:05  (user chose to extend ticket to cover both gaps)
+- plan proposed: 14:12
+- plan approved: 14:15  (waiting on user: 3m)
