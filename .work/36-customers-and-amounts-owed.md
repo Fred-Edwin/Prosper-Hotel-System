@@ -6,7 +6,7 @@ already exist in `people` since ticket 06; `getCustomerBalance` already
 exists in `sales` since ticket 08 — this ticket is the first screen to
 read both together)
 
-**Status:** in-progress (claimed by /build session, 2026-08-12)
+**Status:** done (merged 2026-08-12)
 
 **⚠ UI checkpoint (Edwinfred's explicit request):** this ticket builds a
 real screen from an already-designed prototype (see below). Before
