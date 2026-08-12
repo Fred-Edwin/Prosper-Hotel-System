@@ -200,27 +200,45 @@ silently inflate whichever bucket it falls into.
    `references/ui-rules.md` — that work is done and committed. The user
    also typically has the dev server open and is watching changes land
    on localhost live as `/build` works, which already covers casual
-   visual confirmation. So:
+   visual confirmation. Three tiers, from cheapest to most expensive —
+   pick the cheapest one that actually fits:
 
-   - **Default:** confirm the dev server (`pnpm dev`) is running —
-     start it if not, and reuse an already-running instance rather than
-     starting a second one — then tell the user the exact URL/route for
-     this ticket's screen (not just the app root), e.g. "the store
-     ledger tab is at `localhost:3000/ledger?tab=store`", so there's no
-     hunting for where the change landed. Do not launch Storybook or any
-     browser automation. Mark the UI check satisfied on this basis alone
-     if the ticket only wires or reuses an already-approved story with
-     no new state/composition.
-   - **Automated Storybook pass required, without waiting to be asked,
-     when the ticket introduces UI surface `/design` didn't already
-     cover** — a new state, a genuinely new composition not in the
-     approved story. That's the case a human glancing at the happy path
-     on localhost is most likely to miss (empty/error/permission-denied
-     states in particular), and it needs the same rigor `/design` would
-     have applied. Follow the Storybook procedure below for that case
-     only.
-   - **If unsure which case applies**, ask rather than guessing either
-     direction.
+   - **Pure reuse/wiring, no new state or composition at all** (the
+     ticket only wires an already-approved story into a new slot, no new
+     markup): confirm the dev server (`pnpm dev`) is running — start it
+     if not, reuse an already-running instance rather than starting a
+     second one — then tell the user the exact URL/route for this
+     ticket's screen (not just the app root), e.g. "the store ledger tab
+     is at `localhost:3000/ledger?tab=store`". Do not launch Storybook or
+     any browser automation. UI check satisfied on this basis alone.
+   - **Near-copy of an already-approved precedent** (the ticket builds a
+     new component whose composition closely mirrors one that already
+     has an approved, screenshotted Storybook story — same table shape,
+     same fetch/LoadState split, same states, just new data/fields —
+     which is the common case for a new ledger/list/detail screen built
+     from an established pattern): **skip Storybook and screenshots
+     entirely.** Read the new component side-by-side with its cited
+     precedent file and confirm structural parity — same states covered
+     (loading/error/denied/empty/populated), same token usage, same
+     interaction patterns, no invented markup. This is a code-reading
+     check, not a visual one: open both files, diff them mentally
+     against `references/ui-rules.md`'s checklist, and confirm the new
+     file is doing what the precedent does, adapted to new fields. This
+     is the case that actually catches real problems (a missing state, a
+     structural drift from the approved pattern) at zero runtime cost —
+     don't spend time booting a browser to re-confirm what reading the
+     two files side by side already tells you.
+   - **Genuinely novel composition, no close precedent** (a new state,
+     a layout `/design` never built or approved): this is the only tier
+     that still needs the automated Storybook pass, since it's the one
+     case reading code can't substitute for — layout math (overflow,
+     truncation, sticky behavior) that doesn't evaluate from source.
+     Follow the Storybook procedure below. (A checked-in visual-snapshot
+     regression test, so this becomes a pass/fail check instead of an
+     agent screenshotting and eyeballing it fresh every time, is planned
+     but not yet built — until then this tier still means manual
+     screenshots.)
+   - **If unsure which tier applies**, ask rather than guessing.
 
    Record `self-verify done` once tests/lint/typecheck pass and the UI
    check (whichever form it took) is satisfied.
