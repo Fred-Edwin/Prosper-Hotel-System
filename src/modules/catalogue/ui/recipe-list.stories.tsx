@@ -3,10 +3,10 @@ import { RecipeList } from "./recipe-list";
 import type { Product, RecipeWithCost } from "../schema";
 
 const products: Product[] = [
-  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, active: true, categoryId: null },
-  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, active: true, categoryId: null },
-  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, lastKnownCostMinor: null, active: true, categoryId: null },
-  { id: "p4", name: "Beef stew", kind: "cooked_food", priceMinor: 180, lastKnownCostMinor: null, active: true, categoryId: null },
+  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: null },
+  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: null },
+  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: null },
+  { id: "p4", name: "Beef stew", kind: "cooked_food", priceMinor: 180, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: null },
 ];
 
 const mukimoRecipe: RecipeWithCost = {

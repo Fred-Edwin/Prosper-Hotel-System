@@ -46,6 +46,7 @@ import {
 import type {
   DerivedSaleLine,
   IngredientMovement,
+  LowStockItem,
   NonSalesCategory,
   Receipt,
   StockCount,
@@ -157,6 +158,154 @@ export async function getCurrentStockAtLocation(
     .sort((a, b) => a.productName.localeCompare(b.productName));
 
   return { ok: true, levels };
+}
+
+export type LowStockAccessResult =
+  | { ok: true; items: LowStockItem[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+export type IngredientStockValue = {
+  ingredientId: string;
+  ingredientName: string;
+  quantityOnHand: number;
+  unitCostMinor: number;
+  valueMinor: number;
+  isEstimated: boolean;
+};
+
+export type IngredientStockValuesResult =
+  | { ok: true; values: IngredientStockValue[] }
+  | { ok: false; reason: "forbidden" };
+
+// Ingredient-side, per-row counterpart to getProductStockValueAtLocation —
+// ticket 44, so ingredient rows on AdminStockTable carry a Value figure
+// the same way product rows already do. Unlike products, an ingredient
+// has a single running-average cost (lastKnownCostMinor), never an
+// estimate — isEstimated is always false, kept only so the row shape
+// matches ProductStockValue for the UI. An ingredient with no known cost
+// is excluded, not shown as zero value.
+export async function getIngredientStockValuesAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<IngredientStockValuesResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const sums = await sumMovementsByIngredientAtLocation(db, locationId);
+  const ingredients = await findIngredientsByIds(db, sums.map((s) => s.ingredientId));
+  const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+  const values: IngredientStockValue[] = [];
+  for (const sum of sums) {
+    const ingredient = ingredientById.get(sum.ingredientId);
+    if (!ingredient || ingredient.lastKnownCostMinor == null) continue;
+
+    values.push({
+      ingredientId: ingredient.id,
+      ingredientName: ingredient.name,
+      quantityOnHand: sum.quantityOnHand,
+      unitCostMinor: ingredient.lastKnownCostMinor,
+      valueMinor: sum.quantityOnHand * ingredient.lastKnownCostMinor,
+      isEstimated: false,
+    });
+  }
+
+  return { ok: true, values };
+}
+
+// Ticket 44: proposal.md §7 — items at or below their own defined level.
+// Restaurant compares live on-hand (same sums getCurrentStockAtLocation
+// reads); canteen compares the quantity as at the most recent count,
+// since canteen stock is provisional between counts (§10.4) the same way
+// its cost is — an item with no count yet has no basis to compare and is
+// excluded, not shown as low. An item with no threshold set is likewise
+// excluded — there is nothing to compare against.
+export async function getLowStockItems(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<LowStockAccessResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const location = await findLocationById(db, locationId);
+  if (!location) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  if (location.code === "canteen") {
+    const count = await findLatestStockCountAtLocation(db, locationId);
+    if (!count) return { ok: true, items: [] };
+
+    const productIds = count.lines.filter((l) => l.itemType === "product").map((l) => l.itemId);
+    const ingredientIds = count.lines
+      .filter((l) => l.itemType === "ingredient")
+      .map((l) => l.itemId);
+    const products = productIds.length > 0 ? await findProductsByIds(db, productIds) : [];
+    const ingredients =
+      ingredientIds.length > 0 ? await findIngredientsByIds(db, ingredientIds) : [];
+    const productById = new Map(products.map((p) => [p.id, p]));
+    const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+    const items: LowStockItem[] = [];
+    for (const line of count.lines) {
+      const item = line.itemType === "product" ? productById.get(line.itemId) : ingredientById.get(line.itemId);
+      if (!item || item.lowStockLevel == null) continue;
+      if (line.countedQuantity > item.lowStockLevel) continue;
+      items.push({
+        itemType: line.itemType,
+        itemId: line.itemId,
+        itemName: item.name,
+        quantityOnHand: line.countedQuantity,
+        lowStockLevel: item.lowStockLevel,
+        asOf: count.occurredAt,
+      });
+    }
+    return { ok: true, items: items.sort((a, b) => a.itemName.localeCompare(b.itemName)) };
+  }
+
+  const productSums = await sumMovementsByProductAtLocation(db, locationId);
+  const ingredientSums = await sumMovementsByIngredientAtLocation(db, locationId);
+  const products =
+    productSums.length > 0 ? await findProductsByIds(db, productSums.map((s) => s.productId)) : [];
+  const ingredients =
+    ingredientSums.length > 0
+      ? await findIngredientsByIds(db, ingredientSums.map((s) => s.ingredientId))
+      : [];
+  const productById = new Map(products.map((p) => [p.id, p]));
+  const ingredientById = new Map(ingredients.map((i) => [i.id, i]));
+
+  const items: LowStockItem[] = [];
+  for (const sum of productSums) {
+    const product = productById.get(sum.productId);
+    if (!product || product.lowStockLevel == null) continue;
+    if (sum.quantityOnHand > product.lowStockLevel) continue;
+    items.push({
+      itemType: "product",
+      itemId: sum.productId,
+      itemName: product.name,
+      quantityOnHand: sum.quantityOnHand,
+      lowStockLevel: product.lowStockLevel,
+      asOf: null,
+    });
+  }
+  for (const sum of ingredientSums) {
+    const ingredient = ingredientById.get(sum.ingredientId);
+    if (!ingredient || ingredient.lowStockLevel == null) continue;
+    if (sum.quantityOnHand > ingredient.lowStockLevel) continue;
+    items.push({
+      itemType: "ingredient",
+      itemId: sum.ingredientId,
+      itemName: ingredient.name,
+      quantityOnHand: sum.quantityOnHand,
+      lowStockLevel: ingredient.lowStockLevel,
+      asOf: null,
+    });
+  }
+  return { ok: true, items: items.sort((a, b) => a.itemName.localeCompare(b.itemName)) };
 }
 
 export type TransferMovement = StockMovement | IngredientMovement;

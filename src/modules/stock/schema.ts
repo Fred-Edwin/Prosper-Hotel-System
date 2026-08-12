@@ -96,6 +96,19 @@ export type StockCountForReader = Omit<StockCount, "lines"> & {
   lines: StockCountLineForReader[];
 };
 
+// Ticket 44: one row of the low-stock filter — restaurant items compare
+// against live on-hand (asOf null); canteen items compare against the
+// most recent count's quantity (asOf the count's occurredAt), since
+// canteen stock is provisional between counts.
+export type LowStockItem = {
+  itemType: StockCountItemType;
+  itemId: string;
+  itemName: string;
+  quantityOnHand: number;
+  lowStockLevel: number;
+  asOf: Date | null;
+};
+
 // Ticket 24: one line of the owner-only "since last count" detail on the
 // review screen — the derived-sold quantity and revenue per item at the
 // canteen. Distinct from StockCountLine because it has no counted/expected

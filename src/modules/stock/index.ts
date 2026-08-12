@@ -32,6 +32,8 @@ export {
   getNonSalesConsumptionValue,
   getNonSalesLedger,
   resolveProductCostBasis,
+  getLowStockItems,
+  getIngredientStockValuesAtLocation,
 } from "./logic";
 export type {
   ProductCostBasis,
@@ -68,6 +70,9 @@ export type {
   NonSalesConsumptionValueResult,
   NonSalesLedgerLine,
   NonSalesLedgerResult,
+  LowStockAccessResult,
+  IngredientStockValue,
+  IngredientStockValuesResult,
 } from "./logic";
 export {
   stockAtLocationRoute,
@@ -84,6 +89,8 @@ export {
   stockCountRoute,
   latestStockCountRoute,
   correctStockCountRoute,
+  lowStockAtLocationRoute,
+  ingredientStockValueAtLocationRoute,
 } from "./routes";
 export type {
   StockMovement,
@@ -98,4 +105,5 @@ export type {
   StockCountForReader,
   StockCountLineForReader,
   DerivedSaleLine,
+  LowStockItem,
 } from "./schema";

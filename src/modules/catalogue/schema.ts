@@ -8,6 +8,8 @@ export type Product = {
   kind: ProductKind;
   priceMinor: number | null;
   lastKnownCostMinor: number | null;
+  // Ticket 44: null means no threshold defined, distinct from zero.
+  lowStockLevel: number | null;
   active: boolean;
   categoryId: string | null;
 };
@@ -23,6 +25,8 @@ export type Ingredient = {
   name: string;
   unitOfMeasure: string;
   lastKnownCostMinor: number | null;
+  // Ticket 44: same nullable-until-set convention as Product.lowStockLevel.
+  lowStockLevel: number | null;
   active: boolean;
 };
 

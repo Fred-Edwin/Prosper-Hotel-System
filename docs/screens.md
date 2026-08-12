@@ -38,6 +38,7 @@ new destinations get added here as tickets that build them land, per
 | Modules/Catalogue/AssetsTab | `src/modules/catalogue/ui/assets-tab.stories.tsx` | approved |
 | Modules/Catalogue/CategoriesTab | `src/modules/catalogue/ui/categories-tab.stories.tsx` | approved |
 | Modules/Catalogue/ProductForm | `src/modules/catalogue/ui/product-form.stories.tsx` | approved |
+| Modules/Catalogue/IngredientForm | `src/modules/catalogue/ui/ingredient-form.stories.tsx` | approved |
 
 ## Stock
 
@@ -111,8 +112,13 @@ this sub-ledger) landed via ticket 42. The Non-sales ledger tab (one row
 per wasted/consumed/given-away entry across products and ingredients,
 valued at its own snapshotted cost/selling figures, reason filter, search
 by item or recorded-by, totals footer, "est" indicator for recipe-less
-cost estimates) landed via ticket 43. Added to this file as their tickets
-land, not speculatively ahead of them.
+cost estimates) landed via ticket 43. Low stock (a filter chip on
+AdminStockTable, not a separate destination — ingredient rows alongside
+products, a product/ingredient type filter, and the low-stock threshold
+field on ProductForm/IngredientForm) landed via ticket 44, which also
+added a restaurant/canteen switcher to the Stock page so both locations
+are reachable from one screen. Added to this file as their tickets land,
+not speculatively ahead of them.
 
 ## Note on naming
 

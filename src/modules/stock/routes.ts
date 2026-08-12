@@ -3,6 +3,8 @@ import { getSession, listLocations } from "@/modules/people";
 import {
   correctStockCount,
   getCurrentStockAtLocation,
+  getIngredientStockValuesAtLocation,
+  getLowStockItems,
   getProductStockValueAtLocation,
   getTransferableItems,
   getLatestStockCount,
@@ -49,6 +51,39 @@ export async function stockValueAtLocationRoute(
   }
 
   return Response.json({ values: result.values });
+}
+
+export async function ingredientStockValueAtLocationRoute(
+  _request: Request,
+  { params }: { params: Promise<{ locationId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { locationId } = await params;
+  const result = await getIngredientStockValuesAtLocation(db, session, locationId);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: 403 });
+  }
+
+  return Response.json({ values: result.values });
+}
+
+export async function lowStockAtLocationRoute(
+  _request: Request,
+  { params }: { params: Promise<{ locationId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { locationId } = await params;
+  const result = await getLowStockItems(db, session, locationId);
+  if (!result.ok) {
+    const status = result.reason === "not_found" ? 404 : 403;
+    return Response.json({ error: result.reason }, { status });
+  }
+
+  return Response.json({ items: result.items });
 }
 
 function writeStatus(reason: string): number {

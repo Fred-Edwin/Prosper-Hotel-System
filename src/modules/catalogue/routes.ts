@@ -96,6 +96,7 @@ export async function updateProductRoute(
     kind: body.kind,
     priceMinor: body.priceMinor ?? null,
     categoryId: body.categoryId ?? null,
+    lowStockLevel: body.lowStockLevel ?? null,
   });
   if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   return Response.json({ product: result.value });
@@ -154,6 +155,7 @@ export async function updateIngredientRoute(
     name: body.name,
     unitOfMeasure: body.unitOfMeasure,
     lastKnownCostMinor: body.lastKnownCostMinor ?? null,
+    lowStockLevel: body.lowStockLevel ?? null,
   });
   if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   return Response.json({ ingredient: result.value });

@@ -106,6 +106,30 @@ describe("products", () => {
     expect(result.value.priceMinor).toBe(20000);
   });
 
+  test("owner can set and unset a product's low-stock level", async () => {
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    if (!created.ok) throw new Error("expected create to succeed");
+    expect(created.value.lowStockLevel).toBeNull();
+
+    const set = await updateProduct(testDb, owner, created.value.id, {
+      name: "Chips",
+      kind: "cooked_food",
+      lowStockLevel: 10,
+    });
+    expect(set.ok).toBe(true);
+    if (!set.ok) return;
+    expect(set.value.lowStockLevel).toBe(10);
+
+    const unset = await updateProduct(testDb, owner, created.value.id, {
+      name: "Chips",
+      kind: "cooked_food",
+      lowStockLevel: null,
+    });
+    expect(unset.ok).toBe(true);
+    if (!unset.ok) return;
+    expect(unset.value.lowStockLevel).toBeNull();
+  });
+
   test("owner can deactivate and reactivate a product", async () => {
     const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
     if (!created.ok) throw new Error("expected create to succeed");
@@ -311,6 +335,30 @@ describe("ingredients", () => {
     if (!result.ok) return;
     expect(result.value.name).toBe("Flour (white)");
     expect(result.value.lastKnownCostMinor).toBe(15000);
+  });
+
+  test("owner can set and unset an ingredient's low-stock level", async () => {
+    const created = await createIngredient(testDb, owner, { name: "Flour", unitOfMeasure: "kg" });
+    if (!created.ok) throw new Error("expected create to succeed");
+    expect(created.value.lowStockLevel).toBeNull();
+
+    const set = await updateIngredient(testDb, owner, created.value.id, {
+      name: "Flour",
+      unitOfMeasure: "kg",
+      lowStockLevel: 5,
+    });
+    expect(set.ok).toBe(true);
+    if (!set.ok) return;
+    expect(set.value.lowStockLevel).toBe(5);
+
+    const unset = await updateIngredient(testDb, owner, created.value.id, {
+      name: "Flour",
+      unitOfMeasure: "kg",
+      lowStockLevel: null,
+    });
+    expect(unset.ok).toBe(true);
+    if (!unset.ok) return;
+    expect(unset.value.lowStockLevel).toBeNull();
   });
 
   test("owner can list, deactivate, and reactivate ingredients", async () => {
