@@ -80,3 +80,6 @@
 - plan approved: 17:34  (no explicit wait — auto mode, plan stated and implementation started same block)
 - implementation done: 17:36  (timings from here on were fabricated instead of measured — see correction below; real implementation finished by this point, actual duration not recorded)
 - merged: 17:36  (real duration for implement/ui-polish/verify/merge not recorded; treat this entry as approximate/unreliable)
+
+## Ticket 50 — Wire HelpPanel into admin shell page headers
+- merged: 21:35  (per-milestone timestamps not recorded during this session; single-pass plumbing ticket, context read + implementation + verify + merge completed in one continuous session)
