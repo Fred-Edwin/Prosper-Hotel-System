@@ -2,7 +2,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { recordIngredientReceipt } from "@/modules/stock";
-import { recordExpense, reverseExpense, getRunningCashBalance } from "../logic";
+import {
+  recordExpense,
+  reverseExpense,
+  recordDrawingRepayment,
+  reverseDrawingRepayment,
+  getRunningCashBalance,
+} from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -65,6 +71,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await testDb.drawingRepayment.deleteMany({});
   await testDb.drawingDebt.deleteMany({});
   await testDb.expense.deleteMany({});
   await testDb.handover.deleteMany({});
@@ -72,6 +79,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  await testDb.drawingRepayment.deleteMany({});
   await testDb.drawingDebt.deleteMany({});
   await testDb.expense.deleteMany({});
   await testDb.handover.deleteMany({});
@@ -237,6 +245,57 @@ describe("getRunningCashBalance", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.cashMinor).toBe(88000);
+  });
+
+  test("a drawing repayment is money in, split by method same as everything else", async () => {
+    await seedHandover(restaurantId, 10000, 0);
+    await recordExpense(testDb, staffAt("owner", restaurantId), {
+      locationId: restaurantId,
+      category: "drawing",
+      amountMinor: 8000,
+      paymentMethod: "cash",
+    });
+    // Repaying part of that drawing debt back in cash and part in M-Pesa.
+    await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
+      amountMinor: 3000,
+      paymentMethod: "cash",
+    });
+    await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
+      amountMinor: 1000,
+      paymentMethod: "mpesa",
+    });
+
+    const result = await getRunningCashBalance(testDb, staffAt("owner", restaurantId));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Cash: 10,000 in - 8,000 out (drawing) + 3,000 repaid = 5,000.
+    expect(result.cashMinor).toBe(5000);
+    // M-Pesa: 0 in/out otherwise + 1,000 repaid = 1,000.
+    expect(result.mpesaMinor).toBe(1000);
+  });
+
+  test("a reversed drawing repayment is excluded from money-in", async () => {
+    await seedHandover(restaurantId, 10000, 0);
+    await recordExpense(testDb, staffAt("owner", restaurantId), {
+      locationId: restaurantId,
+      category: "drawing",
+      amountMinor: 8000,
+      paymentMethod: "cash",
+    });
+    const repaid = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
+      amountMinor: 3000,
+      paymentMethod: "cash",
+    });
+    if (!repaid.ok) throw new Error("setup failed");
+    await reverseDrawingRepayment(testDb, staffAt("owner", restaurantId), repaid.repayment.id);
+
+    const result = await getRunningCashBalance(testDb, staffAt("owner", restaurantId));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Cash: 10,000 in - 8,000 out, the reversed repayment doesn't count.
+    expect(result.cashMinor).toBe(2000);
   });
 
   test("rejects a non-owner", async () => {

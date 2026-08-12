@@ -593,6 +593,12 @@ model DrawingDebt {
 model DrawingRepayment {
   id          String    @id @default(cuid())
   amountMinor Int
+  // Cash or M-Pesa only — never credit, same reasoning as Expense.
+  // Defaulted to cash for rows recorded before this field existed, since
+  // there is no real record of which method they used. Ticket 40 — the
+  // cash ledger needs a method on every transaction, and repayments are
+  // one of its categories.
+  paymentMethod PaymentMethod @default(cash)
   recordedBy  String
   occurredAt  DateTime  @default(now())
   reversed    Boolean   @default(false)

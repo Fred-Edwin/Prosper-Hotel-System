@@ -75,6 +75,7 @@ new destinations get added here as tickets that build them land, per
 | Modules/Reporting/DashboardProfit | `src/modules/reporting/ui/dashboard-profit.stories.tsx` | approved |
 | Modules/Reporting/LedgerShell | `src/modules/reporting/ui/ledger-shell.stories.tsx` | approved |
 | Modules/Reporting/ProductLedger | `src/modules/reporting/ui/product-ledger.stories.tsx` | approved |
+| Modules/Reporting/CashLedger | `src/modules/reporting/ui/cash-ledger.stories.tsx` | approved |
 
 ## People
 
@@ -99,9 +100,11 @@ ticket 37 (AdminStockTable's value column); the Ledger shell and its
 cost-of-goods-sold waterfall, generalised to an arbitrary period across
 both locations, landed via ticket 38; the Product ledger tab (search,
 location filter, owner-managed category filter from ticket 41,
-day-expansion) landed via ticket 39. Store, Non-sales and Cash still
-show their not-yet-wired state — Cash lands in ticket 40, Store/Non-sales
-in a later ticket. Added to this file as their tickets land, not
+day-expansion) landed via ticket 39. The Cash ledger tab (search, category
+filter, day-expansion to individual transactions with method, running
+cash and M-Pesa balances kept independent throughout) landed via ticket
+40. Store and Non-sales still show their not-yet-wired state — a later
+ticket. Added to this file as their tickets land, not
 speculatively ahead of them.
 
 ## Note on naming

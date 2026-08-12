@@ -89,7 +89,7 @@ describe("recordDrawingRepayment", () => {
     const before = await drawingDebtOwed(testDb);
 
     const result = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 5000,
+      amountMinor: 5000, paymentMethod: "cash",
     });
 
     expect(result.ok).toBe(true);
@@ -101,7 +101,7 @@ describe("recordDrawingRepayment", () => {
     await recordDrawing(3000);
 
     const result = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 3001,
+      amountMinor: 3001, paymentMethod: "cash",
     });
 
     expect(result).toEqual({ ok: false, reason: "exceeds_outstanding" });
@@ -111,7 +111,7 @@ describe("recordDrawingRepayment", () => {
     await recordDrawing(3000);
 
     const result = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 0,
+      amountMinor: 0, paymentMethod: "cash",
     });
 
     expect(result).toEqual({ ok: false, reason: "invalid_amount" });
@@ -121,7 +121,7 @@ describe("recordDrawingRepayment", () => {
     await recordDrawing(3000);
 
     const result = await recordDrawingRepayment(testDb, staffAt("cashier", restaurantId), {
-      amountMinor: 1000,
+      amountMinor: 1000, paymentMethod: "cash",
     });
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
@@ -133,7 +133,7 @@ describe("reverseDrawingRepayment", () => {
     await recordDrawing(20000);
     const before = await drawingDebtOwed(testDb);
     const recorded = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 5000,
+      amountMinor: 5000, paymentMethod: "cash",
     });
     if (!recorded.ok) throw new Error("setup failed");
 
@@ -153,7 +153,7 @@ describe("reverseDrawingRepayment", () => {
   test("rejects reversing an already-reversed repayment", async () => {
     await recordDrawing(20000);
     const recorded = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 5000,
+      amountMinor: 5000, paymentMethod: "cash",
     });
     if (!recorded.ok) throw new Error("setup failed");
     await reverseDrawingRepayment(testDb, staffAt("owner", restaurantId), recorded.repayment.id);
@@ -170,7 +170,7 @@ describe("reverseDrawingRepayment", () => {
   test("rejects a non-owner", async () => {
     await recordDrawing(20000);
     const recorded = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 5000,
+      amountMinor: 5000, paymentMethod: "cash",
     });
     if (!recorded.ok) throw new Error("setup failed");
 
@@ -192,7 +192,7 @@ describe("reverseDrawingRepayment", () => {
   test("rejects reversing a repayment from a previous day", async () => {
     await recordDrawing(20000);
     const recorded = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 5000,
+      amountMinor: 5000, paymentMethod: "cash",
     });
     if (!recorded.ok) throw new Error("setup failed");
 
@@ -217,7 +217,10 @@ describe("drawingDebtOwed", () => {
   test("nets debt minus unreversed repayments", async () => {
     await recordDrawing(10000);
     await recordDrawing(5000);
-    await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), { amountMinor: 4000 });
+    await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
+      amountMinor: 4000,
+      paymentMethod: "cash",
+    });
 
     const owed = await drawingDebtOwed(testDb);
 
@@ -227,7 +230,7 @@ describe("drawingDebtOwed", () => {
   test("a reversed repayment does not reduce the balance", async () => {
     await recordDrawing(10000);
     const recorded = await recordDrawingRepayment(testDb, staffAt("owner", restaurantId), {
-      amountMinor: 4000,
+      amountMinor: 4000, paymentMethod: "cash",
     });
     if (!recorded.ok) throw new Error("setup failed");
     await reverseDrawingRepayment(testDb, staffAt("owner", restaurantId), recorded.repayment.id);

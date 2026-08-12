@@ -1,5 +1,8 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { Expense as PrismaExpense } from "@/generated/prisma/client";
+import type {
+  Expense as PrismaExpense,
+  DrawingRepayment as PrismaDrawingRepayment,
+} from "@/generated/prisma/client";
 import type {
   DrawingDebt,
   DrawingRepayment,
@@ -15,6 +18,10 @@ import type {
 // it, so this narrowing is safe; it just isn't expressible in the
 // Prisma-generated type itself.
 function toExpense(row: PrismaExpense): Expense {
+  return { ...row, paymentMethod: row.paymentMethod as ExpensePaymentMethod };
+}
+
+function toDrawingRepayment(row: PrismaDrawingRepayment): DrawingRepayment {
   return { ...row, paymentMethod: row.paymentMethod as ExpensePaymentMethod };
 }
 
@@ -208,34 +215,75 @@ export async function sumUnreversedDrawingRepayment(db: PrismaClient): Promise<n
   return result._sum.amountMinor ?? 0;
 }
 
+// Ticket 40 — getRunningCashBalance needs repayments split by method the
+// same way handovers and expenses already are, so "money in" actually
+// includes every money-in category.
+export async function sumUnreversedDrawingRepaymentByMethod(
+  db: PrismaClient,
+): Promise<{ cashMinor: number; mpesaMinor: number }> {
+  const [cash, mpesa] = await Promise.all([
+    db.drawingRepayment.aggregate({
+      where: { reversed: false, paymentMethod: "cash" },
+      _sum: { amountMinor: true },
+    }),
+    db.drawingRepayment.aggregate({
+      where: { reversed: false, paymentMethod: "mpesa" },
+      _sum: { amountMinor: true },
+    }),
+  ]);
+  return {
+    cashMinor: cash._sum.amountMinor ?? 0,
+    mpesaMinor: mpesa._sum.amountMinor ?? 0,
+  };
+}
+
 export async function createDrawingRepayment(
   db: PrismaClient,
-  data: { amountMinor: number; recordedBy: string },
+  data: { amountMinor: number; paymentMethod: ExpensePaymentMethod; recordedBy: string },
 ): Promise<DrawingRepayment> {
-  return db.drawingRepayment.create({ data });
+  const row = await db.drawingRepayment.create({ data });
+  return toDrawingRepayment(row);
 }
 
 export async function findDrawingRepaymentById(
   db: PrismaClient,
   id: string,
 ): Promise<DrawingRepayment | null> {
-  return db.drawingRepayment.findUnique({ where: { id } });
+  const row = await db.drawingRepayment.findUnique({ where: { id } });
+  return row ? toDrawingRepayment(row) : null;
 }
 
 export async function markDrawingRepaymentReversed(
   db: PrismaClient,
   id: string,
 ): Promise<DrawingRepayment> {
-  return db.drawingRepayment.update({
+  const row = await db.drawingRepayment.update({
     where: { id },
     data: { reversed: true, reversedAt: new Date() },
   });
+  return toDrawingRepayment(row);
 }
 
 // Business-wide, not location-scoped — drawings aren't a location concept
 // (proposal.md §6), same reasoning as sumHandoversMinor/sumExpensesMinorByMethod.
 export async function listDrawingRepayments(db: PrismaClient): Promise<DrawingRepayment[]> {
-  return db.drawingRepayment.findMany({ orderBy: { occurredAt: "desc" } });
+  const rows = await db.drawingRepayment.findMany({ orderBy: { occurredAt: "desc" } });
+  return rows.map(toDrawingRepayment);
+}
+
+// Ticket 40 — the cash ledger's day-expansion needs individual repayment
+// rows across an arbitrary period, business-wide like every other
+// drawings read. Unreversed only, same convention as sumExpensesMinorByMethod.
+export async function listDrawingRepaymentsInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<DrawingRepayment[]> {
+  const rows = await db.drawingRepayment.findMany({
+    where: { reversed: false, occurredAt: { gt: periodStart, lte: periodEnd } },
+    orderBy: { occurredAt: "asc" },
+  });
+  return rows.map(toDrawingRepayment);
 }
 
 // Ticket 31 — formulas.md §9's "handovers received" term. Business-wide
@@ -294,4 +342,35 @@ export async function findTodaysHandoversAtLocation(
     ...handover,
     staffName: staffMember.name,
   }));
+}
+
+// Ticket 40 — the cash ledger's day-expansion needs individual handover
+// rows across an arbitrary period, business-wide (both locations, unlike
+// findTodaysHandoversAtLocation). No void/reversal concept, so every row
+// counts, same as sumHandoversMinor.
+export async function listHandoversInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Handover[]> {
+  return db.handover.findMany({
+    where: { occurredAt: { gt: periodStart, lte: periodEnd } },
+    orderBy: { occurredAt: "asc" },
+  });
+}
+
+// Ticket 40 — the cash ledger's day-expansion needs individual expense
+// rows (stock/running/asset/drawing categories) across an arbitrary
+// period, business-wide, unreversed only — same convention as
+// sumExpensesMinorByMethod/sumRunningCostsMinorInPeriod.
+export async function listExpensesInPeriod(
+  db: PrismaClient,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Expense[]> {
+  const rows = await db.expense.findMany({
+    where: { reversed: false, occurredAt: { gt: periodStart, lte: periodEnd } },
+    orderBy: { occurredAt: "asc" },
+  });
+  return rows.map(toExpense);
 }

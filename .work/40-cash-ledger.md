@@ -3,7 +3,23 @@
 **Type:** logic (test-first)
 **Blocked by:** 38 (needs the Ledger shell and its period picker to host
 this tab in)
-**Status:** in-progress (claude, 2026-08-12)
+**Status:** done (2026-08-12)
+
+## Build notes
+
+- Resolved the opening/closing ambiguity per `getRunningCashBalance`'s
+  (ticket 31) existing precedent: two independent running balances
+  (`cashMinor`/`mpesaMinor`), never blended — no reference-fixture
+  guessing needed once that precedent was found.
+- Found `DrawingRepayment` (ticket 32) had no `paymentMethod` field,
+  unlike every other cash record. Confirmed with Edwinfred: added
+  `paymentMethod` to `DrawingRepayment` (schema + migration + logic +
+  `drawing-repayment-card.tsx`'s form) rather than assuming cash-only.
+- Found `getRunningCashBalance` (ticket 31) never netted repayments in as
+  money-in, even after ticket 32 added them — a pre-existing gap that
+  would have made this ledger's closing balance and the dashboard's
+  running balance disagree. Confirmed with Edwinfred: fixed in this
+  ticket, with new integration test coverage.
 
 ## Goal
 
@@ -62,22 +78,22 @@ expected-cash figure as a browsable record rather than a single number.
 
 ## Acceptance criteria
 
-- [ ] Each day's closing balance equals its opening balance plus that
+- [x] Each day's closing balance equals its opening balance plus that
       day's money in less that day's money out, for both cash and M-Pesa
       independently, against a constructed fixture with all five
       categories (handover, repayment, stock, running, asset, drawing)
       represented.
-- [ ] A day's closing balance equals the next day's opening balance
+- [x] A day's closing balance equals the next day's opening balance
       (the running balance actually runs across the period).
-- [ ] Filtering by category narrows both the day rows (does that day have
+- [x] Filtering by category narrows both the day rows (does that day have
       any matching transaction) and the expanded transaction list to
       that category.
-- [ ] Expanding a day shows its individual transactions with method
+- [x] Expanding a day shows its individual transactions with method
       (cash/M-Pesa), category, description, amount, and who recorded it.
-- [ ] Owner-only, same gate as the rest of `reporting`.
-- [ ] Empty (no transactions in period) and filtered-empty states are
+- [x] Owner-only, same gate as the rest of `reporting`.
+- [x] Empty (no transactions in period) and filtered-empty states are
       distinct, via `components/patterns/states.tsx`.
-- [ ] Storybook story: populated table, day expanded, empty, filtered-
+- [x] Storybook story: populated table, day expanded, empty, filtered-
       empty, loading.
 
 ## Verification

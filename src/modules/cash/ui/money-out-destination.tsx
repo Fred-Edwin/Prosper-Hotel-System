@@ -32,6 +32,7 @@ import {
   reverseDrawingRepaymentRequest,
   type BalanceState as DrawingDebtState,
   type RepaymentListState,
+  type DrawingRepaymentPaymentMethod,
 } from "./drawing-repayment-card";
 
 export type BalanceState =
@@ -282,8 +283,9 @@ export function MoneyOutContentView({
 
   async function handleSaveDrawingRepayment(
     amountMinor: number,
+    paymentMethod: DrawingRepaymentPaymentMethod,
   ): Promise<{ ok: boolean; error?: string }> {
-    const result = await onSubmitDrawingRepayment(amountMinor);
+    const result = await onSubmitDrawingRepayment(amountMinor, paymentMethod);
     if (!result.ok) return result;
     loadDrawingDebt();
     loadDrawingRepayments();

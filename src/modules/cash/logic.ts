@@ -20,7 +20,10 @@ import {
   findTodaysHandoversAtLocation,
   findTodaysTakings,
   listDrawingRepayments,
+  listDrawingRepaymentsInPeriod,
   listExpensesAtLocation,
+  listExpensesInPeriod,
+  listHandoversInPeriod,
   markDrawingDebtReversed,
   markDrawingRepaymentReversed,
   markExpenseReversed,
@@ -30,6 +33,7 @@ import {
   sumTakingsMinorAtLocationInPeriod,
   sumUnreversedDrawingDebt,
   sumUnreversedDrawingRepayment,
+  sumUnreversedDrawingRepaymentByMethod,
   updateHandoverActuals,
   updateTakingsAmounts,
   type HandoverWithStaffName,
@@ -379,7 +383,7 @@ export type RecordDrawingRepaymentResult =
 export async function recordDrawingRepayment(
   db: PrismaClient,
   requester: AuthenticatedStaff,
-  input: { amountMinor: number },
+  input: { amountMinor: number; paymentMethod: ExpensePaymentMethod },
 ): Promise<RecordDrawingRepaymentResult> {
   if (!requireOwner(requester)) {
     return { ok: false, reason: "forbidden" };
@@ -396,6 +400,7 @@ export async function recordDrawingRepayment(
 
   const repayment = await createDrawingRepayment(db, {
     amountMinor: input.amountMinor,
+    paymentMethod: input.paymentMethod,
     recordedBy: requester.staff.id,
   });
 
@@ -574,7 +579,10 @@ export type GetRunningCashBalanceResult =
 // costs, equipment/assets and drawings, cash and M-Pesa kept separate
 // throughout. Equipment and drawings reduce cash the same as stock and
 // running costs even though they don't reduce profit — this is a cash
-// question, not a profit one.
+// question, not a profit one. Ticket 40 — repayments are also money in
+// (a drawing debt being paid back) and were missing here since ticket 32
+// added them after this function was written; folded in so this figure
+// and the cash ledger's closing balance agree.
 export async function getRunningCashBalance(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -583,11 +591,52 @@ export async function getRunningCashBalance(
     return { ok: false, reason: "forbidden" };
   }
 
-  const [moneyIn, moneyOut] = await Promise.all([sumHandoversMinor(db), sumExpensesMinorByMethod(db)]);
+  const [handovers, repayments, moneyOut] = await Promise.all([
+    sumHandoversMinor(db),
+    sumUnreversedDrawingRepaymentByMethod(db),
+    sumExpensesMinorByMethod(db),
+  ]);
 
   return {
     ok: true,
-    cashMinor: moneyIn.cashMinor - moneyOut.cashMinor,
-    mpesaMinor: moneyIn.mpesaMinor - moneyOut.mpesaMinor,
+    cashMinor: handovers.cashMinor + repayments.cashMinor - moneyOut.cashMinor,
+    mpesaMinor: handovers.mpesaMinor + repayments.mpesaMinor - moneyOut.mpesaMinor,
   };
+}
+
+export type GetCashLedgerTransactionsResult =
+  | {
+      ok: true;
+      handovers: Handover[];
+      expenses: Expense[];
+      repayments: DrawingRepayment[];
+    }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 40 — the raw money-in/money-out records the cash ledger folds
+// into day rows: business-wide (not per-location, same as
+// getRunningCashBalance), every category getRunningCashBalance's formula
+// counts (handovers and repayments in; stock/running/asset/drawing
+// expenses out). Reporting composes these into the ledger's day-by-day
+// shape rather than reading cash's queries.ts directly, per
+// docs/architecture.md. Staff names are resolved by the caller (via
+// people's findStaffMembersByIds), same pattern as getProductLedger
+// resolving product names through catalogue.
+export async function getCashLedgerTransactions(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<GetCashLedgerTransactionsResult> {
+  if (!requireOwner(requester)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const [handovers, expenses, repayments] = await Promise.all([
+    listHandoversInPeriod(db, periodStart, periodEnd),
+    listExpensesInPeriod(db, periodStart, periodEnd),
+    listDrawingRepaymentsInPeriod(db, periodStart, periodEnd),
+  ]);
+
+  return { ok: true, handovers, expenses, repayments };
 }
