@@ -3,7 +3,7 @@
 **Type:** plumbing (test-after)
 **Blocked by:** None (extends `catalogue`'s existing Product CRUD from
 ticket 01)
-**Status:** planned
+**Status:** in-progress (claimed by Claude Code session, 2026-08-12)
 
 ## Goal
 
