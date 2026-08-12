@@ -35,6 +35,7 @@ import {
   sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
   sumMovementsByProductReasonAtLocationInPeriod,
+  sumNonSalesValueAtLocationInPeriod,
   sumProductMovementsByReasonAtLocationInPeriod,
 } from "./queries";
 import type {
@@ -1456,4 +1457,31 @@ export async function getProductMovementByReasonInPeriod(
     periodEnd,
   );
   return { ok: true, lines };
+}
+
+export type NonSalesConsumptionValueResult =
+  | { ok: true; atCostMinor: number; atPriceMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// Ticket 38: proposal.md §10.5's "stock that was not sold" report —
+// wasted/consumed/given-away product movements at a location in a period,
+// valued both ways. Not deducted from profit again here; the ledger
+// caption saying so is the UI's job, not this function's.
+export async function getNonSalesConsumptionValue(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<NonSalesConsumptionValueResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const { atCostMinor, atPriceMinor } = await sumNonSalesValueAtLocationInPeriod(
+    db,
+    locationId,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, atCostMinor, atPriceMinor };
 }
