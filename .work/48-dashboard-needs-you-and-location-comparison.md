@@ -3,7 +3,18 @@
 **Type:** logic (test-first)
 **Blocked by:** 46 (Location comparison reads per-location profit, which
 46 builds)
-**Status:** in-progress (claimed by build agent, 2026-08-12 17:10)
+**Status:** done
+
+**Resolved (2026-08-12):** "By location" was not rebuilt here — confirmed
+with Edwinfred that ticket 46's `ByLocation` (inside `DashboardProfit`,
+already rendered directly under the Profit waterfall and wired into
+`dashboard-body.tsx`) already fully satisfies this ticket's "By location"
+acceptance criteria: restaurant/canteen revenue, cost of goods, gross
+profit, running costs, net profit, and the canteen's provisional
+marking, reconciling with the same `getDashboardProfit` combined total
+by construction (same source data, not a duplicate calculation). The
+placeholder "By location" `Card` in `dashboard-body.tsx` was removed
+rather than duplicated; "Needs you" is now full-width in that grid row.
 
 ## Goal
 
@@ -66,17 +77,21 @@ owner should act on, and a restaurant-vs-canteen performance comparison.
 
 ## Acceptance criteria
 
-- [ ] "Needs you" lists today's handover shortfalls and voided sales,
+- [x] "Needs you" lists today's handover shortfalls and voided sales,
       with the zero-state shown when there are none, for a constructed
       fixture with each source type present and absent.
-- [ ] "By location" shows restaurant and canteen figures side by side
+- [x] "By location" shows restaurant and canteen figures side by side
       (or stacked on narrow screens, matching the reference's `stacked`
-      variant), reconciling with ticket 46's combined total.
-- [ ] Canteen's provisional marking appears in the location comparison,
+      variant), reconciling with ticket 46's combined total. (Satisfied
+      by ticket 46's existing `ByLocation` — see Resolved note above.)
+- [x] Canteen's provisional marking appears in the location comparison,
       consistent with its treatment everywhere else in this codebase.
-- [ ] Both cards are owner-only, same gate as the rest of the Dashboard.
-- [ ] Storybook stories: "Needs you" — populated (all source types),
-      empty, loading, error. "By location" — populated, loading, error.
+      (Same — already true of ticket 46's `ByLocation`.)
+- [x] Both cards are owner-only, same gate as the rest of the Dashboard.
+- [x] Storybook stories: "Needs you" — populated (all source types),
+      empty, loading, error. "By location" already has its own stories
+      under `dashboard-profit.stories.tsx` (ticket 46) — no separate
+      story needed here.
 
 ## Verification
 
