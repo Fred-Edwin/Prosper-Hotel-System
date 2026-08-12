@@ -7,6 +7,7 @@ export {
   computeCanteenCostOfGoods,
   computeCountCorrection,
   getDashboardProfit,
+  getRevenueProfitTrend,
   getLedgerSummary,
   getProductLedger,
   getStoreLedger,
@@ -22,6 +23,8 @@ export type {
   CountCorrectionResult,
   DashboardProfitResult,
   DashboardProfitLocationBreakdown,
+  RevenueProfitTrendPoint,
+  RevenueProfitTrendResult,
   LedgerSummaryResult,
   ProductLedgerRow,
   ProductLedgerDay,
@@ -40,6 +43,7 @@ export type {
 } from "./logic";
 export {
   dashboardProfitRoute,
+  revenueProfitTrendRoute,
   ledgerSummaryRoute,
   productLedgerRoute,
   storeLedgerRoute,

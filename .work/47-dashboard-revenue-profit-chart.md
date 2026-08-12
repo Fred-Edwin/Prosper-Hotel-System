@@ -3,7 +3,7 @@
 **Type:** plumbing (test-after)
 **Blocked by:** 46 (needs profit-by-period to exist so the chart has more
 than one day's figure to plot)
-**Status:** in-progress (claimed 2026-08-12 16:50, this session)
+**Status:** done
 
 ## Goal
 

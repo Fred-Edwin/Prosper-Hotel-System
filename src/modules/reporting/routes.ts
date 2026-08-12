@@ -2,6 +2,7 @@ import { db } from "@/shared/db";
 import { getSession } from "@/modules/people";
 import {
   getDashboardProfit,
+  getRevenueProfitTrend,
   getLedgerSummary,
   getProductLedger,
   getStoreLedger,
@@ -72,6 +73,29 @@ export async function dashboardProfitRoute(request: Request): Promise<Response> 
     correction: result.correction,
     byLocation: result.byLocation,
   });
+}
+
+// Ticket 47 — the Dashboard's Revenue and profit chart. Defaults to a
+// 14-day window ending today, matching the design reference's fixture
+// shape; `days` is accepted so Storybook/tests can request a smaller
+// window without waiting on 14 days of fixtures.
+export async function revenueProfitTrendRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const daysParam = url.searchParams.get("days");
+  const days = daysParam ? Number(daysParam) : 14;
+  if (!Number.isInteger(days) || days < 1) {
+    return Response.json({ error: "days must be a positive integer" }, { status: 400 });
+  }
+
+  const result = await getRevenueProfitTrend(db, session, { windowEnd: new Date(), days });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ points: result.points });
 }
 
 // The Ledger's stats waterfall — owner-only, an arbitrary period rather
