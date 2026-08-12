@@ -2,7 +2,10 @@
 
 **Type:** logic (test-first)
 **Blocked by:** 38 (needs the Ledger shell and its period picker to host
-this tab in)
+this tab in), 41 (product categories — the category filter below needs a
+real category concept; split out of this ticket during `/build`,
+2026-08-12, since the design reference's `category` field has no
+equivalent in this codebase's domain model)
 **Status:** planned
 
 ## Goal
