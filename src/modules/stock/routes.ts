@@ -3,6 +3,7 @@ import { getSession, listLocations } from "@/modules/people";
 import {
   correctStockCount,
   getCurrentStockAtLocation,
+  getProductStockValueAtLocation,
   getTransferableItems,
   getLatestStockCount,
   getStockCount,
@@ -32,6 +33,22 @@ export async function stockAtLocationRoute(
   }
 
   return Response.json({ levels: result.levels });
+}
+
+export async function stockValueAtLocationRoute(
+  _request: Request,
+  { params }: { params: Promise<{ locationId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { locationId } = await params;
+  const result = await getProductStockValueAtLocation(db, session, locationId);
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: 403 });
+  }
+
+  return Response.json({ values: result.values });
 }
 
 function writeStatus(reason: string): number {

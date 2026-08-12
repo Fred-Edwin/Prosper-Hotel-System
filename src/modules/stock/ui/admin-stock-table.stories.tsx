@@ -18,11 +18,39 @@ export const Default: Story = {
   args: {
     state: {
       status: "ready",
-      levels: [
-        { productId: "1", productName: "Sodas (500ml)", quantityOnHand: 42 },
-        { productId: "2", productName: "Mukimo", quantityOnHand: 8 },
-        { productId: "3", productName: "Printing paper (ream)", quantityOnHand: 3 },
-        { productId: "4", productName: "Chips", quantityOnHand: 0 },
+      rows: [
+        {
+          productId: "1",
+          productName: "Sodas (500ml)",
+          quantityOnHand: 42,
+          unitCostMinor: 70,
+          valueMinor: 2940,
+          isEstimated: false,
+        },
+        {
+          productId: "2",
+          productName: "Mukimo",
+          quantityOnHand: 8,
+          unitCostMinor: 60,
+          valueMinor: 480,
+          isEstimated: true,
+        },
+        {
+          productId: "3",
+          productName: "Printing paper (ream)",
+          quantityOnHand: 3,
+          unitCostMinor: 450,
+          valueMinor: 1350,
+          isEstimated: false,
+        },
+        {
+          productId: "4",
+          productName: "Chips",
+          quantityOnHand: 0,
+          unitCostMinor: 2000,
+          valueMinor: 0,
+          isEstimated: false,
+        },
       ],
     },
   },
@@ -34,7 +62,7 @@ export const Loading: Story = {
 
 export const Empty: Story = {
   name: "Empty — first use",
-  args: { state: { status: "ready", levels: [] } },
+  args: { state: { status: "ready", rows: [] } },
 };
 
 export const Error: Story = {

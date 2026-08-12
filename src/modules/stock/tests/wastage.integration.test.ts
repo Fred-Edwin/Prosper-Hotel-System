@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { createIngredient, createProduct, createRecipe } from "@/modules/catalogue";
+import { createIngredient, createProduct, createRecipe, recordProductCost } from "@/modules/catalogue";
 import { getCurrentStockAtLocation, recordNonSalesConsumption } from "../logic";
 import { testDb } from "@/shared/test-db";
 
@@ -149,6 +149,56 @@ describe("recordNonSalesConsumption", () => {
         quantity: -2,
         costBasisMinor: 4000,
         sellingValueMinor: 300,
+        isEstimated: false,
+      }),
+    );
+  });
+
+  test("uses the product's recorded running-average cost instead of the estimate when one is known", async () => {
+    const owner: AuthenticatedStaff = {
+      staff: {
+        id: "owner-3",
+        name: "Owner",
+        phone: "+254700111559",
+        role: "owner",
+        locationId: restaurantId,
+        active: true,
+        dailyRateMinor: 0,
+      },
+      location: { id: restaurantId, code: "restaurant", name: "Test" },
+    };
+
+    // formulas.md §4: bought-in goods use the running average, not the
+    // 60%-of-price estimate — even though this product has a priceMinor
+    // that an estimate could be derived from, the recorded cost wins.
+    const juice = await createProduct(testDb, owner, {
+      name: "Juice (500ml)",
+      kind: "goods",
+      priceMinor: 120,
+    });
+    if (!juice.ok) throw new Error("expected product create to succeed");
+    await recordProductCost(testDb, owner, juice.value.id, {
+      quantityOnHand: 0,
+      quantityBought: 10,
+      unitCostMinor: 70,
+    });
+
+    const requester = staffAt("cashier", restaurantId);
+    const result = await recordNonSalesConsumption(testDb, requester, {
+      itemType: "product",
+      itemId: juice.value.id,
+      locationId: restaurantId,
+      quantity: 3,
+      category: "wasted",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.movement).toEqual(
+      expect.objectContaining({
+        quantity: -3,
+        costBasisMinor: 210,
+        sellingValueMinor: 360,
         isEstimated: false,
       }),
     );
