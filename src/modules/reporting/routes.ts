@@ -25,14 +25,36 @@ function todayBounds(): { dayStart: Date; dayEnd: Date } {
   return { dayStart, dayEnd };
 }
 
-// The dashboard's Profit panel — today's figures, owner-only (the
-// dashboard page itself is owner-gated, but the read is gated here too,
-// same as every other module's routes).
-export async function dashboardProfitRoute(): Promise<Response> {
+// The dashboard's Profit panel — owner-only (the dashboard page itself is
+// owner-gated, but the read is gated here too, same as every other
+// module's routes). Defaults to today; ticket 46's Day/Week/Month tabs
+// pass an explicit period the same way the Ledger routes already do.
+export async function dashboardProfitRoute(request: Request): Promise<Response> {
   const session = await getSession();
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
 
-  const { dayStart, dayEnd } = todayBounds();
+  const url = new URL(request.url);
+  const periodStartParam = url.searchParams.get("periodStart");
+  const periodEndParam = url.searchParams.get("periodEnd");
+
+  let dayStart: Date;
+  let dayEnd: Date;
+  if (periodStartParam || periodEndParam) {
+    if (!periodStartParam || !periodEndParam) {
+      return Response.json({ error: "periodStart and periodEnd are required together" }, { status: 400 });
+    }
+    dayStart = new Date(periodStartParam);
+    dayEnd = new Date(periodEndParam);
+    if (Number.isNaN(dayStart.getTime()) || Number.isNaN(dayEnd.getTime())) {
+      return Response.json({ error: "invalid period" }, { status: 400 });
+    }
+    if (dayStart >= dayEnd) {
+      return Response.json({ error: "periodStart must be before periodEnd" }, { status: 400 });
+    }
+  } else {
+    ({ dayStart, dayEnd } = todayBounds());
+  }
+
   const result = await getDashboardProfit(db, session, { dayStart, dayEnd });
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
@@ -48,6 +70,7 @@ export async function dashboardProfitRoute(): Promise<Response> {
     canteenCostRate: result.canteenCostRate,
     lastCanteenCount: result.lastCanteenCount,
     correction: result.correction,
+    byLocation: result.byLocation,
   });
 }
 

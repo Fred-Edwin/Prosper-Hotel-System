@@ -660,6 +660,130 @@ describe("getDashboardProfit", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  test("accepts a multi-day (week-shaped) period and reflects revenue from every day in it", async () => {
+    const weekStart = new Date("2026-08-03T00:00:00Z"); // Monday
+    const weekEnd = new Date("2026-08-10T00:00:00Z"); // following Monday
+
+    const chips = await testDb.product.create({
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        fulfilment: "counter",
+        totalMinor: 5000,
+        occurredAt: new Date("2026-08-04T12:00:00Z"),
+        lines: { create: [{ productId: chips.id, quantity: 50, priceMinor: 5000 }] },
+      },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        fulfilment: "counter",
+        totalMinor: 3000,
+        occurredAt: new Date("2026-08-07T12:00:00Z"),
+        lines: { create: [{ productId: chips.id, quantity: 30, priceMinor: 3000 }] },
+      },
+    });
+    await testDb.expense.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        category: "running",
+        amountMinor: 1000,
+        occurredAt: new Date("2026-08-04T12:00:00Z"),
+      },
+    });
+    await testDb.expense.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: ownerId,
+        category: "running",
+        amountMinor: 500,
+        occurredAt: new Date("2026-08-07T12:00:00Z"),
+      },
+    });
+
+    const result = await getDashboardProfit(testDb, owner(), {
+      dayStart: weekStart,
+      dayEnd: weekEnd,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.revenue.restaurant).toBe(8000);
+    expect(result.runningCostsMinor).toBe(1500);
+  });
+
+  test("per-location split reconciles: restaurant + canteen = combined, across revenue, cost of goods, running costs and net profit", async () => {
+    const dayStart = new Date("2026-08-06T00:00:00Z");
+    const dayEnd = new Date("2026-08-06T23:59:59Z");
+
+    const chips = await testDb.product.create({
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        fulfilment: "counter",
+        totalMinor: 5000,
+        occurredAt: new Date("2026-08-06T09:00:00Z"),
+        lines: { create: [{ productId: chips.id, quantity: 50, priceMinor: 5000 }] },
+      },
+    });
+    await testDb.takings.create({
+      data: { locationId: canteenId, cashMinor: 2000, mpesaMinor: 1000, occurredAt: new Date("2026-08-06T18:00:00Z") },
+    });
+    await testDb.expense.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        category: "running",
+        amountMinor: 800,
+        occurredAt: new Date("2026-08-06T12:00:00Z"),
+      },
+    });
+    await testDb.expense.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: ownerId,
+        category: "running",
+        amountMinor: 200,
+        occurredAt: new Date("2026-08-06T12:00:00Z"),
+      },
+    });
+
+    const result = await getDashboardProfit(testDb, owner(), { dayStart, dayEnd });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.byLocation.restaurant.revenueMinor).toBe(5000);
+    expect(result.byLocation.canteen.revenueMinor).toBe(3000);
+    expect(result.byLocation.restaurant.revenueMinor + result.byLocation.canteen.revenueMinor).toBe(
+      result.revenue.total,
+    );
+
+    expect(
+      result.byLocation.restaurant.costOfGoodsMinor + result.byLocation.canteen.costOfGoodsMinor,
+    ).toBe(result.costOfGoods.total);
+
+    expect(result.byLocation.restaurant.runningCostsMinor).toBe(800);
+    expect(result.byLocation.canteen.runningCostsMinor).toBe(200);
+    expect(
+      result.byLocation.restaurant.runningCostsMinor + result.byLocation.canteen.runningCostsMinor,
+    ).toBe(result.runningCostsMinor);
+
+    expect(
+      result.byLocation.restaurant.netProfitMinor + result.byLocation.canteen.netProfitMinor,
+    ).toBe(result.netProfitMinor);
+
+    expect(result.byLocation.canteen.provisional).toBe(true);
+    expect(result.byLocation.restaurant.provisional).toBe(false);
+  });
 });
 
 describe("getLedgerSummary — ticket 38, whole business over an arbitrary period", () => {

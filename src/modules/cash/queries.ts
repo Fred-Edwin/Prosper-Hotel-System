@@ -182,12 +182,14 @@ export async function sumRunningCostsMinorInPeriod(
   db: PrismaClient,
   periodStart: Date,
   periodEnd: Date,
+  locationId?: string,
 ): Promise<number> {
   const result = await db.expense.aggregate({
     where: {
       category: "running",
       reversed: false,
       occurredAt: { gt: periodStart, lte: periodEnd },
+      ...(locationId ? { locationId } : {}),
     },
     _sum: { amountMinor: true },
   });

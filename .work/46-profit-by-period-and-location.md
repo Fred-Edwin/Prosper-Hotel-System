@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends `reporting`'s existing `getDashboardProfit`
 and the Dashboard's Profit panel, both already built)
-**Status:** in-progress (claimed by /build, 2026-08-12)
+**Status:** done
 
 ## Goal
 
@@ -77,20 +77,23 @@ per-location.
 
 ## Acceptance criteria
 
-- [ ] Selecting Week or Month on the Profit panel refetches and displays
+- [x] Selecting Week or Month on the Profit panel refetches and displays
       that period's figures — verified against a constructed fixture
       spanning more than one day with different revenue/cost each day.
-- [ ] Combined and per-location (restaurant/canteen) profit figures are
+- [x] Combined and per-location (restaurant/canteen) profit figures are
       both correct and reconcile: restaurant + canteen = combined, for a
       constructed multi-location, multi-day fixture.
-- [ ] Canteen's own-goods cost portion remains marked provisional at
+- [x] Canteen's own-goods cost portion remains marked provisional at
       every period length, with the correct "since last count" framing
-      when the period spans a count.
-- [ ] Non-owner roles remain denied, unchanged from the existing gate.
-- [ ] Switching period preserves whichever detail term was expanded
-      (or resets cleanly — pick one, document the choice, don't leave it
-      inconsistent).
-- [ ] Storybook story: the existing `dashboard-profit.stories.tsx` gains
+      when the period spans a count. (`computeCountCorrection` is
+      intentionally period-independent — always the latest count vs. the
+      one before, regardless of the selected Day/Week/Month period, per
+      formulas.md §6's "the count corrects the estimate.")
+- [x] Non-owner roles remain denied, unchanged from the existing gate.
+- [x] Switching period resets the expanded detail term back to "cogs"
+      (documented choice — see dashboard-profit.tsx's comment at the
+      period-keyed remount).
+- [x] Storybook story: the existing `dashboard-profit.stories.tsx` gains
       Week/Month variants and a per-location view, rather than a new
       story file.
 

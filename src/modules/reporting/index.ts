@@ -21,6 +21,7 @@ export type {
   CanteenCostOfGoodsResult,
   CountCorrectionResult,
   DashboardProfitResult,
+  DashboardProfitLocationBreakdown,
   LedgerSummaryResult,
   ProductLedgerRow,
   ProductLedgerDay,

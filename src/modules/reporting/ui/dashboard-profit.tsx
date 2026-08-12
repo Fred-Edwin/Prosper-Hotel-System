@@ -32,6 +32,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, Info } from "lucide-react";
 import { money } from "@/shared/money";
 
+export type DashboardProfitLocationBreakdown = {
+  revenueMinor: number;
+  costOfGoodsMinor: number;
+  grossProfitMinor: number;
+  runningCostsMinor: number;
+  netProfitMinor: number;
+  provisional: boolean;
+};
+
 export type DashboardProfitData = {
   revenue: { restaurant: number; canteen: number; total: number };
   costOfGoods: {
@@ -53,6 +62,10 @@ export type DashboardProfitData = {
         differenceMinor: number;
       }
     | { available: false };
+  byLocation: {
+    restaurant: DashboardProfitLocationBreakdown;
+    canteen: DashboardProfitLocationBreakdown;
+  };
 };
 
 export type LoadState =
@@ -61,9 +74,43 @@ export type LoadState =
   | { status: "denied" }
   | { status: "ready"; data: DashboardProfitData };
 
-async function fetchDashboardProfit(): Promise<LoadState> {
+export type Period = "day" | "week" | "month";
+
+// ISO week (Monday start) and calendar month — no existing convention in
+// docs/conventions.md for either, confirmed with Edwinfred (ticket 46).
+function periodBounds(period: Period, now: Date): { periodStart: Date; periodEnd: Date } {
+  if (period === "day") {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { periodStart: start, periodEnd: end };
+  }
+  if (period === "week") {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    // getDay(): 0 = Sunday .. 6 = Saturday. Days back to Monday: Sunday
+    // needs 6, everything else needs (day - 1).
+    const day = start.getDay();
+    const daysSinceMonday = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - daysSinceMonday);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { periodStart: start, periodEnd: end };
+  }
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return { periodStart: start, periodEnd: end };
+}
+
+async function fetchDashboardProfit(period: Period): Promise<LoadState> {
   try {
-    const response = await fetch("/api/dashboard/profit");
+    const { periodStart, periodEnd } = periodBounds(period, new Date());
+    const params = new URLSearchParams({
+      periodStart: periodStart.toISOString(),
+      periodEnd: periodEnd.toISOString(),
+    });
+    const response = await fetch(`/api/dashboard/profit?${params}`);
     if (response.status === 403) return { status: "denied" };
     if (!response.ok) return { status: "error" };
     const body = await response.json();
@@ -79,6 +126,26 @@ export function DashboardProfit() {
 }
 
 function DashboardProfitForAttempt({ onRetry }: { onRetry: () => void }) {
+  const [period, setPeriod] = useState<Period>("day");
+  return (
+    <DashboardProfitForPeriod
+      key={period}
+      period={period}
+      onPeriodChange={setPeriod}
+      onRetry={onRetry}
+    />
+  );
+}
+
+function DashboardProfitForPeriod({
+  period,
+  onPeriodChange,
+  onRetry,
+}: {
+  period: Period;
+  onPeriodChange: (period: Period) => void;
+  onRetry: () => void;
+}) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const cancelledRef = useRef(false);
 
@@ -90,12 +157,12 @@ function DashboardProfitForAttempt({ onRetry }: { onRetry: () => void }) {
   }, []);
 
   useEffect(() => {
-    fetchDashboardProfit().then((result) => {
+    fetchDashboardProfit(period).then((result) => {
       if (!cancelledRef.current) setState(result);
     });
-  }, []);
+  }, [period]);
 
-  return <DashboardProfitView state={state} onRetry={onRetry} />;
+  return <DashboardProfitView state={state} period={period} onPeriodChange={onPeriodChange} onRetry={onRetry} />;
 }
 
 type TermKey = "revenue" | "cogs" | "running" | "net";
@@ -104,10 +171,33 @@ type TermKey = "revenue" | "cogs" | "running" | "net";
  * Storybook mounts to show every state without a network. */
 export function DashboardProfitView({
   state,
+  period = "day",
+  onPeriodChange = () => {},
   onRetry = () => {},
 }: {
   state: LoadState;
+  period?: Period;
+  onPeriodChange?: (period: Period) => void;
   onRetry?: () => void;
+}) {
+  // Keying on period remounts this state below on every period change, so
+  // switching period resets the expanded detail term rather than trying to
+  // preserve it — a different period's own detail is usually what's
+  // relevant, and there's no guarantee the same term stays interesting
+  // (ticket 46's acceptance criteria: pick one, document the choice).
+  return <DashboardProfitViewForPeriod key={period} {...{ state, period, onPeriodChange, onRetry }} />;
+}
+
+function DashboardProfitViewForPeriod({
+  state,
+  period,
+  onPeriodChange,
+  onRetry,
+}: {
+  state: LoadState;
+  period: Period;
+  onPeriodChange: (period: Period) => void;
+  onRetry: () => void;
 }) {
   const [open, setOpen] = useState<TermKey | null>("cogs");
 
@@ -202,6 +292,7 @@ export function DashboardProfitView({
   ];
 
   return (
+    <>
     <div className="mb-4 overflow-hidden rounded-xl border bg-card shadow-sm" data-testid="dashboard-profit">
       <div className="flex items-center justify-between px-5 pt-4 pb-3">
         <h2 className="text-sm font-medium">Profit</h2>
@@ -209,7 +300,7 @@ export function DashboardProfitView({
           <Badge variant="outline" className="text-[10px] font-normal">
             partly provisional
           </Badge>
-          <Tabs defaultValue="day">
+          <Tabs value={period} onValueChange={(value) => onPeriodChange(value as Period)}>
             <TabsList>
               <TabsTrigger value="day">Day</TabsTrigger>
               <TabsTrigger value="week">Week</TabsTrigger>
@@ -325,6 +416,68 @@ export function DashboardProfitView({
           <LedgerLink />
         </div>
       )}
+    </div>
+    <ByLocation byLocation={data.byLocation} />
+    </>
+  );
+}
+
+function ByLocation({ byLocation }: { byLocation: DashboardProfitData["byLocation"] }) {
+  const rows: { key: "restaurant" | "canteen"; label: string }[] = [
+    { key: "restaurant", label: "Restaurant" },
+    { key: "canteen", label: "Canteen" },
+  ];
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-xl border bg-card shadow-sm" data-testid="dashboard-profit-by-location">
+      <SectionHeader title="By location" />
+      <div className="divide-y">
+        {rows.map(({ key, label }) => {
+          const l = byLocation[key];
+          return (
+            <div key={key} className="px-5 py-3">
+              <div className="mb-2 flex items-center gap-1.5">
+                <span className="text-sm font-medium">{label}</span>
+                {l.provisional && (
+                  <Badge variant="outline" className="text-[10px] font-normal">
+                    provisional
+                  </Badge>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+                <LocationCell label="Revenue" value={l.revenueMinor} />
+                <LocationCell label="Cost of goods" value={l.costOfGoodsMinor} />
+                <LocationCell label="Gross profit" value={l.grossProfitMinor} />
+                <LocationCell label="Running costs" value={l.runningCostsMinor} />
+                <LocationCell
+                  label="Net profit"
+                  value={l.netProfitMinor}
+                  tone={l.netProfitMinor < 0 ? "danger" : undefined}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LocationCell({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone?: "danger";
+}) {
+  return (
+    <div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={`tabular font-medium ${tone === "danger" ? "text-danger" : ""}`}>
+        {value < 0 ? `−${money(Math.abs(value))}` : money(value)}
+      </div>
     </div>
   );
 }
