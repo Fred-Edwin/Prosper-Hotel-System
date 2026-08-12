@@ -31,6 +31,7 @@ export {
   drawingDebtOwed,
   getRunningCosts,
   getRunningCashBalance,
+  getCashLedgerTransactions,
   payWages,
 } from "./logic";
 export type {
@@ -39,6 +40,7 @@ export type {
   ListExpensesResult,
   RunningCostsResult,
   GetRunningCashBalanceResult,
+  GetCashLedgerTransactionsResult,
   PayWagesResult,
 } from "./logic";
 export {

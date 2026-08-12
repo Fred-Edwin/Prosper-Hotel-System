@@ -43,6 +43,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Info, Maximize2, RotateCw, X } from "lucide-react";
 import { money } from "@/shared/money";
 import { ProductLedger } from "./product-ledger";
+import { CashLedger } from "./cash-ledger";
 
 export type LedgerSummaryData = {
   openingMinor: number;
@@ -149,6 +150,7 @@ function LedgerShellForPeriod({
       state={state}
       {...viewProps}
       productLedgerSlot={<ProductLedger periodStart={periodStart} periodEnd={periodEnd} />}
+      cashLedgerSlot={<CashLedger periodStart={periodStart} periodEnd={periodEnd} />}
     />
   );
 }
@@ -173,6 +175,7 @@ export function LedgerShellView({
   onCustomEndChange,
   onRetry = () => {},
   productLedgerSlot,
+  cashLedgerSlot,
 }: {
   state: LoadState;
   preset: PeriodPreset;
@@ -182,12 +185,13 @@ export function LedgerShellView({
   onCustomStartChange: (v: string) => void;
   onCustomEndChange: (v: string) => void;
   onRetry?: () => void;
-  /** Real fetching Product ledger, supplied by the page composition only
-   * — never by Storybook, which stories `ProductLedgerView` in isolation
+  /** Real fetching Product/Cash ledgers, supplied by the page composition
+   * only — never by Storybook, which stories each view in isolation
    * instead (same split as `dashboard-body.tsx` mounting `DashboardHandovers`
    * outside any storied shell). Falls back to the not-built placeholder,
    * same as every other not-yet-wired sub-ledger tab. */
   productLedgerSlot?: React.ReactNode;
+  cashLedgerSlot?: React.ReactNode;
 }) {
   const [active, setActive] = useState("products");
   const [statTerm, setStatTerm] = useState<StatTerm | null>(null);
@@ -264,6 +268,8 @@ export function LedgerShellView({
             <RotatePrompt onExpand={() => setExpanded(l.key)} />
             {l.key === "products" && productLedgerSlot ? (
               productLedgerSlot
+            ) : l.key === "cash" && cashLedgerSlot ? (
+              cashLedgerSlot
             ) : (
               <div className="overflow-hidden rounded-lg border bg-card">
                 <SectionNotBuilt section={l.label} />
@@ -286,6 +292,8 @@ export function LedgerShellView({
           <div className="flex-1 overflow-auto p-2">
             {expanded === "products" && productLedgerSlot ? (
               productLedgerSlot
+            ) : expanded === "cash" && cashLedgerSlot ? (
+              cashLedgerSlot
             ) : (
               <SectionNotBuilt section={subLedgers.find((l) => l.key === expanded)?.label ?? ""} />
             )}

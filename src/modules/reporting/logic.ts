@@ -3,7 +3,7 @@
 // (profit). Reads through stock/sales/cash/catalogue/people's
 // interfaces only, per docs/architecture.md's "reporting owns no data."
 import type { PrismaClient } from "@/generated/prisma/client";
-import { type AuthenticatedStaff, findLocationByCode, listLocations } from "@/modules/people";
+import { type AuthenticatedStaff, findLocationByCode, findStaffMembersByIds, listLocations } from "@/modules/people";
 import { getCurrentRecipe, findProductsByIds } from "@/modules/catalogue";
 import {
   getIngredientStockValueAtLocation,
@@ -19,7 +19,12 @@ import {
   type DerivedSalesDetail,
 } from "@/modules/stock";
 import { getSalesRevenueAtLocation } from "@/modules/sales";
-import { getTakingsAtLocation, getRunningCosts } from "@/modules/cash";
+import {
+  getTakingsAtLocation,
+  getRunningCosts,
+  getCashLedgerTransactions,
+  type ExpenseCategory,
+} from "@/modules/cash";
 
 function requireOwner(requester: AuthenticatedStaff): boolean {
   return requester.staff.role === "owner";
@@ -880,4 +885,199 @@ export async function getProductLedger(
   filtered.sort((a, b) => a.productName.localeCompare(b.productName) || a.locationCode.localeCompare(b.locationCode));
 
   return { ok: true, rows: filtered };
+}
+
+export type CashTransactionCategory = "handover" | "repayment" | "stock" | "running" | "asset" | "drawing";
+
+export type CashTransaction = {
+  id: string;
+  description: string;
+  category: CashTransactionCategory;
+  method: "cash" | "mpesa";
+  amountMinor: number;
+  recordedBy: string;
+};
+
+export type CashLedgerDay = {
+  date: string;
+  openingCashMinor: number;
+  openingMpesaMinor: number;
+  handoversMinor: number;
+  repaymentsMinor: number;
+  stockMinor: number;
+  runningMinor: number;
+  assetsMinor: number;
+  drawingsMinor: number;
+  closingCashMinor: number;
+  closingMpesaMinor: number;
+  transactions: CashTransaction[];
+};
+
+export type CashLedgerResult =
+  | { ok: true; days: CashLedgerDay[] }
+  | { ok: false; reason: "forbidden" };
+
+const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
+  stock: "Stock",
+  running: "Running cost",
+  asset: "Asset",
+  drawing: "Drawing",
+};
+
+// Ticket 40 — the cash ledger: one row per day, opening/closing cash and
+// M-Pesa balances kept separate throughout (docs/design.md: "cash and
+// M-Pesa are never pooled"), with every money-in/money-out category as a
+// column and that day's individual transactions for expansion. The
+// opening balance for the period's first day is the running balance as of
+// just before periodStart (everything before it, netted the same way
+// getRunningCashBalance nets all-time); each subsequent day's opening is
+// simply the previous day's closing, so the two reconcile by construction.
+// Business-wide, not location-scoped, same as getRunningCashBalance —
+// cash isn't a location concept (proposal.md §6).
+export async function getCashLedger(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { periodStart: Date; periodEnd: Date; category?: CashTransactionCategory; search?: string },
+): Promise<CashLedgerResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const days = daysInPeriod(input.periodStart, input.periodEnd);
+
+  const [beforePeriod, duringPeriod] = await Promise.all([
+    getCashLedgerTransactions(db, requester, new Date(0), input.periodStart),
+    getCashLedgerTransactions(db, requester, input.periodStart, input.periodEnd),
+  ]);
+  if (!beforePeriod.ok) return beforePeriod;
+  if (!duringPeriod.ok) return duringPeriod;
+
+  const staffIds = new Set<string>([
+    ...duringPeriod.handovers.map((h) => h.staffMemberId),
+    ...duringPeriod.expenses.map((e) => e.staffMemberId),
+    ...duringPeriod.repayments.map((r) => r.recordedBy),
+  ]);
+  const staff = await findStaffMembersByIds(db, Array.from(staffIds));
+  const staffNameById = new Map(staff.map((s) => [s.id, s.name]));
+  const nameFor = (id: string) => staffNameById.get(id) ?? "Unknown";
+
+  const netBeforePeriod = (method: "cash" | "mpesa") => {
+    const handoversIn = beforePeriod.handovers.reduce(
+      (sum, h) => sum + (method === "cash" ? h.actualCashMinor : h.actualMpesaMinor),
+      0,
+    );
+    const repaymentsIn = beforePeriod.repayments
+      .filter((r) => !r.reversed && r.paymentMethod === method)
+      .reduce((sum, r) => sum + r.amountMinor, 0);
+    const expensesOut = beforePeriod.expenses
+      .filter((e) => !e.reversed && e.paymentMethod === method)
+      .reduce((sum, e) => sum + e.amountMinor, 0);
+    return handoversIn + repaymentsIn - expensesOut;
+  };
+
+  let runningCash = netBeforePeriod("cash");
+  let runningMpesa = netBeforePeriod("mpesa");
+
+  const search = input.search?.trim().toLowerCase();
+  const matchesFilter = (t: CashTransaction) =>
+    (!input.category || t.category === input.category) &&
+    (!search || t.description.toLowerCase().includes(search) || t.recordedBy.toLowerCase().includes(search));
+
+  const result: CashLedgerDay[] = [];
+
+  for (const day of days) {
+    const dayHandovers = duringPeriod.handovers.filter((h) => h.occurredAt >= day.start && h.occurredAt < day.end);
+    const dayExpenses = duringPeriod.expenses.filter(
+      (e) => !e.reversed && e.occurredAt >= day.start && e.occurredAt < day.end,
+    );
+    const dayRepayments = duringPeriod.repayments.filter(
+      (r) => !r.reversed && r.occurredAt >= day.start && r.occurredAt < day.end,
+    );
+
+    const transactions: CashTransaction[] = [
+      ...dayHandovers.flatMap((h) => {
+        const lines: CashTransaction[] = [];
+        if (h.actualCashMinor !== 0) {
+          lines.push({
+            id: `${h.id}:cash`,
+            description: "Handover",
+            category: "handover",
+            method: "cash",
+            amountMinor: h.actualCashMinor,
+            recordedBy: nameFor(h.staffMemberId),
+          });
+        }
+        if (h.actualMpesaMinor !== 0) {
+          lines.push({
+            id: `${h.id}:mpesa`,
+            description: "Handover",
+            category: "handover",
+            method: "mpesa",
+            amountMinor: h.actualMpesaMinor,
+            recordedBy: nameFor(h.staffMemberId),
+          });
+        }
+        return lines;
+      }),
+      ...dayRepayments.map((r) => ({
+        id: r.id,
+        description: "Drawings repayment",
+        category: "repayment" as const,
+        method: r.paymentMethod,
+        amountMinor: r.amountMinor,
+        recordedBy: nameFor(r.recordedBy),
+      })),
+      ...dayExpenses.map((e) => ({
+        id: e.id,
+        description: e.note?.trim() || EXPENSE_CATEGORY_LABEL[e.category],
+        category: e.category,
+        method: e.paymentMethod,
+        amountMinor: e.amountMinor,
+        recordedBy: nameFor(e.staffMemberId),
+      })),
+    ];
+
+    const sumFor = (category: CashTransactionCategory) =>
+      transactions.filter((t) => t.category === category).reduce((sum, t) => sum + t.amountMinor, 0);
+
+    const handoversMinor = sumFor("handover");
+    const repaymentsMinor = sumFor("repayment");
+    const stockMinor = sumFor("stock");
+    const runningMinor = sumFor("running");
+    const assetsMinor = sumFor("asset");
+    const drawingsMinor = sumFor("drawing");
+
+    const isMoneyIn = (t: CashTransaction) => t.category === "handover" || t.category === "repayment";
+    const sumWhere = (method: "cash" | "mpesa", moneyIn: boolean) =>
+      transactions
+        .filter((t) => t.method === method && isMoneyIn(t) === moneyIn)
+        .reduce((sum, t) => sum + t.amountMinor, 0);
+    const cashIn = sumWhere("cash", true);
+    const cashOut = sumWhere("cash", false);
+    const mpesaIn = sumWhere("mpesa", true);
+    const mpesaOut = sumWhere("mpesa", false);
+
+    const openingCashMinor = runningCash;
+    const openingMpesaMinor = runningMpesa;
+    runningCash = runningCash + cashIn - cashOut;
+    runningMpesa = runningMpesa + mpesaIn - mpesaOut;
+
+    const filteredTransactions = transactions.filter(matchesFilter);
+    if (filteredTransactions.length === 0) continue;
+
+    result.push({
+      date: day.label,
+      openingCashMinor,
+      openingMpesaMinor,
+      handoversMinor,
+      repaymentsMinor,
+      stockMinor,
+      runningMinor,
+      assetsMinor,
+      drawingsMinor,
+      closingCashMinor: runningCash,
+      closingMpesaMinor: runningMpesa,
+      transactions: filteredTransactions,
+    });
+  }
+
+  return { ok: true, days: result };
 }

@@ -125,6 +125,14 @@ front, check each off the moment it's done. Don't defer this to the end.
    renders as approved now that real data/logic is wired behind it.
 
    1. Start Storybook (`pnpm storybook`) and note the port it prints.
+      Check `ps aux | grep storybook` first — a prior step in this same
+      session may have already left one running; reuse it rather than
+      starting a second instance. The `pnpm storybook` script hardcodes
+      `-p 6006`; if that port is taken, it prompts interactively rather
+      than picking a new one, so an unattended second attempt will hang.
+      If you need a specific port, call the underlying binary directly
+      (`pnpm exec storybook dev -p <port>`) rather than passing `-p` after
+      `pnpm storybook`, which the npm script's own flag already claims.
    2. Fetch `http://localhost:<port>/index.json` and read the real story
       IDs from it — **don't guess an ID from the story name**; Storybook's
       slugging is more aggressive than it looks (e.g. "Empty — first use"
@@ -138,24 +146,37 @@ front, check each off the moment it's done. Don't defer this to the end.
       with `node` from inside the repo (an absolute path *into* the repo,
       or `cd` there first); running it from outside the repo, e.g. a
       scratch dir, fails dependency resolution even though the script
-      looks identical.
+      looks identical. Delete the throwaway script when done — it's not
+      part of the ticket's diff.
    4. If a fallback reports Chromium isn't installed, check
       `ls ~/.cache/ms-playwright/` before installing anything — it's a
       shared home-directory cache, so the binary is very likely already
       there. Never install system Chrome as a fix (needs `sudo`, and
       neither the MCP server nor `@playwright/test` use it anyway). Only
       run `npx playwright install chromium` if the cache is genuinely
-      empty.
+      empty. Note that the Playwright MCP server and the `playwright` npm
+      package can pin different Chromium build numbers — the cache may
+      hold a build the MCP server rejects as missing even though
+      `@playwright/test`'s own launch would accept it; if the MCP server
+      complains a specific build isn't installed but the cache has a
+      *different* build number, don't install — drop straight to the
+      throwaway-script fallback instead of chasing the exact version.
    5. If the MCP server seems to hang or stall on first connect, that's
       usually `npx` resolving the package fresh, not a missing
       dependency — give it a moment before concluding it's broken.
-   6. Load the story/route with real data flowing through it and confirm
+   6. On the very first navigation in a fresh browser/page, a Storybook
+      iframe can still show its own loading spinner even after
+      `networkidle` fires (the index fetch and story bundle load happen
+      after that event, not before it). Add a short explicit wait (a few
+      hundred ms is usually enough) before screenshotting the first story
+      in a run — later navigations in the same page don't need it.
+   7. Load the story/route with real data flowing through it and confirm
       it still matches the approved story's shape — no layout shift, no
       missing/misrendered state, no error. Screenshots confirm this, not
       underlying correctness (e.g. that a total actually equals quantity
       × cost) — reason about that from the code together with the
       screenshot, not the screenshot alone.
-   7. **Only fall back to a full `references/ui-rules.md` item-by-item
+   8. **Only fall back to a full `references/ui-rules.md` item-by-item
       audit if the ticket introduced markup `/design` didn't cover** — a
       new state, a genuinely new composition not in the approved story.
       That's new UI surface, not re-verification of existing surface, and

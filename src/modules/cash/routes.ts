@@ -283,7 +283,10 @@ export async function recordDrawingRepaymentRoute(request: Request): Promise<Res
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
 
   const body = await request.json();
-  const result = await recordDrawingRepayment(db, session, { amountMinor: body.amountMinor });
+  const result = await recordDrawingRepayment(db, session, {
+    amountMinor: body.amountMinor,
+    paymentMethod: body.paymentMethod,
+  });
   if (!result.ok) {
     return Response.json(
       { error: result.reason },

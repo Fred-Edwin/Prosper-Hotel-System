@@ -104,8 +104,8 @@ async function reverseStub() {
 }
 
 const drawingRepayments: DrawingRepaymentView[] = [
-  { id: "repay-1", amountMinor: 100000, occurredAt: "2026-08-09T10:00:00.000Z", reversed: false },
-  { id: "repay-2", amountMinor: 50000, occurredAt: "2026-08-05T10:00:00.000Z", reversed: true },
+  { id: "repay-1", amountMinor: 100000, paymentMethod: "cash", occurredAt: "2026-08-09T10:00:00.000Z", reversed: false },
+  { id: "repay-2", amountMinor: 50000, paymentMethod: "mpesa", occurredAt: "2026-08-05T10:00:00.000Z", reversed: true },
 ];
 
 const drawingDebtOutstanding: DrawingDebtState = { status: "ready", outstandingMinor: 50000 };

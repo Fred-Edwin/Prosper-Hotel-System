@@ -58,9 +58,12 @@ export type DrawingDebt = {
 
 // Ticket 32 — a repayment against the outstanding drawings balance.
 // Symmetric to DrawingDebt: append-only, never edited, only reversible.
+// paymentMethod added ticket 40 — the cash ledger needs a method on
+// every transaction, same narrowing as ExpensePaymentMethod.
 export type DrawingRepayment = {
   id: string;
   amountMinor: number;
+  paymentMethod: ExpensePaymentMethod;
   recordedBy: string;
   occurredAt: Date;
   reversed: boolean;

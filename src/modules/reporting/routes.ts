@@ -1,6 +1,12 @@
 import { db } from "@/shared/db";
 import { getSession } from "@/modules/people";
-import { getDashboardProfit, getLedgerSummary, getProductLedger } from "./logic";
+import {
+  getDashboardProfit,
+  getLedgerSummary,
+  getProductLedger,
+  getCashLedger,
+  type CashTransactionCategory,
+} from "./logic";
 
 function writeStatus(reason: string): number {
   return reason === "forbidden" ? 403 : reason === "not_found" ? 404 : 400;
@@ -121,4 +127,37 @@ export async function productLedgerRoute(request: Request): Promise<Response> {
   }
 
   return Response.json({ rows: result.rows });
+}
+
+// The Ledger's Cash tab — owner-only, an arbitrary period, business-wide
+// (no location filter — cash isn't a location concept).
+export async function cashLedgerRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const periodStartParam = url.searchParams.get("periodStart");
+  const periodEndParam = url.searchParams.get("periodEnd");
+  if (!periodStartParam || !periodEndParam) {
+    return Response.json({ error: "periodStart and periodEnd are required" }, { status: 400 });
+  }
+
+  const periodStart = new Date(periodStartParam);
+  const periodEnd = new Date(periodEndParam);
+  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+    return Response.json({ error: "invalid period" }, { status: 400 });
+  }
+  if (periodStart >= periodEnd) {
+    return Response.json({ error: "periodStart must be before periodEnd" }, { status: 400 });
+  }
+
+  const category = (url.searchParams.get("category") ?? undefined) as CashTransactionCategory | undefined;
+  const search = url.searchParams.get("search") ?? undefined;
+
+  const result = await getCashLedger(db, session, { periodStart, periodEnd, category, search });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ days: result.days });
 }

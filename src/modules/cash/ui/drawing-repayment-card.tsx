@@ -15,12 +15,21 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Field } from "@/components/patterns/form";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { money } from "@/shared/money";
 import { Plus, Undo2 } from "lucide-react";
+
+export type DrawingRepaymentPaymentMethod = "cash" | "mpesa";
+
+const paymentMethodLabel: Record<DrawingRepaymentPaymentMethod, string> = {
+  cash: "Cash",
+  mpesa: "M-Pesa",
+};
 
 export type DrawingRepaymentView = {
   id: string;
   amountMinor: number;
+  paymentMethod: DrawingRepaymentPaymentMethod;
   occurredAt: string;
   reversed: boolean;
 };
@@ -65,12 +74,13 @@ async function fetchDrawingRepayments(): Promise<RepaymentListState> {
 
 async function submitDrawingRepayment(
   amountMinor: number,
+  paymentMethod: DrawingRepaymentPaymentMethod,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const response = await fetch("/api/cash/drawing-repayments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amountMinor }),
+      body: JSON.stringify({ amountMinor, paymentMethod }),
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -107,15 +117,20 @@ function RecordRepaymentSheet({
   onSave,
 }: {
   outstandingMinor: number;
-  onSave: (amountMinor: number) => Promise<{ ok: boolean; error?: string }>;
+  onSave: (
+    amountMinor: number,
+    paymentMethod: DrawingRepaymentPaymentMethod,
+  ) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<DrawingRepaymentPaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
   const reset = () => {
     setAmount("");
+    setPaymentMethod("cash");
     setError(undefined);
   };
 
@@ -149,7 +164,7 @@ function RecordRepaymentSheet({
             e.preventDefault();
             setSaving(true);
             setError(undefined);
-            const result = await onSave(Number(amount));
+            const result = await onSave(Number(amount), paymentMethod);
             setSaving(false);
             if (result.ok) {
               setOpen(false);
@@ -172,6 +187,23 @@ function RecordRepaymentSheet({
               className="h-9"
               data-testid="drawing-repayment-amount"
             />
+          </Field>
+          <Field label="Received via" required>
+            <Select
+              value={paymentMethod}
+              onValueChange={(v) => setPaymentMethod(v as DrawingRepaymentPaymentMethod)}
+            >
+              <SelectTrigger className="h-9 w-full" data-testid="drawing-repayment-method">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(paymentMethodLabel) as DrawingRepaymentPaymentMethod[]).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {paymentMethodLabel[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           {error && (
             <p className="mt-3 text-xs text-destructive" data-testid="record-drawing-repayment-error">
@@ -201,7 +233,10 @@ export function DrawingRepaymentCard({
   listState: RepaymentListState;
   onRetryBalance: () => void;
   onRetryList: () => void;
-  onSave: (amountMinor: number) => Promise<{ ok: boolean; error?: string }>;
+  onSave: (
+    amountMinor: number,
+    paymentMethod: DrawingRepaymentPaymentMethod,
+  ) => Promise<{ ok: boolean; error?: string }>;
   onReverse: (id: string) => void;
   reversingId: string | null;
 }) {
@@ -258,7 +293,7 @@ export function DrawingRepaymentCard({
           {repayments.map((r) => (
             <li key={r.id} className="flex items-center justify-between gap-2 text-xs">
               <span className={r.reversed ? "text-muted-foreground line-through" : "text-foreground"}>
-                {money(r.amountMinor)} — {date(r.occurredAt)}
+                {money(r.amountMinor)} — {paymentMethodLabel[r.paymentMethod]} — {date(r.occurredAt)}
               </span>
               {!r.reversed && (
                 <Button
