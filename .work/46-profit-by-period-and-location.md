@@ -3,7 +3,7 @@
 **Type:** logic (test-first)
 **Blocked by:** None (extends `reporting`'s existing `getDashboardProfit`
 and the Dashboard's Profit panel, both already built)
-**Status:** planned
+**Status:** in-progress (claimed by /build, 2026-08-12)
 
 ## Goal
 
