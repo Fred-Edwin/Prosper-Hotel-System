@@ -162,11 +162,11 @@ reorder versus what the restaurant supplies), not because they are recorded diff
 credit, she additionally names the customer at the point of entry — one flow, not a separate
 screen, matching how a restaurant cashier already records credit within the till.
 
-At the close of each day the attendant still declares two figures — the day's **cash total**
-and the day's **M-Pesa total** — read from the cash she holds and the M-Pesa messages
-received. These are no longer the basis for what sold; they are what she is handing over,
-checked against the day's recorded sales exactly as a restaurant cashier's handover is
-checked. See section 5.
+At the close of each day the attendant hands over — the same single step a restaurant cashier
+already goes through, no separate declaration beforehand. She enters what she is physically
+holding, the day's **cash total** and **M-Pesa total**, read from the cash in hand and the
+M-Pesa messages received, and the system checks that combined figure against the day's
+recorded sales. See section 5.
 
 Stock is counted **periodically**, weekly by expectation, though a count may be taken on any
 day. With sales now recorded directly, the count is no longer how the system learns what
@@ -228,13 +228,16 @@ of the person handing over.
 *Revised 2026-08-13, alongside section 4.*
 
 The expected amount is the total of the sales the attendant recorded during the day — the
-same basis as the restaurant. Because it is assembled from sales recorded as they happen, it
-is independent of the person handing over.
+same basis as the restaurant, with one difference: it is checked as a **single combined
+figure**, not cash and M-Pesa separately. A canteen sale carries no payment method at the
+point of entry (section 4 — too slow for rush trade), so the split between the two is not
+knowable from the sale record itself; only the combined total is. This is a deliberate, known
+narrowing from the restaurant's two-currency check, not an oversight.
 
 ```
 Canteen attendant — Tuesday
 
-  Sales recorded (cash + M-Pesa)   KSh 5,400
+  Sales recorded                   KSh 5,400
   Cash + M-Pesa handed over        KSh 5,150
   Difference                     − KSh   250
 ```

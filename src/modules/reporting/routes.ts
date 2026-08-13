@@ -71,9 +71,6 @@ export async function dashboardProfitRoute(request: Request): Promise<Response> 
     runningCostsMinor: result.runningCostsMinor,
     grossProfitMinor: result.grossProfitMinor,
     netProfitMinor: result.netProfitMinor,
-    canteenCostRate: result.canteenCostRate,
-    lastCanteenCount: result.lastCanteenCount,
-    correction: result.correction,
     byLocation: result.byLocation,
   });
 }
@@ -155,8 +152,6 @@ export async function ledgerSummaryRoute(request: Request): Promise<Response> {
     grossProfitMinor: result.grossProfitMinor,
     nonSalesAtCostMinor: result.nonSalesAtCostMinor,
     nonSalesAtPriceMinor: result.nonSalesAtPriceMinor,
-    canteenCostRate: result.canteenCostRate,
-    lastCanteenCount: result.lastCanteenCount,
   });
 }
 

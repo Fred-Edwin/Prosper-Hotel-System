@@ -15,16 +15,6 @@ export { recordHandoverRoute, todaysHandoverRoute, todaysHandoversAtRestaurantRo
 export type { Handover } from "./schema";
 export type { HandoverWithStaffName } from "./queries";
 
-export { getTodaysTakingsForStaff, recordTakings, getTakingsAtLocation } from "./logic";
-export type {
-  GetTodaysTakingsResult,
-  RecordTakingsResult,
-  TakingsAtLocationResult,
-} from "./logic";
-export { recordTakingsRoute, todaysTakingsRoute } from "./routes";
-export type { Takings } from "./schema";
-export { listTakingsInPeriod } from "./queries";
-
 export {
   recordExpense,
   reverseExpense,

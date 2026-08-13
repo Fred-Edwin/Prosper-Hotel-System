@@ -32,7 +32,6 @@ async function main() {
   await db.expense.deleteMany({});
   await db.daysWorked.deleteMany({});
   await db.handover.deleteMany({});
-  await db.takings.deleteMany({});
   await db.stockCountLine.deleteMany({});
   await db.stockCount.deleteMany({});
   await db.paymentLine.deleteMany({});
@@ -44,6 +43,7 @@ async function main() {
   await db.recipe.deleteMany({});
   await db.ingredientMovement.deleteMany({});
   await db.ingredient.deleteMany({});
+  await db.transfer.deleteMany({});
   await db.stockMovement.deleteMany({});
   await db.product.deleteMany({});
   await db.category.deleteMany({});
@@ -168,19 +168,23 @@ async function main() {
     // demonstrate the Recipes tab's below-40%-margin warning.
     db.product.create({ data: { name: "Rice plate", kind: "cooked_food", priceMinor: 120, locationId: restaurant.id } }),
   ]);
-  const ricePlate = await db.product.findUniqueOrThrow({ where: { name: "Rice plate" } });
 
-  // More products, split across both locations, purely so the seeded
-  // catalogue reads as a realistic size rather than the bare minimum ticket
-  // 53's own home-location field needs to be demoed — each has real stock
-  // movements at exactly one location below, matching its locationId.
-  const [bottledWater, crisps, samosa, chapati, sweets] = await Promise.all([
+  // More products, mostly goods/cooked_food — realistic restaurant→canteen
+  // transfer candidates (the canteen never transfers ingredients; a store
+  // manager sends finished goods or cooked food to the canteen, not raw
+  // stock). Widens what's available to receive/transfer/sell in Storybook
+  // and manual walkthroughs beyond the original 8. Ticket 53: locationId
+  // matches each product's real seeded movement history below — sweets is
+  // canteen-native (packaged, low-price, sold there), everything else is
+  // restaurant-native.
+  const [water, crisps, samosa, chapati, sweets] = await Promise.all([
     db.product.create({ data: { name: "Bottled water (500ml)", kind: "goods", priceMinor: 60, locationId: restaurant.id } }),
     db.product.create({ data: { name: "Crisps (packet)", kind: "goods", priceMinor: 70, locationId: restaurant.id } }),
     db.product.create({ data: { name: "Samosa", kind: "cooked_food", priceMinor: 40, locationId: restaurant.id } }),
     db.product.create({ data: { name: "Chapati", kind: "cooked_food", priceMinor: 30, locationId: restaurant.id } }),
     db.product.create({ data: { name: "Sweets (piece)", kind: "goods", priceMinor: 10, locationId: canteen.id } }),
   ]);
+  const ricePlate = await db.product.findUniqueOrThrow({ where: { name: "Rice plate" } });
 
   const [maizeFlour, cookingOil, potatoes] = await Promise.all([
     db.ingredient.create({ data: { name: "Maize flour", unitOfMeasure: "kg", lastKnownCostMinor: 120 } }),
@@ -271,19 +275,11 @@ async function main() {
       { productId: chips.id, locationId: restaurant.id, quantity: 15, reason: "received", staffMemberId: sarah.id },
       { productId: chips.id, locationId: restaurant.id, quantity: -12, reason: "sold", staffMemberId: sarah.id },
       { productId: chips.id, locationId: restaurant.id, quantity: -3, reason: "wasted", staffMemberId: sarah.id },
-      // Printing paper only ever at the canteen — restaurant never received it,
-      // so it correctly never appears in the restaurant's stock list.
-      { productId: paper.id, locationId: canteen.id, quantity: 40, reason: "received", staffMemberId: anne.id },
-      { productId: paper.id, locationId: canteen.id, quantity: -6, reason: "sold", staffMemberId: anne.id },
-      { productId: biscuits.id, locationId: canteen.id, quantity: 100, reason: "received", staffMemberId: anne.id },
-      { productId: biscuits.id, locationId: canteen.id, quantity: -32, reason: "sold", staffMemberId: anne.id },
-      { productId: photocopy.id, locationId: canteen.id, quantity: 500, reason: "received", staffMemberId: anne.id },
-      { productId: photocopy.id, locationId: canteen.id, quantity: -120, reason: "sold", staffMemberId: anne.id },
-      // More restaurant/canteen stock so ticket 53's home-location filter
-      // has a realistic-sized catalogue to demonstrate, not just the bare
-      // minimum above.
-      { productId: bottledWater.id, locationId: restaurant.id, quantity: 48, reason: "received", staffMemberId: sarah.id },
-      { productId: bottledWater.id, locationId: restaurant.id, quantity: -10, reason: "sold", staffMemberId: sarah.id },
+      // Restaurant-side stock for the new goods/cooked_food products — real
+      // candidates for a restaurant→canteen transfer, so manual/Storybook
+      // walkthroughs of that flow have more than sodas/mukimo to pick from.
+      { productId: water.id, locationId: restaurant.id, quantity: 48, reason: "received", staffMemberId: sarah.id },
+      { productId: water.id, locationId: restaurant.id, quantity: -10, reason: "sold", staffMemberId: sarah.id },
       { productId: crisps.id, locationId: restaurant.id, quantity: 36, reason: "received", staffMemberId: sarah.id },
       { productId: crisps.id, locationId: restaurant.id, quantity: -8, reason: "sold", staffMemberId: sarah.id },
       { productId: samosa.id, locationId: restaurant.id, quantity: 40, reason: "produced", staffMemberId: manager.id },
@@ -292,6 +288,14 @@ async function main() {
       { productId: chapati.id, locationId: restaurant.id, quantity: -30, reason: "sold", staffMemberId: sarah.id },
       { productId: sweets.id, locationId: canteen.id, quantity: 200, reason: "received", staffMemberId: anne.id },
       { productId: sweets.id, locationId: canteen.id, quantity: -40, reason: "sold", staffMemberId: anne.id },
+      // Printing paper only ever at the canteen — restaurant never received it,
+      // so it correctly never appears in the restaurant's stock list.
+      { productId: paper.id, locationId: canteen.id, quantity: 40, reason: "received", staffMemberId: anne.id },
+      { productId: paper.id, locationId: canteen.id, quantity: -6, reason: "sold", staffMemberId: anne.id },
+      { productId: biscuits.id, locationId: canteen.id, quantity: 100, reason: "received", staffMemberId: anne.id },
+      { productId: biscuits.id, locationId: canteen.id, quantity: -32, reason: "sold", staffMemberId: anne.id },
+      { productId: photocopy.id, locationId: canteen.id, quantity: 500, reason: "received", staffMemberId: anne.id },
+      { productId: photocopy.id, locationId: canteen.id, quantity: -120, reason: "sold", staffMemberId: anne.id },
     ],
   });
 

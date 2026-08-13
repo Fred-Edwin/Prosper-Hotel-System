@@ -15,30 +15,20 @@ import {
   getIngredientStockValueAtLocation,
   getIngredientQuantityAtLocationAsOf,
   getIngredientsBoughtMinor,
-  getIngredientsIssuedMinor,
   getIngredientsPurchasedByIngredient,
   getIngredientMovementsByReasonInPeriod,
   getProductMovementByReasonInPeriod,
   getProductMovementsByReasonInPeriod,
   getProductQuantityAtLocationAsOf,
   resolveProductCostBasis,
-  getLatestStockCount,
-  getPreviousStockCount,
   getNonSalesConsumptionValue,
   getNonSalesLedger,
   getMovementsForActivity,
   getStockCountsForActivity,
-  type DerivedSalesDetail,
   type NonSalesCategory,
 } from "@/modules/stock";
 import { getSalesRevenueAtLocation, listSalesInPeriod } from "@/modules/sales";
-import {
-  getTakingsAtLocation,
-  getRunningCosts,
-  getCashLedgerTransactions,
-  listTakingsInPeriod,
-  type ExpenseCategory,
-} from "@/modules/cash";
+import { getRunningCosts, getCashLedgerTransactions, type ExpenseCategory } from "@/modules/cash";
 
 function requireOwner(requester: AuthenticatedStaff): boolean {
   return requester.staff.role === "owner";
@@ -57,23 +47,27 @@ export type TransferCostLine = {
   quantity: number;
   costMinor: number;
   usedRecipeCost: boolean;
+  isEstimated: boolean;
 };
 
 export type TransferCostResult =
   | {
       ok: true;
-      rate: number;
       transferCostMinor: number;
       lines: TransferCostLine[];
     }
   | { ok: false; reason: "forbidden" | "not_found" };
 
-// formulas.md §5 — rate = kitchen ingredients consumed ÷ what its food
-// sold for, applied to transferred food's selling value. Where a
-// transferred item has a recipe, its recipe cost is used instead of the
-// derived rate (the note under the formula). Zero kitchen revenue in the
-// period (no sales yet) makes the rate 0 rather than dividing by zero —
-// there is nothing to split cost against, not an error.
+// docs/formulas.md §5, revised 2026-08-13: cost travels with the item at
+// its own unit cost, not a rate derived from kitchen consumption vs.
+// restaurant revenue (retired alongside the count-derived-sales model —
+// docs/proposal.md §4). Uses the same recipe → recorded cost → 60%
+// estimate priority chain resolveProductCostBasis already applies
+// everywhere else in stock (formulas.md §4) — no separate transfer-only
+// concept. A recipe cost is exact; the 60% estimate is labelled via
+// isEstimated and is the only part of this figure that isn't exact,
+// matching the "cooked food without a recipe" gap the restaurant already
+// has, not a canteen-specific weakness.
 export async function computeTransferCost(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -81,26 +75,18 @@ export async function computeTransferCost(
 ): Promise<TransferCostResult> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
-  const { restaurant, canteen } = await locations(db);
-  if (!restaurant || !canteen) return { ok: false, reason: "not_found" };
+  const { canteen } = await locations(db);
+  if (!canteen) return { ok: false, reason: "not_found" };
 
-  const [consumed, revenue, transferredIn] = await Promise.all([
-    getIngredientsIssuedMinor(db, requester, restaurant.id, input.periodStart, input.periodEnd),
-    getSalesRevenueAtLocation(db, requester, restaurant.id, input.periodStart, input.periodEnd),
-    getProductMovementByReasonInPeriod(
-      db,
-      requester,
-      canteen.id,
-      "transferred",
-      input.periodStart,
-      input.periodEnd,
-    ),
-  ]);
-  if (!consumed.ok) return consumed;
-  if (!revenue.ok) return revenue;
+  const transferredIn = await getProductMovementByReasonInPeriod(
+    db,
+    requester,
+    canteen.id,
+    "transferred",
+    input.periodStart,
+    input.periodEnd,
+  );
   if (!transferredIn.ok) return transferredIn;
-
-  const rate = revenue.totalMinor > 0 ? consumed.totalMinor / revenue.totalMinor : 0;
 
   const incomingLines = transferredIn.lines.filter((line) => line.quantity > 0);
   const products = await findProductsByIds(db, incomingLines.map((line) => line.productId));
@@ -111,19 +97,19 @@ export async function computeTransferCost(
   for (const line of incomingLines) {
     const product = productById.get(line.productId);
     const recipe = product ? await getCurrentRecipe(db, product.id) : null;
-    if (recipe?.perUnitCostMinor != null) {
-      const costMinor = recipe.perUnitCostMinor * line.quantity;
-      transferCostMinor += costMinor;
-      lines.push({ productId: line.productId, quantity: line.quantity, costMinor, usedRecipeCost: true });
-      continue;
-    }
-    const sellingValueMinor = (product?.priceMinor ?? 0) * line.quantity;
-    const costMinor = Math.round(sellingValueMinor * rate);
+    const basis = product ? resolveProductCostBasis(product, recipe) : null;
+    const costMinor = (basis?.costBasisMinor ?? 0) * line.quantity;
     transferCostMinor += costMinor;
-    lines.push({ productId: line.productId, quantity: line.quantity, costMinor, usedRecipeCost: false });
+    lines.push({
+      productId: line.productId,
+      quantity: line.quantity,
+      costMinor,
+      usedRecipeCost: recipe?.perUnitCostMinor != null,
+      isEstimated: basis?.isEstimated ?? false,
+    });
   }
 
-  return { ok: true, rate, transferCostMinor, lines };
+  return { ok: true, transferCostMinor, lines };
 }
 
 export type RestaurantCostOfGoodsResult =
@@ -187,296 +173,70 @@ export async function computeRestaurantCostOfGoods(
 }
 
 export type CanteenCostOfGoodsResult =
-  | {
-      ok: true;
-      exactMinor: number;
-      // Finding 3: null (not 0) when there is no measured own-goods rate
-      // yet — a genuinely unavailable estimate is not the same as "own
-      // goods cost nothing this period." canteenCostRate == null is the
-      // same signal; kept in sync rather than adding a parallel flag.
-      estimatedMinor: number | null;
-      totalMinor: number | null;
-      canteenCostRate: number | null;
-      lastCanteenCount: Date | null;
-    }
+  | { ok: true; totalMinor: number }
   | { ok: false; reason: "forbidden" | "not_found" };
 
-// formulas.md §6, canteen — two parts.
-//
-// Restaurant food (exact, counted daily): opening + transferred in −
-// closing − wasted. Valued at the *same cost basis §5 already computed*
-// for what arrived — "the same figure is subtracted from one side and
-// added to the other" (§5) is only true if the canteen's restaurant-food
-// cost reuses computeTransferCost's own per-line costMinor rather than
-// re-deriving a figure from selling price. Wasted quantity is valued at
-// each line's implied per-unit cost (costMinor ÷ quantity) for the same
-// reason — it's food that arrived at transfer cost, not goods the
-// canteen bought itself.
-//
-// Own goods (estimated between counts): today's takings from own goods ×
-// the rate measured at the last count. "Today's takings from own goods"
-// has no separate ledger — the canteen declares one total takings figure
-// (ticket 23), not itemised by category — so this uses the *proportion*
-// of own-goods revenue within the last count's own derived-sales detail,
-// applied to today's declared takings. Where there is no previous count
-// (first count, or no count at all), the estimate is unavailable rather
-// than guessed — formulas.md's "the first period has no measured rate."
-// Finding 5: accepts the same optional `precomputedTransfer` as
-// computeRestaurantCostOfGoods, for the same reason — see that function's
-// comment.
+// docs/formulas.md §6, canteen — revised 2026-08-13. Now the same
+// question as the restaurant's, asked at product granularity instead of
+// ingredient: what did the goods actually sold cost? The canteen records
+// every sale directly now (docs/proposal.md §4), so "sold" quantity by
+// product in the period is exact, not inferred at a count — sum each
+// line's quantity at that product's cost basis (recipe cost for
+// restaurant-supplied food where a recipe exists, purchase cost for the
+// canteen's own goods, the shared 60% estimate as the last resort — the
+// same recipe → recorded cost → estimate chain resolveProductCostBasis
+// already applies everywhere else, no separate canteen concept). There
+// is no split into an "exact" and "estimated" part anymore: a line is
+// exact unless its cost basis itself is estimated, exactly like the
+// restaurant's cooked-food-without-a-recipe gap.
 export async function computeCanteenCostOfGoods(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   input: { dayStart: Date; dayEnd: Date },
-  precomputedTransfer?: TransferCostResult,
 ): Promise<CanteenCostOfGoodsResult> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
   const { canteen } = await locations(db);
   if (!canteen) return { ok: false, reason: "not_found" };
 
-  const wasted = await getProductMovementByReasonInPeriod(
+  const sold = await getProductMovementByReasonInPeriod(
     db,
     requester,
     canteen.id,
-    "wasted",
+    "sold",
     input.dayStart,
     input.dayEnd,
   );
-  if (!wasted.ok) return wasted;
+  if (!sold.ok) return sold;
 
-  // The transfer itself, and its per-line cost basis (§5) — the figure
-  // the restaurant subtracted is exactly what the canteen's restaurant-
-  // food cost must add, so this reuses it rather than re-deriving one.
-  const transfer =
-    precomputedTransfer ??
-    (await computeTransferCost(db, requester, {
-      periodStart: input.dayStart,
-      periodEnd: input.dayEnd,
-    }));
-  if (!transfer.ok) return transfer;
+  const soldLines = sold.lines.filter((line) => line.quantity < 0);
+  const products = await findProductsByIds(db, soldLines.map((line) => line.productId));
+  const productById = new Map(products.map((p) => [p.id, p]));
 
-  // formulas.md §6's canteen restaurant-food cost: opening + transferred
-  // in − closing − wasted. Most days everything sent is sold, so closing
-  // is zero; where food carries forward, it is tomorrow's opening,
-  // exactly as the formula's Monday/Tuesday samosa example shows — this
-  // ticket computes one day at a time, so a carried balance shows up as
-  // that later day's smaller net figure rather than as a tracked
-  // opening/closing pair here.
-  let exactMinor = 0;
-  const restaurantSuppliedIds = new Set<string>();
-  for (const line of transfer.lines) {
-    restaurantSuppliedIds.add(line.productId);
-    const wastedQty = -(wasted.lines.find((l) => l.productId === line.productId)?.quantity ?? 0);
-    const costPerUnit = line.quantity > 0 ? line.costMinor / line.quantity : 0;
-    const soldQty = Math.max(0, line.quantity - wastedQty);
-    exactMinor += Math.round(soldQty * costPerUnit);
+  let totalMinor = 0;
+  for (const line of soldLines) {
+    const product = productById.get(line.productId);
+    if (!product) continue;
+    const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
+    const basis = resolveProductCostBasis(product, recipe);
+    if (!basis) continue;
+    totalMinor += -line.quantity * basis.costBasisMinor;
   }
 
-  const latestCount = await getLatestStockCount(db, requester, canteen.id);
-  if (!latestCount.ok) return latestCount;
-
-  // Classification for the rate uses the count's own period, not
-  // today's window — a product only shows up in the rate if it was
-  // actually received (own goods) between the previous count and this
-  // one.
-  const rate = await ownGoodsRateFromCount(
-    db,
-    requester,
-    canteen.id,
-    latestCount.count,
-    latestCount.derivedSales,
-  );
-
-  const takings = await getTakingsAtLocation(db, requester, canteen.id, input.dayStart, input.dayEnd);
-  if (!takings.ok) return takings;
-  const takingsTotalMinor = takings.cashMinor + takings.mpesaMinor;
-
-  const estimatedMinor = rate != null ? Math.round(takingsTotalMinor * rate) : null;
-
-  return {
-    ok: true,
-    exactMinor,
-    estimatedMinor,
-    totalMinor: estimatedMinor != null ? exactMinor + estimatedMinor : null,
-    canteenCostRate: rate,
-    lastCanteenCount: latestCount.count?.occurredAt ?? null,
-  };
+  return { ok: true, totalMinor };
 }
 
-// formulas.md §6's own-goods rate: cost of these goods at the last count
-// ÷ what they sold for over that period.
-//
-// "Cost of these goods at the last count" — the count-derived-sold
-// quantity of each own-goods product (ticket 24's sold_derived — what
-// the count measured as having sold over the period), valued at that
-// product's current running-average cost (§3/§4's bought-in-goods
-// basis; same current-cost simplification used throughout, since no
-// historical per-count cost is kept). Read as "the cost of what this
-// count showed had gone" rather than "what's left on the shelf" — the
-// parallel revenue term below is exactly the selling value of that same
-// sold quantity, so cost ÷ revenue is a margin ratio on goods actually
-// sold, not a snapshot of unsold stock.
-//
-// "What they sold for over that period" — the last count's own
-// derived-sales revenue (ticket 24) for those same own-goods products;
-// `derivedSales` already covers exactly "since the previous count",
-// which is the period the count measures against.
-//
-// "Own goods" here is classified over the count's own period (since the
-// previous count, via `sincePreviousCountAt`) — a product only counts as
-// own-goods if it was received directly (not transferred from the
-// restaurant) within that same period, not today's window.
-//
-// Unavailable (null) where there's no previous count to derive sales
-// from, or no own-goods lines counted — formulas.md's "the first period
-// has no measured rate."
-async function ownGoodsRateFromCount(
-  db: PrismaClient,
-  requester: AuthenticatedStaff,
-  canteenLocationId: string,
-  count: { occurredAt: Date } | null,
-  derivedSales: DerivedSalesDetail,
-): Promise<number | null> {
-  if (!count || !derivedSales.available) return null;
-
-  const received = await getProductMovementByReasonInPeriod(
-    db,
-    requester,
-    canteenLocationId,
-    "received",
-    derivedSales.sincePreviousCountAt,
-    count.occurredAt,
-  );
-  if (!received.ok) return null;
-  const ownGoodsProductIds = new Set(
-    received.lines.filter((line) => line.quantity > 0).map((line) => line.productId),
-  );
-
-  const ownGoodsSoldLines = derivedSales.lines.filter((line) => ownGoodsProductIds.has(line.productId));
-  if (ownGoodsSoldLines.length === 0) return null;
-
-  const products = await findProductsByIds(db, ownGoodsSoldLines.map((line) => line.productId));
-  const costById = new Map(products.map((p) => [p.id, p.lastKnownCostMinor ?? 0]));
-
-  const costAtCountMinor = ownGoodsSoldLines.reduce(
-    (sum, line) => sum + line.quantity * (costById.get(line.productId) ?? 0),
-    0,
-  );
-
-  const revenueMinor = ownGoodsSoldLines.reduce((sum, line) => sum + (line.revenueMinor ?? 0), 0);
-
-  if (revenueMinor <= 0) return null;
-  return costAtCountMinor / revenueMinor;
-}
-
-export type CountCorrectionResult =
-  | {
-      ok: true;
-      available: true;
-      estimatedSinceLastCountMinor: number;
-      measuredAtCountMinor: number;
-      differenceMinor: number;
-    }
-  | { ok: true; available: false }
-  | { ok: false; reason: "forbidden" | "not_found" };
-
-// formulas.md §6's "the count corrects the estimate" — shown, not
-// applied quietly:
-//   Estimated since last count    KSh 61,200
-//   Measured at the count         KSh 63,800
-//   Correction                  − KSh  2,600
-//
-// "Measured at the count" — the latest count's own derived-sales revenue
-// (ticket 24) for own-goods products, i.e. what they actually sold for
-// over the period.
-//
-// "Estimated since last count" — what the dashboard's daily estimate
-// would have shown across that same period, which used the rate
-// measured at the count *before* the latest one (the rate in force
-// during that period) applied to that period's own-goods takings.
-// Unavailable where there's no prior-prior count to derive that earlier
-// rate from — same "first period has no measured rate" caveat, one
-// level further back.
-export async function computeCountCorrection(
-  db: PrismaClient,
-  requester: AuthenticatedStaff,
-): Promise<CountCorrectionResult> {
-  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
-
-  const { canteen } = await locations(db);
-  if (!canteen) return { ok: false, reason: "not_found" };
-
-  const latestCount = await getLatestStockCount(db, requester, canteen.id);
-  if (!latestCount.ok) return latestCount;
-  if (!latestCount.count || !latestCount.derivedSales.available) {
-    return { ok: true, available: false };
-  }
-
-  // The count immediately before the latest one — its own rate is what
-  // was "in force" during the period the latest count now corrects.
-  const priorRate = await getPreviousStockCount(db, requester, canteen.id, latestCount.count.occurredAt);
-  if (!priorRate.ok) return priorRate;
-
-  const rateBeforeThisPeriod = await ownGoodsRateFromCount(
-    db,
-    requester,
-    canteen.id,
-    priorRate.count,
-    priorRate.derivedSales,
-  );
-  if (rateBeforeThisPeriod == null) return { ok: true, available: false };
-
-  const ownGoods = await getProductMovementByReasonInPeriod(
-    db,
-    requester,
-    canteen.id,
-    "received",
-    latestCount.derivedSales.sincePreviousCountAt,
-    latestCount.count.occurredAt,
-  );
-  if (!ownGoods.ok) return ownGoods;
-  const ownGoodsProductIds = new Set(
-    ownGoods.lines.filter((line) => line.quantity > 0).map((line) => line.productId),
-  );
-
-  const measuredAtCountMinor = latestCount.derivedSales.lines
-    .filter((line) => ownGoodsProductIds.has(line.productId))
-    .reduce((sum, line) => sum + (line.revenueMinor ?? 0), 0);
-
-  const takings = await getTakingsAtLocation(
-    db,
-    requester,
-    canteen.id,
-    latestCount.derivedSales.sincePreviousCountAt,
-    latestCount.count.occurredAt,
-  );
-  if (!takings.ok) return takings;
-  const takingsSinceLastCountMinor = takings.cashMinor + takings.mpesaMinor;
-
-  const estimatedSinceLastCountMinor = Math.round(
-    takingsSinceLastCountMinor * rateBeforeThisPeriod,
-  );
-
-  return {
-    ok: true,
-    available: true,
-    estimatedSinceLastCountMinor,
-    measuredAtCountMinor,
-    differenceMinor: measuredAtCountMinor - estimatedSinceLastCountMinor,
-  };
-}
+// ownGoodsRateFromCount and computeCountCorrection retired 2026-08-13 —
+// there is no longer an estimate for a count to correct. See
+// docs/formulas.md §6/§7: the count is now a pure shrinkage check
+// (docs/proposal.md §4), separate from cost of goods sold entirely.
 
 export type DashboardProfitLocationBreakdown = {
   revenueMinor: number;
-  // Finding 3: null when the canteen has no own-goods rate yet — the
-  // location's cost/profit figures can't be computed, not "computed as
-  // zero cost."
-  costOfGoodsMinor: number | null;
-  grossProfitMinor: number | null;
+  costOfGoodsMinor: number;
+  grossProfitMinor: number;
   runningCostsMinor: number;
-  netProfitMinor: number | null;
-  provisional: boolean;
+  netProfitMinor: number;
 };
 
 export type DashboardProfitResult =
@@ -484,25 +244,10 @@ export type DashboardProfitResult =
       ok: true;
       period: { dayStart: Date; dayEnd: Date };
       revenue: { restaurant: number; canteen: number; total: number };
-      costOfGoods: {
-        restaurant: number;
-        canteenExact: number;
-        canteenEstimated: number | null;
-        // Finding 3: null whenever the canteen portion is unavailable —
-        // a business total can't silently drop the uncomputed canteen
-        // share. Callers show the restaurant-only figure, labelled
-        // partial, per Edwinfred's decision (2026-08-13).
-        total: number | null;
-      };
+      costOfGoods: { restaurant: number; canteen: number; total: number };
       runningCostsMinor: number;
-      // Business-wide gross/net profit: null when cost of goods is
-      // partial (see costOfGoods.total). See byLocation for the
-      // restaurant-only figures that remain exact in that case.
-      grossProfitMinor: number | null;
-      netProfitMinor: number | null;
-      canteenCostRate: number | null;
-      lastCanteenCount: Date | null;
-      correction: CountCorrectionResult;
+      grossProfitMinor: number;
+      netProfitMinor: number;
       byLocation: {
         restaurant: DashboardProfitLocationBreakdown;
         canteen: DashboardProfitLocationBreakdown;
@@ -513,14 +258,14 @@ export type DashboardProfitResult =
 // Assembles the dashboard's Profit waterfall (dashboard-r3.tsx's
 // revenue / cost of goods sold / running costs / net profit strip) for
 // one day. formulas.md §7 — sales revenue − cost of goods sold = gross
-// profit; gross profit − running costs = net profit. Business total is
-// unaffected by the transfer rate chosen (formulas.md §5) since the
-// same figure is subtracted from the restaurant and added to the
-// canteen — computeTransferCost is computed once here (Finding 5) and
-// passed to both computeRestaurantCostOfGoods and
-// computeCanteenCostOfGoods, so both sides are structurally guaranteed
-// to agree on the same figure rather than by both happening to be
-// called with the same window.
+// profit; gross profit − running costs = net profit. Revised 2026-08-13:
+// every figure here is now final as recorded, at both locations — see
+// formulas.md §7's "nothing here waits on a count." Business total is
+// unaffected by which unit-cost basis a transferred item uses
+// (formulas.md §5) since the same figure is subtracted from the
+// restaurant and added to the canteen — computeTransferCost is computed
+// once here (Finding 5) and passed to computeRestaurantCostOfGoods, so
+// both sides agree on the same figure structurally.
 export async function getDashboardProfit(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -539,56 +284,44 @@ export async function getDashboardProfit(
 
   const [
     restaurantRevenue,
-    canteenTakings,
+    canteenRevenue,
     restaurantCogs,
     canteenCogs,
     runningCosts,
     restaurantRunningCosts,
     canteenRunningCosts,
-    correction,
   ] = await Promise.all([
     getSalesRevenueAtLocation(db, requester, restaurant.id, input.dayStart, input.dayEnd),
-    getTakingsAtLocation(db, requester, canteen.id, input.dayStart, input.dayEnd),
+    getSalesRevenueAtLocation(db, requester, canteen.id, input.dayStart, input.dayEnd),
     computeRestaurantCostOfGoods(db, requester, input, transfer),
-    computeCanteenCostOfGoods(db, requester, input, transfer),
+    computeCanteenCostOfGoods(db, requester, input),
     getRunningCosts(db, requester, input.dayStart, input.dayEnd),
     getRunningCosts(db, requester, input.dayStart, input.dayEnd, restaurant.id),
     getRunningCosts(db, requester, input.dayStart, input.dayEnd, canteen.id),
-    computeCountCorrection(db, requester),
   ]);
   if (!restaurantRevenue.ok) return restaurantRevenue;
-  if (!canteenTakings.ok) return canteenTakings;
+  if (!canteenRevenue.ok) return canteenRevenue;
   if (!restaurantCogs.ok) return restaurantCogs;
   if (!canteenCogs.ok) return canteenCogs;
   if (!runningCosts.ok) return runningCosts;
   if (!restaurantRunningCosts.ok) return restaurantRunningCosts;
   if (!canteenRunningCosts.ok) return canteenRunningCosts;
 
-  const canteenRevenueMinor = canteenTakings.cashMinor + canteenTakings.mpesaMinor;
   const revenue = {
     restaurant: restaurantRevenue.totalMinor,
-    canteen: canteenRevenueMinor,
-    total: restaurantRevenue.totalMinor + canteenRevenueMinor,
+    canteen: canteenRevenue.totalMinor,
+    total: restaurantRevenue.totalMinor + canteenRevenue.totalMinor,
   };
   const costOfGoods = {
     restaurant: restaurantCogs.totalMinor,
-    canteenExact: canteenCogs.exactMinor,
-    canteenEstimated: canteenCogs.estimatedMinor,
-    total: canteenCogs.totalMinor != null ? restaurantCogs.totalMinor + canteenCogs.totalMinor : null,
+    canteen: canteenCogs.totalMinor,
+    total: restaurantCogs.totalMinor + canteenCogs.totalMinor,
   };
-  // Business-wide profit can't be computed while the canteen's own-goods
-  // cost is unavailable — a partial sum would silently understate cost of
-  // goods sold and overstate profit, the exact failure Finding 3 flagged.
-  // byLocation.restaurant below still carries the exact restaurant-only
-  // figures for that case.
-  const grossProfitMinor = costOfGoods.total != null ? revenue.total - costOfGoods.total : null;
-  const netProfitMinor = grossProfitMinor != null ? grossProfitMinor - runningCosts.totalMinor : null;
+  const grossProfitMinor = revenue.total - costOfGoods.total;
+  const netProfitMinor = grossProfitMinor - runningCosts.totalMinor;
 
-  const canteenCostOfGoodsMinor =
-    canteenCogs.estimatedMinor != null ? canteenCogs.exactMinor + canteenCogs.estimatedMinor : null;
   const restaurantGrossProfitMinor = revenue.restaurant - costOfGoods.restaurant;
-  const canteenGrossProfitMinor =
-    canteenCostOfGoodsMinor != null ? revenue.canteen - canteenCostOfGoodsMinor : null;
+  const canteenGrossProfitMinor = revenue.canteen - costOfGoods.canteen;
 
   return {
     ok: true,
@@ -598,9 +331,6 @@ export async function getDashboardProfit(
     runningCostsMinor: runningCosts.totalMinor,
     grossProfitMinor,
     netProfitMinor,
-    canteenCostRate: canteenCogs.canteenCostRate,
-    lastCanteenCount: canteenCogs.lastCanteenCount,
-    correction,
     byLocation: {
       restaurant: {
         revenueMinor: revenue.restaurant,
@@ -608,21 +338,13 @@ export async function getDashboardProfit(
         grossProfitMinor: restaurantGrossProfitMinor,
         runningCostsMinor: restaurantRunningCosts.totalMinor,
         netProfitMinor: restaurantGrossProfitMinor - restaurantRunningCosts.totalMinor,
-        provisional: false,
       },
       canteen: {
         revenueMinor: revenue.canteen,
-        costOfGoodsMinor: canteenCostOfGoodsMinor,
+        costOfGoodsMinor: costOfGoods.canteen,
         grossProfitMinor: canteenGrossProfitMinor,
         runningCostsMinor: canteenRunningCosts.totalMinor,
-        netProfitMinor:
-          canteenGrossProfitMinor != null
-            ? canteenGrossProfitMinor - canteenRunningCosts.totalMinor
-            : null,
-        // The canteen's own-goods cost is always an estimate between counts
-        // (formulas.md §6) — provisional whenever there's any estimated
-        // portion, same framing the combined "partly provisional" badge uses.
-        provisional: canteenCogs.estimatedMinor !== 0 || canteenCogs.canteenCostRate == null,
+        netProfitMinor: canteenGrossProfitMinor - canteenRunningCosts.totalMinor,
       },
     },
   };
@@ -659,10 +381,13 @@ function dayKey(date: Date): string {
 // Gap detection: there is no business-wide "day open/closed" flag
 // anywhere in the schema — isDayClosedFor (ticket 28) is per-person,
 // per-location, and doesn't describe whether the business traded at all.
-// A day is a gap (null) only when it has zero Sale rows AND zero Takings
-// rows across both locations; a day with at least one recorded row, even
-// one that nets to zero, is real trading data (2026-08-12, confirmed with
-// Edwinfred — see this ticket's file for the full note).
+// A day is a gap (null) only when it has zero Sale rows at either
+// location; a day with at least one recorded row, even one that nets to
+// zero, is real trading data (2026-08-12, confirmed with Edwinfred — see
+// this ticket's file for the full note). Revised 2026-08-13: previously
+// also checked Takings rows, since the canteen recorded no Sale rows of
+// its own — now that it does (docs/proposal.md §4), Sale rows alone are
+// sufficient at both locations.
 export async function getRevenueProfitTrend(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -679,14 +404,8 @@ export async function getRevenueProfitTrend(
   windowStart.setDate(windowStart.getDate() - (input.days - 1));
   windowStart.setHours(0, 0, 0, 0);
 
-  const [sales, takings] = await Promise.all([
-    listSalesInPeriod(db, windowStart, windowEndOfDay),
-    listTakingsInPeriod(db, windowStart, windowEndOfDay),
-  ]);
-  const tradedDays = new Set<string>([
-    ...sales.map((s) => dayKey(s.occurredAt)),
-    ...takings.map((t) => dayKey(t.occurredAt)),
-  ]);
+  const sales = await listSalesInPeriod(db, windowStart, windowEndOfDay);
+  const tradedDays = new Set<string>(sales.map((s) => dayKey(s.occurredAt)));
 
   const dayBounds: { date: string; dayStart: Date; dayEnd: Date }[] = [];
   for (let i = 0; i < input.days; i++) {
@@ -769,8 +488,14 @@ export async function getExceptions(
 
   const locationCodeById = new Map(allLocations.map((l) => [l.id, l.code]));
 
-  const shortfallHandovers = cashTransactions.handovers.filter(
-    (h) => h.actualCashMinor !== h.expectedCashMinor || h.actualMpesaMinor !== h.expectedMpesaMinor,
+  // 2026-08-13: expectedMpesaMinor is null at the canteen — a combined
+  // total, not a per-currency split (docs/proposal.md §4/§5) — so the
+  // shortfall check there compares the combined total against
+  // expectedCashMinor rather than checking each currency separately.
+  const shortfallHandovers = cashTransactions.handovers.filter((h) =>
+    h.expectedMpesaMinor === null
+      ? h.actualCashMinor + h.actualMpesaMinor !== h.expectedCashMinor
+      : h.actualCashMinor !== h.expectedCashMinor || h.actualMpesaMinor !== h.expectedMpesaMinor,
   );
   const voidedSaleRows = sales.filter((s) => s.voided);
 
@@ -786,8 +511,14 @@ export async function getExceptions(
     handoverId: h.id,
     staffName: nameFor(h.staffMemberId),
     locationCode: locationCodeById.get(h.locationId) ?? "unknown",
-    cashDiffMinor: h.actualCashMinor - h.expectedCashMinor,
-    mpesaDiffMinor: h.actualMpesaMinor - h.expectedMpesaMinor,
+    // At the canteen (expectedMpesaMinor null), the whole difference is
+    // carried on cashDiffMinor against the combined expected total —
+    // there is no meaningful per-currency split to report.
+    cashDiffMinor:
+      h.expectedMpesaMinor === null
+        ? h.actualCashMinor + h.actualMpesaMinor - h.expectedCashMinor
+        : h.actualCashMinor - h.expectedCashMinor,
+    mpesaDiffMinor: h.expectedMpesaMinor === null ? 0 : h.actualMpesaMinor - h.expectedMpesaMinor,
     occurredAt: h.occurredAt,
   }));
 
@@ -810,16 +541,11 @@ export type LedgerSummaryResult =
       openingMinor: number;
       purchasesMinor: number;
       closingMinor: number;
-      // Finding 3: null while the canteen's own-goods rate is
-      // unavailable — a business-wide total can't silently drop the
-      // uncomputed canteen cost.
-      costOfGoodsSoldMinor: number | null;
+      costOfGoodsSoldMinor: number;
       salesValueMinor: number;
-      grossProfitMinor: number | null;
+      grossProfitMinor: number;
       nonSalesAtCostMinor: number;
       nonSalesAtPriceMinor: number;
-      canteenCostRate: number | null;
-      lastCanteenCount: Date | null;
     }
   | { ok: false; reason: "forbidden" | "not_found" };
 
@@ -831,10 +557,11 @@ export type LedgerSummaryResult =
 // "Opening stock" and "closing stock" here are the restaurant's ingredient
 // stock value at the period's two boundaries — the same figure
 // computeRestaurantCostOfGoods already uses, per formulas.md §6. The
-// canteen's cost of goods is transfer-cost-plus-estimated-rate, not an
-// opening/closing stock figure of its own (2026-08-12 clarification), so it
-// has no separate opening/closing contribution here — it only enters via
-// costOfGoodsSoldMinor, same as computeCanteenCostOfGoods elsewhere.
+// canteen's cost of goods is now computed the same way as its revenue —
+// from real sales, at each product's own cost basis (2026-08-13 revision)
+// — so it has no separate opening/closing contribution here either; it
+// only enters via costOfGoodsSoldMinor, same as computeCanteenCostOfGoods
+// elsewhere.
 export async function getLedgerSummary(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -847,8 +574,8 @@ export async function getLedgerSummary(
 
   const dayShapedInput = { dayStart: input.periodStart, dayEnd: input.periodEnd };
 
-  // Finding 5: computed once and passed to both COGS calls below — see
-  // getDashboardProfit's comment on the same pattern.
+  // Finding 5: computed once and passed to computeRestaurantCostOfGoods —
+  // see getDashboardProfit's comment on the same pattern.
   const transfer = await computeTransferCost(db, requester, {
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
@@ -862,7 +589,7 @@ export async function getLedgerSummary(
     restaurantCogs,
     canteenCogs,
     restaurantRevenue,
-    canteenTakings,
+    canteenRevenue,
     restaurantNonSales,
     canteenNonSales,
   ] = await Promise.all([
@@ -870,9 +597,9 @@ export async function getLedgerSummary(
     getIngredientStockValueAtLocation(db, requester, restaurant.id, input.periodEnd),
     getIngredientsBoughtMinor(db, requester, restaurant.id, input.periodStart, input.periodEnd),
     computeRestaurantCostOfGoods(db, requester, dayShapedInput, transfer),
-    computeCanteenCostOfGoods(db, requester, dayShapedInput, transfer),
+    computeCanteenCostOfGoods(db, requester, dayShapedInput),
     getSalesRevenueAtLocation(db, requester, restaurant.id, input.periodStart, input.periodEnd),
-    getTakingsAtLocation(db, requester, canteen.id, input.periodStart, input.periodEnd),
+    getSalesRevenueAtLocation(db, requester, canteen.id, input.periodStart, input.periodEnd),
     getNonSalesConsumptionValue(db, requester, restaurant.id, input.periodStart, input.periodEnd),
     getNonSalesConsumptionValue(db, requester, canteen.id, input.periodStart, input.periodEnd),
   ]);
@@ -882,14 +609,12 @@ export async function getLedgerSummary(
   if (!restaurantCogs.ok) return restaurantCogs;
   if (!canteenCogs.ok) return canteenCogs;
   if (!restaurantRevenue.ok) return restaurantRevenue;
-  if (!canteenTakings.ok) return canteenTakings;
+  if (!canteenRevenue.ok) return canteenRevenue;
   if (!restaurantNonSales.ok) return restaurantNonSales;
   if (!canteenNonSales.ok) return canteenNonSales;
 
-  const costOfGoodsSoldMinor =
-    canteenCogs.totalMinor != null ? restaurantCogs.totalMinor + canteenCogs.totalMinor : null;
-  const salesValueMinor =
-    restaurantRevenue.totalMinor + canteenTakings.cashMinor + canteenTakings.mpesaMinor;
+  const costOfGoodsSoldMinor = restaurantCogs.totalMinor + canteenCogs.totalMinor;
+  const salesValueMinor = restaurantRevenue.totalMinor + canteenRevenue.totalMinor;
 
   return {
     ok: true,
@@ -899,11 +624,9 @@ export async function getLedgerSummary(
     closingMinor: closing.totalMinor,
     costOfGoodsSoldMinor,
     salesValueMinor,
-    grossProfitMinor: costOfGoodsSoldMinor != null ? salesValueMinor - costOfGoodsSoldMinor : null,
+    grossProfitMinor: salesValueMinor - costOfGoodsSoldMinor,
     nonSalesAtCostMinor: restaurantNonSales.atCostMinor + canteenNonSales.atCostMinor,
     nonSalesAtPriceMinor: restaurantNonSales.atPriceMinor + canteenNonSales.atPriceMinor,
-    canteenCostRate: canteenCogs.canteenCostRate,
-    lastCanteenCount: canteenCogs.lastCanteenCount,
   };
 }
 
@@ -949,7 +672,12 @@ export type ProductLedgerResult =
   | { ok: false; reason: "forbidden" | "not_found" };
 
 const PRODUCT_IN_REASONS = ["produced", "received", "transferred"] as const;
-const PRODUCT_OUT_REASONS = ["sold", "sold_derived", "transferred", "wasted", "consumed", "given_away"] as const;
+// "sold_derived" retired 2026-08-13 (BUG-10) — this was the reason the
+// canteen's ledger double-counted a real sale as itself and again as an
+// inference at the next count. The canteen now records every sale
+// directly, the same as the restaurant, so "sold" alone is the complete
+// picture — see docs/proposal.md §4.
+const PRODUCT_OUT_REASONS = ["sold", "transferred", "wasted", "consumed", "given_away"] as const;
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -1001,7 +729,7 @@ function foldReasonLines(
     else if (line.reason === "transferred") {
       if (line.quantity > 0) sums.transferredIn += line.quantity;
       else sums.transferredOut += -line.quantity;
-    } else if (line.reason === "sold" || line.reason === "sold_derived") sums.sold += -line.quantity;
+    } else if (line.reason === "sold") sums.sold += -line.quantity;
     else if (line.reason === "wasted" || line.reason === "consumed" || line.reason === "given_away") {
       sums.nonSales += -line.quantity;
     }
@@ -1652,16 +1380,17 @@ export async function getCashLedger(
 // Ticket 45 — the Activity trail's row kinds. Matches the design
 // reference's ActivityKind minus recipe/person (out of this ticket's
 // scope) plus the split this ticket's Scope calls for explicitly:
-// takings and days_worked get their own kind rather than folding into
-// "sale"/"movement", since the reference's fixture predates this
-// codebase's actual domain model.
+// days_worked gets its own kind rather than folding into "sale"/
+// "movement", since the reference's fixture predates this codebase's
+// actual domain model. "takings" retired 2026-08-13 alongside the
+// Takings model — canteen handovers are now recorded the same way as
+// the restaurant's, so they already appear as "handover" rows.
 export type ActivityKind =
   | "sale"
   | "void"
   | "correction"
   | "movement"
   | "handover"
-  | "takings"
   | "expense"
   | "repayment"
   | "days_worked";
@@ -1687,9 +1416,9 @@ const ACTIVITY_DEFAULT_PERIOD_DAYS = 90;
 
 // Ticket 45 — the owner's audit trail: one row per action across sales
 // (including voids and corrections), stock (wastage/consumption/
-// complimentary/counts), cash (handovers, takings, expenses,
-// repayments), people (days worked). Reads through each module's
-// index.ts only, per docs/architecture.md's "reporting owns no data."
+// complimentary/counts), cash (handovers, expenses, repayments), people
+// (days worked). Reads through each module's index.ts only, per
+// docs/architecture.md's "reporting owns no data."
 // Owner-only, same gate as every other business-wide read here.
 export async function getActivity(
   db: PrismaClient,
@@ -1716,7 +1445,6 @@ export async function getActivity(
     movements,
     stockCounts,
     cashTransactions,
-    takings,
     daysWorked,
     locations,
   ] = await Promise.all([
@@ -1724,7 +1452,6 @@ export async function getActivity(
     getMovementsForActivity(db, requester, periodStart, periodEnd),
     getStockCountsForActivity(db, requester, periodStart, periodEnd),
     getCashLedgerTransactions(db, requester, periodStart, periodEnd),
-    listTakingsInPeriod(db, periodStart, periodEnd),
     getDaysWorkedForActivity(db, requester, periodStart, periodEnd),
     listLocations(db),
   ]);
@@ -1766,7 +1493,6 @@ export async function getActivity(
     ...cashTransactions.handovers.map((h) => h.staffMemberId),
     ...cashTransactions.expenses.map((e) => e.staffMemberId),
     ...cashTransactions.repayments.map((r) => r.recordedBy),
-    ...takings.filter((t) => t.staffMemberId).map((t) => t.staffMemberId!),
     ...daysWorked.value.map((d) => d.staffMemberId),
   ]);
   const staff = await findStaffMembersByIds(db, Array.from(staffIds));
@@ -1899,21 +1625,6 @@ export async function getActivity(
       what: "Handed over cash and M-Pesa",
       locationName: locationNameById.get(h.locationId) ?? null,
       amountMinor: h.actualCashMinor + h.actualMpesaMinor,
-      reason: null,
-    });
-  }
-
-  for (const t of takings) {
-    rows.push({
-      id: `takings-${t.id}`,
-      enteredAt: t.occurredAt,
-      effectiveOn: t.occurredAt,
-      kind: "takings",
-      who: nameFor(t.staffMemberId),
-      whoId: t.staffMemberId,
-      what: "Canteen takings recorded",
-      locationName: locationNameById.get(t.locationId) ?? null,
-      amountMinor: t.cashMinor + t.mpesaMinor,
       reason: null,
     });
   }

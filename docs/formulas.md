@@ -373,8 +373,9 @@ Per person, per day. Cash and M-Pesa separately.
 difference = handed over − expected
 ```
 
-**At the restaurant**, expected is that person's recorded sales for the day. Because it was
-built sale by sale during the day, it does not depend on the person handing over.
+**At the restaurant**, expected is that person's recorded sales for the day, cash and M-Pesa
+separately. Because it was built sale by sale during the day, it does not depend on the person
+handing over.
 
 ```
 Cash sales recorded          KSh 8,400
@@ -382,14 +383,20 @@ Cash handed over             KSh 8,150
 Difference                 − KSh   250
 ```
 
-**At the canteen**, expected is the takings the attendant declared at close.
+**At the canteen** *(revised 2026-08-13)*, expected is also that day's recorded sales — the
+same basis, not a separately declared figure — but checked as one **combined** total rather
+than cash and M-Pesa apart, since a canteen sale carries no payment method at entry (§1) and
+the split is not knowable from the record.
 
-- **M-Pesa is a real check** — the payment messages are evidence she does not control.
-- **Cash is a weaker check** — the same person declares the figure and hands over the money. It
-  confirms she handed over what she declared, not that she declared everything she took.
+```
+Sales recorded (combined)    KSh 5,400
+Cash + M-Pesa handed over    KSh 5,150
+Difference                 − KSh   250
+```
 
-**The count is what tests the cash.** Takings never declared show up as stock gone without
-money arriving.
+There is no separate declare-takings step: handing over *is* entering what she is holding —
+cash counted and M-Pesa received — checked against the day's recorded sales the moment she
+does. The weekly count remains a secondary check on stock, not on cash — see §6.
 
 Credit sales are excluded — no money changed hands. They appear in §11.
 

@@ -1,7 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { recordStockCount } from "@/modules/stock";
 import { getRevenueProfitTrend } from "../logic";
 import { testDb } from "@/shared/test-db";
 
@@ -48,7 +47,6 @@ async function resetDb() {
   await testDb.stockMovement.deleteMany({});
   await testDb.ingredientMovement.deleteMany({});
   await testDb.expense.deleteMany({});
-  await testDb.takings.deleteMany({});
   await testDb.recipeLine.deleteMany({});
   await testDb.recipe.deleteMany({});
   await testDb.product.deleteMany({});
@@ -110,12 +108,22 @@ describe("getRevenueProfitTrend", () => {
     expect(result.points[0].date).toBe("2026-08-04");
   });
 
-  test("a day with no Sale rows and no Takings rows at either location is a gap (null revenue and net profit)", async () => {
+  test("a day with no Sale rows at either location is a gap (null revenue and net profit)", async () => {
     const windowEnd = new Date("2026-08-06T12:00:00Z");
 
     // Trading happened on the 6th only — the 4th and 5th have no rows at all.
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 2000, mpesaMinor: 1000, occurredAt: new Date("2026-08-06T18:00:00Z") },
+    const soda = await testDb.product.create({
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: "attendant-1",
+        fulfilment: "counter",
+        totalMinor: 3000,
+        occurredAt: new Date("2026-08-06T18:00:00Z"),
+        lines: { create: [{ productId: soda.id, quantity: 30, priceMinor: 100 }] },
+      },
     });
 
     const result = await getRevenueProfitTrend(testDb, owner(), { windowEnd, days: 3 });
@@ -130,37 +138,23 @@ describe("getRevenueProfitTrend", () => {
     expect(tradingDay?.revenue).not.toBeNull();
   });
 
-  test("a day with a recorded Takings row that nets to zero is real data, not a gap", async () => {
+  test("a day with a recorded canteen Sale row that nets to zero revenue is real data, not a gap", async () => {
     const windowEnd = new Date("2026-08-06T12:00:00Z");
 
-    // A canteen count establishes a real own-goods rate, so net profit is
-    // a number and this test can assert "not a gap" without colliding
-    // with Finding 3's separate "no rate yet" unavailable (null) case.
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
+      data: { name: "Soda", kind: "goods", priceMinor: 0, lastKnownCostMinor: 0, locationId: canteenId },
     });
-    const previousCount = await recordStockCount(testDb, owner(), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(previousCount.ok).toBe(true);
-    await testDb.stockMovement.create({
+    // A sale of a zero-priced product nets to zero revenue but is still a
+    // real recorded row — distinct from no row at all (a gap).
+    await testDb.sale.create({
       data: {
-        productId: soda.id,
         locationId: canteenId,
-        quantity: 100,
-        reason: "received",
-        staffMemberId: ownerId,
+        staffMemberId: "attendant-1",
+        fulfilment: "counter",
+        totalMinor: 0,
+        occurredAt: new Date("2026-08-05T18:00:00Z"),
+        lines: { create: [{ productId: soda.id, quantity: 1, priceMinor: 0 }] },
       },
-    });
-    const latestCount = await recordStockCount(testDb, owner(), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(latestCount.ok).toBe(true);
-
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 0, mpesaMinor: 0, occurredAt: new Date("2026-08-05T18:00:00Z") },
     });
 
     const result = await getRevenueProfitTrend(testDb, owner(), { windowEnd, days: 3 });
@@ -172,7 +166,7 @@ describe("getRevenueProfitTrend", () => {
     expect(zeroTradingDay?.netProfit).not.toBeNull();
   });
 
-  test("a day with only a restaurant Sale row (no canteen takings) is not a gap", async () => {
+  test("a day with only a restaurant Sale row (no canteen sale) is not a gap", async () => {
     const windowEnd = new Date("2026-08-06T12:00:00Z");
 
     const chips = await testDb.product.create({
@@ -209,8 +203,18 @@ describe("getRevenueProfitTrend", () => {
         occurredAt: new Date("2026-08-06T12:00:00Z"),
       },
     });
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 2000, mpesaMinor: 1000, occurredAt: new Date("2026-08-06T18:00:00Z") },
+    const soda = await testDb.product.create({
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: "attendant-1",
+        fulfilment: "counter",
+        totalMinor: 3000,
+        occurredAt: new Date("2026-08-06T18:00:00Z"),
+        lines: { create: [{ productId: soda.id, quantity: 30, priceMinor: 100 }] },
+      },
     });
 
     const result = await getRevenueProfitTrend(testDb, owner(), { windowEnd, days: 1 });

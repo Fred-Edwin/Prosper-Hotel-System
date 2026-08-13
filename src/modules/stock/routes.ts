@@ -1,10 +1,14 @@
 import { db } from "@/shared/db";
 import { getSession, listLocations } from "@/modules/people";
 import {
+  cancelPendingTransfer,
+  confirmTransfer,
   correctStockCount,
   getCurrentStockAtLocation,
   getIngredientStockValuesAtLocation,
   getLowStockItems,
+  getPendingTransfersAtLocation,
+  getConfirmedTransfersSentFromLocation,
   getProductStockValueAtLocation,
   getSellableProductsAtLocation,
   getTransferableItems,
@@ -147,7 +151,52 @@ export async function recordTransferRoute(request: Request): Promise<Response> {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
 
-  return Response.json({ movements: result.movements });
+  return Response.json({ transfers: result.transfers });
+}
+
+// Added 2026-08-13 — REQ-02 Part A. The receiving screen's queue.
+export async function pendingTransfersRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const result = await getPendingTransfersAtLocation(db, session, session.staff.locationId);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
+  return Response.json({ transfers: result.transfers });
+}
+
+export async function confirmedTransfersSentRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const result = await getConfirmedTransfersSentFromLocation(db, session, session.staff.locationId);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
+  return Response.json({ transfers: result.transfers });
+}
+
+export async function confirmTransferRoute(
+  request: Request,
+  { params }: { params: Promise<{ transferId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const { transferId } = await params;
+  const body = await request.json();
+  const result = await confirmTransfer(db, session, {
+    transferId,
+    confirmedQuantity: body.confirmedQuantity,
+  });
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ transfer: result.transfer });
+}
+
+export async function cancelPendingTransferRoute(
+  _request: Request,
+  { params }: { params: Promise<{ transferId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const { transferId } = await params;
+  const result = await cancelPendingTransfer(db, session, transferId);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  return Response.json({ transfer: result.transfer });
 }
 
 export async function transferableItemsRoute(): Promise<Response> {
@@ -276,7 +325,7 @@ export async function latestStockCountRoute(
     return Response.json({ error: result.reason }, { status: 403 });
   }
 
-  return Response.json({ count: result.count, derivedSales: result.derivedSales });
+  return Response.json({ count: result.count });
 }
 
 export async function correctStockCountRoute(

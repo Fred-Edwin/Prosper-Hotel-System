@@ -10,7 +10,10 @@ export type Handover = {
   locationId: string;
   staffMemberId: string;
   expectedCashMinor: number;
-  expectedMpesaMinor: number;
+  // Null at the canteen (2026-08-13 revision) — see the schema comment
+  // on the Handover model: "not tracked separately here, see
+  // expectedCashMinor for the combined total," not "expected zero."
+  expectedMpesaMinor: number | null;
   actualCashMinor: number;
   actualMpesaMinor: number;
   occurredAt: Date;
@@ -32,21 +35,6 @@ export type Expense = {
   reversed: boolean;
   reversedAt: Date | null;
   reversedBy: string | null;
-};
-
-// CONTEXT.md's Takings: cash and M-Pesa totals declared at close, the
-// canteen's substitute for per-sale recording — no expected figure, since
-// nothing was recorded per-sale to expect against.
-export type Takings = {
-  id: string;
-  locationId: string;
-  cashMinor: number;
-  mpesaMinor: number;
-  // Ticket 45 — who recorded it (or last re-entered it, since a same-day
-  // edit overwrites the amounts in place). Null for rows recorded before
-  // this column existed.
-  staffMemberId: string | null;
-  occurredAt: Date;
 };
 
 // CONTEXT.md's Cash Movement: a drawing is "recorded as a cash movement

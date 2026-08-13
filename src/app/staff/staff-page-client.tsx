@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { StaffShellHome, StaffHome } from "@/components/layout/staff-shell";
-import { staffNav, type StaffRole } from "@/components/layout/staff-nav";
+import { staffLinks, type StaffRole } from "@/components/layout/staff-nav";
 import { HelpPanel } from "@/components/patterns/help-panel";
 import { StockList } from "@/modules/stock/ui/stock-list";
 import { ReceiveDelivery } from "@/modules/stock/ui/receive-delivery";
@@ -12,11 +12,12 @@ import { RecordWastage } from "@/modules/stock/ui/record-wastage";
 import { StockCount } from "@/modules/stock/ui/stock-count";
 import { TransferStock } from "@/modules/stock/ui/transfer-stock";
 import { TransferHistoryView } from "@/modules/stock/ui/transfer-history";
+import { ConfirmTransfer } from "@/modules/stock/ui/confirm-transfer";
+import { SentTransfers } from "@/modules/stock/ui/sent-transfers";
 import { NewSale } from "@/modules/sales/ui/new-sale";
 import { CreditSale } from "@/modules/sales/ui/credit-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
 import { Handover } from "@/modules/cash/ui/handover";
-import { Takings } from "@/modules/cash/ui/takings";
 import { NotBuilt } from "@/components/patterns/states";
 
 // Height (px) of a task screen's sticky bottom-anchored primary action bar —
@@ -35,7 +36,6 @@ const helpTopicByActive: Record<
   wastage: { topic: "wastage", bottomOffset: BOTTOM_BAR_HEIGHT },
   stock: { topic: "staff-stock" },
   handover: { topic: "handover", bottomOffset: BOTTOM_BAR_HEIGHT },
-  takings: { topic: "takings", bottomOffset: BOTTOM_BAR_HEIGHT },
   credit: { topic: "credit-sale", bottomOffset: BOTTOM_BAR_HEIGHT },
   receive: { topic: "receiving", bottomOffset: BOTTOM_BAR_HEIGHT },
   count: { topic: "stock-count", bottomOffset: BOTTOM_BAR_HEIGHT },
@@ -54,18 +54,23 @@ export function StaffPageClient({
   staffName,
   locationId,
   locationName,
+  locationCode,
   role,
   handedOverToday,
+  pendingTransferCount,
 }: {
   staffName: string;
   locationId: string;
   locationName: string;
+  locationCode: "restaurant" | "canteen";
   role: StaffRole;
   handedOverToday: boolean;
+  /** Transfers sent to this location awaiting confirmation. */
+  pendingTransferCount?: number;
 }) {
   const [active, setActive] = useState<string | null>(null);
 
-  const activeLink = active ? staffNav[role].find((l) => l.key === active) : null;
+  const activeLink = active ? staffLinks[active] : null;
 
   return (
     <StaffShellHome
@@ -77,16 +82,25 @@ export function StaffPageClient({
       actions={active ? helpPanelFor(active) : undefined}
     >
       {active === null && (
-        <StaffHome role={role} handedOverToday={handedOverToday} onOpen={setActive} />
+        <StaffHome
+          role={role}
+          handedOverToday={handedOverToday}
+          pendingTransferCount={pendingTransferCount}
+          onOpen={setActive}
+        />
       )}
-      {active === "stock" && <StockList locationId={locationId} />}
+      {active === "stock" && (
+        <StockList locationId={locationId} isCanteen={locationCode === "canteen"} />
+      )}
       {active === "sell" && (
         <NewSale onDone={() => setActive(null)} role={role} locationId={locationId} />
       )}
       {active === "credit" && (
         <CreditSale onDone={() => setActive(null)} locationId={locationId} />
       )}
-      {active === "sales" && <TodaysSales />}
+      {active === "sales" && (
+        <TodaysSales role={role} locationId={locationId} isCanteen={locationCode === "canteen"} onOpen={setActive} />
+      )}
       {active === "receive" && (
         <ReceiveDelivery onDone={() => setActive(null)} locationId={locationId} />
       )}
@@ -98,8 +112,9 @@ export function StaffPageClient({
       {active === "count" && <StockCount />}
       {active === "transfer" && <TransferStock />}
       {active === "transfer-history" && <TransferHistoryView />}
+      {active === "confirm-transfer" && <ConfirmTransfer />}
+      {active === "sent-transfers" && <SentTransfers />}
       {active === "handover" && <Handover />}
-      {active === "takings" && <Takings />}
       {active !== null &&
         active !== "stock" &&
         active !== "sell" &&
@@ -112,8 +127,9 @@ export function StaffPageClient({
         active !== "count" &&
         active !== "transfer" &&
         active !== "transfer-history" &&
-        active !== "handover" &&
-        active !== "takings" && <NotBuilt destination={activeLink?.label ?? ""} />}
+        active !== "confirm-transfer" &&
+        active !== "sent-transfers" &&
+        active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>
   );
 }

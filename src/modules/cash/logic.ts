@@ -12,13 +12,11 @@ import {
   createDrawingRepayment,
   createExpense,
   createHandoverRecord,
-  createTakingsRecord,
   findDrawingDebtByExpenseId,
   findDrawingRepaymentById,
   findExpenseById,
   findTodaysHandover,
   findTodaysHandoversAtLocation,
-  findTodaysTakings,
   listDrawingRepayments,
   listDrawingRepaymentsInPeriod,
   listExpensesAtLocation,
@@ -30,12 +28,10 @@ import {
   sumExpensesMinorByMethod,
   sumHandoversMinor,
   sumRunningCostsMinorInPeriod,
-  sumTakingsMinorAtLocationInPeriod,
   sumUnreversedDrawingDebt,
   sumUnreversedDrawingRepayment,
   sumUnreversedDrawingRepaymentByMethod,
   updateHandoverActuals,
-  updateTakingsAmounts,
   type HandoverWithStaffName,
 } from "./queries";
 import type {
@@ -44,7 +40,6 @@ import type {
   ExpenseCategory,
   ExpensePaymentMethod,
   Handover,
-  Takings,
 } from "./schema";
 
 function dayBounds(): { dayStart: Date; dayEnd: Date } {
@@ -100,23 +95,31 @@ async function computeExpected(
   return { expectedCashMinor, expectedMpesaMinor };
 }
 
-// CONTEXT.md's Handover, canteen case: expected is the takings the
-// attendant declared at close (proposal.md §5, formulas.md §10) — not
-// summed sales, since nothing is recorded per-sale at the canteen. If
-// nothing has been recorded yet today, there is no real expected figure
-// to compare against — reported distinctly from a zero takings row,
-// which would silently compare against a false baseline.
-async function computeExpectedFromTakings(
+// CONTEXT.md's Handover, canteen case (revised 2026-08-13): expected is
+// the sum of that day's recorded sales, the same basis as the
+// restaurant — but as a single combined figure rather than cash/M-Pesa
+// split. A canteen sale carries no payment method at entry (too slow for
+// rush trade — proposal.md §4), so the split isn't knowable from the
+// sale record; only the total is. Credit sales are excluded via their
+// "credit" payment line, same exclusion the restaurant applies.
+// expectedMpesaMinor is null, not 0 — see Handover.expectedMpesaMinor's
+// schema comment: null means "not tracked separately, see
+// expectedCashMinor for the combined total," which is a different claim
+// than "expected zero M-Pesa."
+async function computeExpectedFromSales(
   db: PrismaClient,
-  locationId: string,
-  dayStart: Date,
-  dayEnd: Date,
-): Promise<
-  { expectedCashMinor: number; expectedMpesaMinor: number } | { takingsNotRecorded: true }
-> {
-  const takings = await findTodaysTakings(db, locationId, dayStart, dayEnd);
-  if (!takings) return { takingsNotRecorded: true };
-  return { expectedCashMinor: takings.cashMinor, expectedMpesaMinor: takings.mpesaMinor };
+  requester: AuthenticatedStaff,
+): Promise<{ expectedCashMinor: number; expectedMpesaMinor: null } | { forbidden: true }> {
+  const result = await listTodaysSalesForStaff(db, requester);
+  if (!result.ok) return { forbidden: true };
+
+  let expectedTotalMinor = 0;
+  for (const sale of result.sales) {
+    if (sale.voided) continue;
+    if (sale.paymentLines.some((line) => line.method === "credit")) continue;
+    expectedTotalMinor += sale.totalMinor;
+  }
+  return { expectedCashMinor: expectedTotalMinor, expectedMpesaMinor: null };
 }
 
 export type RecordHandoverResult =
@@ -149,10 +152,9 @@ export async function recordHandover(
 
   const expected =
     requester.location.code === "canteen"
-      ? await computeExpectedFromTakings(db, locationId, dayStart, dayEnd)
+      ? await computeExpectedFromSales(db, requester)
       : await computeExpected(db, requester);
   if ("forbidden" in expected) return { ok: false, reason: "forbidden" };
-  if ("takingsNotRecorded" in expected) return { ok: false, reason: "takings_not_recorded" };
 
   const existing = await findTodaysHandover(db, requester.staff.id, locationId, dayStart, dayEnd);
 
@@ -174,13 +176,9 @@ export async function recordHandover(
 }
 
 export type GetTodaysHandoverResult =
-  | { ok: true; handover: Handover | null; takingsRecordedToday: boolean }
+  | { ok: true; handover: Handover | null }
   | { ok: false; reason: "forbidden" };
 
-// takingsRecordedToday is only meaningful at the canteen (restaurant has no
-// takings concept, so it's always reported true there) — the UI uses it to
-// show the "record today's takings first" state before the attendant starts
-// a count that has nothing real to be checked against.
 export async function getTodaysHandoverForStaff(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -193,78 +191,7 @@ export async function getTodaysHandoverForStaff(
   const { dayStart, dayEnd } = dayBounds();
   const handover = await findTodaysHandover(db, requester.staff.id, locationId, dayStart, dayEnd);
 
-  const takingsRecordedToday =
-    requester.location.code === "canteen"
-      ? (await findTodaysTakings(db, locationId, dayStart, dayEnd)) !== null
-      : true;
-
-  return { ok: true, handover, takingsRecordedToday };
-}
-
-export type RecordTakingsResult =
-  | { ok: true; takings: Takings }
-  | { ok: false; reason: "forbidden" | "invalid_amount" | "day_closed" };
-
-// CONTEXT.md's Takings: the canteen's structural substitute for per-sale
-// recording — no expected figure to compute or compare against, unlike
-// recordHandover. Same upsert-if-exists-today shape though: a miscount is
-// corrected by re-entry, not a reversing entry (ticket 13's reasoning for
-// handover actuals applies the same way here).
-export async function recordTakings(
-  db: PrismaClient,
-  requester: AuthenticatedStaff,
-  input: { cashMinor: number; mpesaMinor: number },
-): Promise<RecordTakingsResult> {
-  const locationId = requester.staff.locationId;
-  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
-    return { ok: false, reason: "forbidden" };
-  }
-
-  if (input.cashMinor < 0 || input.mpesaMinor < 0) {
-    return { ok: false, reason: "invalid_amount" };
-  }
-
-  const { dayStart, dayEnd } = dayBounds();
-
-  if (!requireOwner(requester)) {
-    const closed = await isDayClosedFor(db, requester.staff.id, locationId, dayStart);
-    if (closed) return { ok: false, reason: "day_closed" };
-  }
-
-  const existing = await findTodaysTakings(db, locationId, dayStart, dayEnd);
-
-  const takings = existing
-    ? await updateTakingsAmounts(db, existing.id, {
-        cashMinor: input.cashMinor,
-        mpesaMinor: input.mpesaMinor,
-        staffMemberId: requester.staff.id,
-      })
-    : await createTakingsRecord(db, {
-        locationId,
-        cashMinor: input.cashMinor,
-        mpesaMinor: input.mpesaMinor,
-        staffMemberId: requester.staff.id,
-      });
-
-  return { ok: true, takings };
-}
-
-export type GetTodaysTakingsResult =
-  | { ok: true; takings: Takings | null }
-  | { ok: false; reason: "forbidden" };
-
-export async function getTodaysTakingsForStaff(
-  db: PrismaClient,
-  requester: AuthenticatedStaff,
-): Promise<GetTodaysTakingsResult> {
-  const locationId = requester.staff.locationId;
-  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
-    return { ok: false, reason: "forbidden" };
-  }
-
-  const { dayStart, dayEnd } = dayBounds();
-  const takings = await findTodaysTakings(db, locationId, dayStart, dayEnd);
-  return { ok: true, takings };
+  return { ok: true, handover };
 }
 
 export type RecordExpenseResult =
@@ -555,26 +482,6 @@ export async function getRunningCosts(
   return { ok: true, totalMinor };
 }
 
-export type TakingsAtLocationResult =
-  | { ok: true; cashMinor: number; mpesaMinor: number }
-  | { ok: false; reason: "forbidden" };
-
-// Ticket 25 — formulas.md §5/§6's takings figure at an arbitrary
-// location/period, gated the same way as every other location-scoped
-// read (owner passes canAccessLocation for any location).
-export async function getTakingsAtLocation(
-  db: PrismaClient,
-  requester: AuthenticatedStaff,
-  locationId: string,
-  periodStart: Date,
-  periodEnd: Date,
-): Promise<TakingsAtLocationResult> {
-  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
-    return { ok: false, reason: "forbidden" };
-  }
-  const totals = await sumTakingsMinorAtLocationInPeriod(db, locationId, periodStart, periodEnd);
-  return { ok: true, ...totals };
-}
 
 export type GetRunningCashBalanceResult =
   | { ok: true; cashMinor: number; mpesaMinor: number }
