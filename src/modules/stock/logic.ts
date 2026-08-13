@@ -801,7 +801,7 @@ export async function recordIngredientIssue(
 }
 
 export type RecordProductionResult =
-  | { ok: true; movement: StockMovement }
+  | { ok: true; movements: StockMovement[] }
   | {
       ok: false;
       reason: "forbidden" | "invalid_quantity" | "inactive_product" | "not_found" | "no_recipe";
@@ -816,13 +816,16 @@ function canProduce(role: string): boolean {
 // current recipe (catalogue's getCurrentRecipe) rather than referencing a
 // specific prior issue — no lot-tracking. Deduction and produced-quantity
 // costing both derive from the same recipe read.
+//
+// Lines validated upfront and committed together, same shape as
+// recordIngredientIssue — one invalid line fails the whole batch rather
+// than leaving some products produced and others not (BUG-05).
 export async function recordProduction(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   input: {
-    productId: string;
     locationId: string;
-    quantity: number;
+    lines: { productId: string; quantity: number }[];
   },
 ): Promise<RecordProductionResult> {
   if (
@@ -832,38 +835,56 @@ export async function recordProduction(
     return { ok: false, reason: "forbidden" };
   }
 
-  if (input.quantity <= 0) {
+  if (input.lines.some((line) => line.quantity <= 0)) {
     return { ok: false, reason: "invalid_quantity" };
   }
 
-  const [product] = await findProductsByIds(db, [input.productId]);
-  if (!product) return { ok: false, reason: "not_found" };
-  if (!product.active) return { ok: false, reason: "inactive_product" };
+  const products = await findProductsByIds(
+    db,
+    input.lines.map((line) => line.productId),
+  );
+  const productById = new Map(products.map((p) => [p.id, p]));
+  if (input.lines.some((line) => !productById.has(line.productId))) {
+    return { ok: false, reason: "not_found" };
+  }
+  if (input.lines.some((line) => !productById.get(line.productId)!.active)) {
+    return { ok: false, reason: "inactive_product" };
+  }
 
-  const recipe = await getCurrentRecipe(db, product.id);
-  if (!recipe || recipe.perUnitCostMinor == null) {
+  const recipes = await Promise.all(
+    input.lines.map((line) => getCurrentRecipe(db, line.productId)),
+  );
+  if (recipes.some((recipe) => !recipe || recipe.perUnitCostMinor == null)) {
     return { ok: false, reason: "no_recipe" };
   }
 
-  for (const line of recipe.lines) {
-    await createIngredientIssueMovement(db, {
-      ingredientId: line.ingredientId,
+  const movements: StockMovement[] = [];
+  for (let i = 0; i < input.lines.length; i++) {
+    const line = input.lines[i];
+    const product = productById.get(line.productId)!;
+    const recipe = recipes[i]!;
+
+    for (const recipeLine of recipe.lines) {
+      await createIngredientIssueMovement(db, {
+        ingredientId: recipeLine.ingredientId,
+        locationId: input.locationId,
+        quantity: -(recipeLine.quantity * line.quantity),
+        staffMemberId: requester.staff.id,
+      });
+    }
+
+    const movement = await createProductionMovement(db, {
+      productId: product.id,
       locationId: input.locationId,
-      quantity: -(line.quantity * input.quantity),
+      quantity: line.quantity,
       staffMemberId: requester.staff.id,
+      costBasisMinor: recipe.perUnitCostMinor! * line.quantity,
+      sellingValueMinor: product.priceMinor != null ? product.priceMinor * line.quantity : null,
     });
+    movements.push(movement);
   }
 
-  const movement = await createProductionMovement(db, {
-    productId: product.id,
-    locationId: input.locationId,
-    quantity: input.quantity,
-    staffMemberId: requester.staff.id,
-    costBasisMinor: recipe.perUnitCostMinor * input.quantity,
-    sellingValueMinor: product.priceMinor != null ? product.priceMinor * input.quantity : null,
-  });
-
-  return { ok: true, movement };
+  return { ok: true, movements };
 }
 
 export type RecordNonSalesConsumptionResult =

@@ -18,7 +18,7 @@
  * and would misstate what's being verified.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ErrorState, PermissionDenied } from "@/components/patterns/states";
@@ -77,18 +77,20 @@ export function Takings() {
 
 function TakingsForAttempt({ onRetry }: { onRetry: () => void }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const cancelledRef = useRef(false);
 
+  // A per-call closure flag rather than a shared ref (same class as
+  // BUG-03) — a ref set true by StrictMode's dev-only mount/unmount/
+  // remount cycle stays true across the remount, since useRef's value
+  // (unlike useState/useEffect) isn't reset by that cycle, permanently
+  // discarding the fetch result.
   useEffect(() => {
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
-
-  useEffect(() => {
+    let cancelled = false;
     fetchTodaysTakings().then((result) => {
-      if (!cancelledRef.current) setState(result);
+      if (!cancelled) setState(result);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return <TakingsScreen state={state} onRetry={onRetry} />;

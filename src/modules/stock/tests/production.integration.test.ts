@@ -135,14 +135,14 @@ describe("recordProduction", () => {
     const requester = staffAt("store_manager", restaurantId);
 
     const result = await recordProduction(testDb, requester, {
-      productId: chipsId,
       locationId: restaurantId,
-      quantity: 4,
+      lines: [{ productId: chipsId, quantity: 4 }],
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.movement).toEqual(
+    expect(result.movements).toHaveLength(1);
+    expect(result.movements[0]).toEqual(
       expect.objectContaining({
         productId: chipsId,
         locationId: restaurantId,
@@ -183,9 +183,8 @@ describe("recordProduction", () => {
 
     const requester = staffAt("store_manager", restaurantId);
     const result = await recordProduction(testDb, requester, {
-      productId: noRecipeProduct.value.id,
       locationId: restaurantId,
-      quantity: 2,
+      lines: [{ productId: noRecipeProduct.value.id, quantity: 2 }],
     });
 
     expect(result).toEqual({ ok: false, reason: "no_recipe" });
@@ -198,9 +197,8 @@ describe("recordProduction", () => {
 
     const requester = staffAt("store_manager", restaurantId);
     const result = await recordProduction(testDb, requester, {
-      productId: chipsId,
       locationId: restaurantId,
-      quantity: 2,
+      lines: [{ productId: chipsId, quantity: 2 }],
     });
 
     expect(result).toEqual({ ok: false, reason: "inactive_product" });
@@ -210,9 +208,8 @@ describe("recordProduction", () => {
     const requester = staffAt("store_manager", restaurantId);
 
     const result = await recordProduction(testDb, requester, {
-      productId: chipsId,
       locationId: restaurantId,
-      quantity: 0,
+      lines: [{ productId: chipsId, quantity: 0 }],
     });
 
     expect(result).toEqual({ ok: false, reason: "invalid_quantity" });
@@ -232,9 +229,8 @@ describe("recordProduction", () => {
     const requester = staffAt("cashier", restaurantId, cashier.id);
 
     const result = await recordProduction(testDb, requester, {
-      productId: chipsId,
       locationId: restaurantId,
-      quantity: 2,
+      lines: [{ productId: chipsId, quantity: 2 }],
     });
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
@@ -257,9 +253,8 @@ describe("recordProduction", () => {
     const requester = staffAt("attendant", canteen.id, attendant.id);
 
     const result = await recordProduction(testDb, requester, {
-      productId: chipsId,
       locationId: canteen.id,
-      quantity: 2,
+      lines: [{ productId: chipsId, quantity: 2 }],
     });
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
@@ -272,9 +267,8 @@ describe("recordProduction", () => {
     const requester = staffAt("store_manager", restaurantId);
 
     const result = await recordProduction(testDb, requester, {
-      productId: chipsId,
       locationId: canteen.id,
-      quantity: 2,
+      lines: [{ productId: chipsId, quantity: 2 }],
     });
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
@@ -282,11 +276,71 @@ describe("recordProduction", () => {
 
   test("allows the owner to record production at any location", async () => {
     const result = await recordProduction(testDb, owner, {
-      productId: chipsId,
       locationId: restaurantId,
-      quantity: 1,
+      lines: [{ productId: chipsId, quantity: 1 }],
     });
 
     expect(result.ok).toBe(true);
+  });
+
+  test("records multiple lines in one call without one overwriting another (BUG-05)", async () => {
+    const rice = await createProduct(testDb, owner, {
+      name: "Rice plate",
+      kind: "cooked_food",
+      priceMinor: 120,
+    });
+    if (!rice.ok) throw new Error("expected product create to succeed");
+    await createRecipe(testDb, owner, {
+      productId: rice.value.id,
+      yieldQuantity: 5,
+      lines: [{ ingredientId: potatoesId, quantity: 1 }],
+    });
+
+    const requester = staffAt("store_manager", restaurantId);
+    const result = await recordProduction(testDb, requester, {
+      locationId: restaurantId,
+      lines: [
+        { productId: chipsId, quantity: 4 },
+        { productId: rice.value.id, quantity: 3 },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.movements).toHaveLength(2);
+
+    const stockResult = await getCurrentStockAtLocation(testDb, owner, restaurantId);
+    expect(stockResult.ok).toBe(true);
+    if (!stockResult.ok) return;
+    const chipsLevel = stockResult.levels.find((l) => l.productId === chipsId);
+    const riceLevel = stockResult.levels.find((l) => l.productId === rice.value.id);
+    expect(chipsLevel?.quantityOnHand).toBe(4);
+    expect(riceLevel?.quantityOnHand).toBe(3);
+  });
+
+  test("rejects the whole batch if any line has no recipe, leaving nothing recorded", async () => {
+    const noRecipeProduct = await createProduct(testDb, owner, {
+      name: "Soda",
+      kind: "goods",
+      priceMinor: 100,
+    });
+    if (!noRecipeProduct.ok) throw new Error("expected product create to succeed");
+
+    const requester = staffAt("store_manager", restaurantId);
+    const result = await recordProduction(testDb, requester, {
+      locationId: restaurantId,
+      lines: [
+        { productId: chipsId, quantity: 4 },
+        { productId: noRecipeProduct.value.id, quantity: 2 },
+      ],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "no_recipe" });
+
+    const stockResult = await getCurrentStockAtLocation(testDb, owner, restaurantId);
+    expect(stockResult.ok).toBe(true);
+    if (!stockResult.ok) return;
+    const chipsLevel = stockResult.levels.find((l) => l.productId === chipsId);
+    expect(chipsLevel?.quantityOnHand ?? 0).toBe(0);
   });
 });
