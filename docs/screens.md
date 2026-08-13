@@ -52,6 +52,8 @@ new destinations get added here as tickets that build them land, per
 | Modules/Stock/RecordWastage | `src/modules/stock/ui/record-wastage.stories.tsx` | approved |
 | Modules/Stock/TransferDesign | `src/modules/stock/ui/transfer-variants.stories.tsx` | approved |
 | Modules/Stock/TransferHistory | `src/modules/stock/ui/transfer-history.stories.tsx` | approved |
+| Modules/Stock/ConfirmTransfer | `src/modules/stock/ui/confirm-transfer.stories.tsx` | approved |
+| Modules/Stock/SentTransfers | `src/modules/stock/ui/sent-transfers.stories.tsx` | in review |
 
 ## Sales
 
@@ -130,6 +132,23 @@ dialog reachable from its toolbar) landed via ticket 45, which also added
 `Sale.effectiveAt`/`isCorrection`/`correctionReason` and
 `Takings.staffMemberId` to the schema. Added to this file as their
 tickets land, not speculatively ahead of them.
+
+**2026-08-13 canteen redesign (`docs/handover-phase4-canteen-ui.md`), design
+pass items 1–4.** `NewSale` extended in place (no new row) — for
+`role === "attendant"`, payment lines are no longer required to complete a
+sale (proposal.md §4). `StockList` extended in place (no new row) — a
+canteen-only My stock / From restaurant tab, backed by a new
+`getCurrentStockAtLocationBySource` read (`stock/logic.ts`) that classifies
+each product by whether it's ever had a `received` movement at that
+location. `ConfirmTransfer` (approved) is the new receive-confirmation
+screen (items 2 and 4 share it — banner-reachable, not a home-screen tile,
+at both locations). `SentTransfers` (in review) is item 4's reconciliation
+view — confirmed transfers a location sent, sent-vs-confirmed quantity,
+backed by a new `getConfirmedTransfersSentFromLocation` read. Both new
+reads are additive; `listTransfersAtLocation` (TransferHistory) was
+deliberately left untouched — it still reconstructs from movements, which
+under-represents a still-pending two-sided transfer; fixing that is item
+5's job, not folded in here.
 
 ## Note on naming
 

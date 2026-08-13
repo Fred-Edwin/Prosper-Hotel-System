@@ -4,6 +4,7 @@ import type { AuthenticatedStaff } from "@/modules/people";
 import {
   cancelPendingTransfer,
   confirmTransfer,
+  getConfirmedTransfersSentFromLocation,
   getCurrentStockAtLocation,
   getPendingTransfersAtLocation,
   listTransfersAtLocation,
@@ -377,6 +378,65 @@ describe("getPendingTransfersAtLocation", () => {
     });
     const afterConfirm = await getPendingTransfersAtLocation(testDb, staffAt("attendant", canteenId), canteenId);
     expect(afterConfirm).toMatchObject({ ok: true, transfers: [] });
+  });
+});
+
+describe("getConfirmedTransfersSentFromLocation", () => {
+  test("shows a confirmed transfer at the sending location with its confirmed quantity", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    const beforeConfirm = await getConfirmedTransfersSentFromLocation(
+      testDb,
+      staffAt("store_manager", restaurantId),
+      restaurantId,
+    );
+    expect(beforeConfirm).toMatchObject({ ok: true, transfers: [] });
+
+    await confirmTransfer(testDb, staffAt("attendant", canteenId), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 3,
+    });
+
+    const afterConfirm = await getConfirmedTransfersSentFromLocation(
+      testDb,
+      staffAt("store_manager", restaurantId),
+      restaurantId,
+    );
+    expect(afterConfirm).toMatchObject({
+      ok: true,
+      transfers: [
+        { id: sent.transfers[0].id, itemName: "Sodas (500ml)", sentQuantity: 4, confirmedQuantity: 3 },
+      ],
+    });
+  });
+
+  test("does not show a confirmed transfer at the receiving location", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+    await confirmTransfer(testDb, staffAt("attendant", canteenId), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 4,
+    });
+
+    const atCanteen = await getConfirmedTransfersSentFromLocation(
+      testDb,
+      staffAt("attendant", canteenId),
+      canteenId,
+    );
+    expect(atCanteen).toMatchObject({ ok: true, transfers: [] });
   });
 });
 

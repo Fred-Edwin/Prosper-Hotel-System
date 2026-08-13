@@ -10,6 +10,15 @@
  * the admin table on purpose: no table-toolbar chrome, no cost/value
  * columns (owner-only concerns), large tap-target rows per docs/design.md's
  * mobile rules rather than a dense record-table.
+ *
+ * 2026-08-13 canteen redesign, item 3: at the canteen only, a two-tab
+ * filter — "My stock" (received directly, hers to reorder) vs "From
+ * restaurant" (arrived by transfer) — per docs/scope.md's definition of
+ * done and docs/proposal.md §4 ("her stock screen distinguishes the two
+ * only for her own reference... not because they are recorded
+ * differently"). Same tab pattern as receive-delivery.tsx's Ingredients/
+ * Products toggle, reused rather than invented. Restaurant-only staff never
+ * see this — their stock is entirely their own by definition.
  */
 
 import { useEffect, useState } from "react";
@@ -20,13 +29,14 @@ import {
   PermissionDenied,
 } from "@/components/patterns/states";
 import { PackageOpen } from "lucide-react";
-import type { StockLevel } from "../schema";
+import type { StockLevel, StockLevelWithSource } from "../schema";
 
 export type LoadState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "denied" }
-  | { status: "ready"; levels: StockLevel[] };
+  | { status: "ready"; levels: StockLevel[] }
+  | { status: "ready-by-source"; levels: StockLevelWithSource[] };
 
 async function fetchStock(locationId: string): Promise<LoadState> {
   try {
@@ -41,12 +51,34 @@ async function fetchStock(locationId: string): Promise<LoadState> {
   }
 }
 
-export function StockList({ locationId }: { locationId: string }) {
+async function fetchStockBySource(locationId: string): Promise<LoadState> {
+  try {
+    const response = await fetch(`/api/stock/${locationId}/by-source`);
+    if (response.status === 403) return { status: "denied" };
+    if (!response.ok) return { status: "error" };
+    const body = await response.json();
+    if (!Array.isArray(body?.levels)) return { status: "error" };
+    return { status: "ready-by-source", levels: body.levels };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+export function StockList({
+  locationId,
+  isCanteen = false,
+}: {
+  locationId: string;
+  /** Only the canteen sources stock two ways — restaurant-only staff never
+   * see the My stock / From restaurant split. */
+  isCanteen?: boolean;
+}) {
   const [attempt, setAttempt] = useState(0);
   return (
     <StockListForAttempt
       key={`${locationId}-${attempt}`}
       locationId={locationId}
+      isCanteen={isCanteen}
       onRetry={() => setAttempt((a) => a + 1)}
     />
   );
@@ -54,25 +86,30 @@ export function StockList({ locationId }: { locationId: string }) {
 
 function StockListForAttempt({
   locationId,
+  isCanteen,
   onRetry,
 }: {
   locationId: string;
+  isCanteen: boolean;
   onRetry: () => void;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    fetchStock(locationId).then((result) => {
+    const load = isCanteen ? fetchStockBySource(locationId) : fetchStock(locationId);
+    load.then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
       cancelled = true;
     };
-  }, [locationId]);
+  }, [locationId, isCanteen]);
 
   return <StockListView state={state} onRetry={onRetry} />;
 }
+
+type SourceFilter = "all" | "own" | "restaurant-supplied";
 
 /** The presentational half, driven by state rather than fetching — this is
  * what Storybook mounts to show every state without a network. */
@@ -83,6 +120,8 @@ export function StockListView({
   state: LoadState;
   onRetry?: () => void;
 }) {
+  const [filter, setFilter] = useState<SourceFilter>("all");
+
   if (state.status === "loading") {
     return (
       <div className="p-3" data-testid="stock-loading">
@@ -115,7 +154,10 @@ export function StockListView({
     );
   }
 
-  if (state.levels.length === 0) {
+  const isBySource = state.status === "ready-by-source";
+  const allLevels = state.levels;
+
+  if (allLevels.length === 0) {
     return (
       <div className="p-3">
         <EmptyFirstUse
@@ -127,22 +169,74 @@ export function StockListView({
     );
   }
 
+  const shown = isBySource
+    ? (allLevels as StockLevelWithSource[]).filter((level) => {
+        if (filter === "all") return true;
+        return level.source === filter;
+      })
+    : allLevels;
+
   return (
-    <div className="p-3" data-testid="stock-list">
-      {state.levels.map((level) => (
+    <div className="p-3">
+      {isBySource && (
         <div
-          key={level.productId}
-          className="mb-2 flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
-          data-testid="stock-row"
+          className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1"
+          role="tablist"
+          aria-label="Stock source"
         >
-          <span className="min-w-0 truncate text-[13px] font-medium">
-            {level.productName}
-          </span>
-          <span className="shrink-0 text-[15px] font-semibold tabular-nums">
-            {level.quantityOnHand}
-          </span>
+          {(
+            [
+              { key: "all" as const, label: "All" },
+              { key: "own" as const, label: "My stock" },
+              { key: "restaurant-supplied" as const, label: "From restaurant" },
+            ]
+          ).map((tab) => (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={filter === tab.key}
+              onClick={() => setFilter(tab.key)}
+              data-testid={`stock-source-tab-${tab.key}`}
+              className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+                filter === tab.key ? "bg-card shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-      ))}
+      )}
+
+      {shown.length === 0 ? (
+        <div className="py-12 text-center" data-testid="stock-filtered-empty">
+          <p className="text-sm text-muted-foreground">
+            {filter === "own" ? "Nothing you've stocked directly yet." : "Nothing from the restaurant yet."}
+          </p>
+          <button
+            className="mt-3 text-[13px] font-medium text-primary underline-offset-2 hover:underline"
+            onClick={() => setFilter("all")}
+          >
+            Clear filter
+          </button>
+        </div>
+      ) : (
+        <div data-testid="stock-list">
+          {shown.map((level) => (
+            <div
+              key={level.productId}
+              className="mb-2 flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
+              data-testid="stock-row"
+            >
+              <span className="min-w-0 truncate text-[13px] font-medium">
+                {level.productName}
+              </span>
+              <span className="shrink-0 text-[15px] font-semibold tabular-nums">
+                {level.quantityOnHand}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

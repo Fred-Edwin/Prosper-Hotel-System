@@ -23,6 +23,7 @@ import {
   createStockCount,
   createStockMovement,
   findLatestStockCountAtLocation,
+  findConfirmedTransfersSentFromLocation,
   findPendingTransfersAtLocation,
   findPreviousStockCountAtLocation,
   findReceiptById,
@@ -35,6 +36,7 @@ import {
   sumIngredientsBoughtMinorAtLocationInPeriod,
   sumIngredientsIssuedByIngredientAtLocationInPeriod,
   sumIngredientsPurchasedByIngredientAtLocationInPeriod,
+  findProductIdsEverReceivedAtLocation,
   sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
   sumMovementsByProductAtLocationAsOf,
@@ -56,6 +58,7 @@ import type {
   StockCountItemType,
   StockCountForReader,
   StockLevel,
+  StockLevelWithSource,
   StockMovement,
   StockMovementReason,
   Transfer,
@@ -160,6 +163,37 @@ export async function getCurrentStockAtLocation(
       quantityOnHand: s.quantityOnHand,
     }))
     .sort((a, b) => a.productName.localeCompare(b.productName));
+
+  return { ok: true, levels };
+}
+
+export type StockBySourceResult =
+  | { ok: true; levels: StockLevelWithSource[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// 2026-08-13 canteen redesign, item 3 of the handover: canteen-owned vs
+// restaurant-supplied is a UI-only distinction ("her own reference (what's
+// hers to reorder versus what the restaurant supplies), not because they
+// are recorded differently" — proposal.md §4), read the same way
+// computeCanteenCostOfGoods's cost-basis chain already infers it
+// (formulas.md: a product ever received directly is her own goods; one
+// that only ever arrived by transfer is restaurant-supplied). Not
+// canteen-gated here — the read is generic; the UI applies it only at the
+// canteen, since a restaurant location's stock is entirely its own by
+// definition.
+export async function getCurrentStockAtLocationBySource(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<StockBySourceResult> {
+  const result = await getCurrentStockAtLocation(db, requester, locationId);
+  if (!result.ok) return result;
+
+  const receivedIds = await findProductIdsEverReceivedAtLocation(db, locationId);
+  const levels: StockLevelWithSource[] = result.levels.map((level) => ({
+    ...level,
+    source: receivedIds.has(level.productId) ? "own" : "restaurant-supplied",
+  }));
 
   return { ok: true, levels };
 }
@@ -522,6 +556,22 @@ export async function getPendingTransfersAtLocation(
     return { ok: false, reason: "forbidden" };
   }
   const transfers = await findPendingTransfersAtLocation(db, locationId);
+  return { ok: true, transfers };
+}
+
+// 2026-08-13 canteen redesign, item 4: reconciliation visibility for the
+// sender — confirmed transfers she sent, with sent-vs-confirmed quantity,
+// so she can see whether the receiving end's count matched without
+// re-deriving it herself. Own location only, like getPendingTransfersAtLocation.
+export async function getConfirmedTransfersSentFromLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<PendingTransfersResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const transfers = await findConfirmedTransfersSentFromLocation(db, locationId);
   return { ok: true, transfers };
 }
 

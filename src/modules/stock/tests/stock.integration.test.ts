@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { getCurrentStockAtLocation } from "../logic";
+import { getCurrentStockAtLocation, getCurrentStockAtLocationBySource } from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -134,5 +134,92 @@ describe("getCurrentStockAtLocation", () => {
     );
 
     expect(result).toEqual({ ok: false, reason: "not_found" });
+  });
+});
+
+// 2026-08-13 canteen redesign, item 3 — canteen-owned vs restaurant-supplied,
+// per docs/formulas.md: "a product received directly from a supplier is the
+// canteen's own goods... a product that reached the canteen via a transfer
+// from the restaurant is restaurant-supplied."
+describe("getCurrentStockAtLocationBySource", () => {
+  let transferredOnlyProductId: string;
+  let bothSourcesProductId: string;
+
+  beforeAll(async () => {
+    const transferredOnlyProduct = await testDb.product.create({
+      data: { name: "Chapati", kind: "cooked_food" },
+    });
+    transferredOnlyProductId = transferredOnlyProduct.id;
+
+    const bothSourcesProduct = await testDb.product.create({
+      data: { name: "Biscuits", kind: "goods" },
+    });
+    bothSourcesProductId = bothSourcesProduct.id;
+
+    const staff = await testDb.staffMember.findFirstOrThrow({
+      where: { locationId: restaurantId },
+    });
+
+    await testDb.stockMovement.createMany({
+      data: [
+        {
+          productId: transferredOnlyProductId,
+          locationId: canteenId,
+          quantity: 20,
+          reason: "transferred",
+          staffMemberId: staff.id,
+        },
+        {
+          productId: bothSourcesProductId,
+          locationId: canteenId,
+          quantity: 10,
+          reason: "transferred",
+          staffMemberId: staff.id,
+        },
+        {
+          productId: bothSourcesProductId,
+          locationId: canteenId,
+          quantity: 15,
+          reason: "received",
+          staffMemberId: staff.id,
+        },
+      ],
+    });
+  });
+
+  test("classifies a product only ever transferred-in as restaurant-supplied", async () => {
+    const result = await getCurrentStockAtLocationBySource(
+      testDb,
+      staffAt("cashier", canteenId, "canteen"),
+      canteenId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const line = result.levels.find((l) => l.productId === transferredOnlyProductId);
+    expect(line).toMatchObject({ source: "restaurant-supplied", quantityOnHand: 20 });
+  });
+
+  test("classifies a product ever received directly as own goods, even if also transferred-in", async () => {
+    const result = await getCurrentStockAtLocationBySource(
+      testDb,
+      staffAt("cashier", canteenId, "canteen"),
+      canteenId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const line = result.levels.find((l) => l.productId === bothSourcesProductId);
+    expect(line).toMatchObject({ source: "own", quantityOnHand: 25 });
+  });
+
+  test("denies a staff member access to the other location's stock", async () => {
+    const result = await getCurrentStockAtLocationBySource(
+      testDb,
+      staffAt("cashier", restaurantId),
+      canteenId,
+    );
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
   });
 });

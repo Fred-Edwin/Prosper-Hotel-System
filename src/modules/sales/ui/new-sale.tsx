@@ -21,6 +21,11 @@
  *     (food/drinks/snacks/...); the real Product has no such field, only
  *     `kind` (goods/cooked_food/service/packaging), which is not what a
  *     cashier searches by. Search alone covers the same need.
+ *   - 2026-08-13 canteen redesign: `role === "attendant"` no longer requires
+ *     payment lines to balance to zero before completing (proposal.md §4 —
+ *     payment method isn't recorded per canteen sale). She starts with no
+ *     payment line at all; "Add payment method" becomes "Record as credit",
+ *     since credit is the only reason she'd add one.
  *
  * Kept: product grid with large tap targets, live basket with qty steppers,
  * payment as typed lines (never a "split" step), running total/remaining,
@@ -247,6 +252,11 @@ function Till({
   // delivery and disabling Counter keeps that role from ever hitting it by
   // accident (BUG-04).
   const counterDisabledForRole = role === "store-manager";
+  // proposal.md §4 (2026-08-13 revision): the canteen records product +
+  // quantity only, no payment method per sale — "asking her to key in a
+  // payment method per sale mid-rush would slow her down for no benefit."
+  // recordCounterSale now tolerates paymentLines: [] for this role.
+  const paymentOptionalForRole = role === "attendant";
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
   const [fulfilment, setFulfilment] = useState<Fulfilment>(
@@ -256,11 +266,16 @@ function Till({
   const [deliveryFee, setDeliveryFee] = useState("");
   // Most sales are paid one way. One line by default — pre-filled with the
   // whole total — keeps that common case friction-free; a second line is
-  // added deliberately, only for the rarer split payment.
-  const [pays, setPays] = useState<Pay[]>([
-    { id: 1, method: "cash", amount: "", touched: false, customer: null },
-  ]);
-  const [nextPayId, setNextPayId] = useState(2);
+  // added deliberately, only for the rarer split payment. The canteen
+  // doesn't record payment method per sale (proposal.md §4), so an
+  // attendant starts with no line — she adds one only for the rarer credit
+  // sale, which still needs a named customer.
+  const [pays, setPays] = useState<Pay[]>(
+    paymentOptionalForRole
+      ? []
+      : [{ id: 1, method: "cash", amount: "", touched: false, customer: null }],
+  );
+  const [nextPayId, setNextPayId] = useState(paymentOptionalForRole ? 1 : 2);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -351,11 +366,15 @@ function Till({
 
   // The rare split-payment case: a second (or third) line, added on request
   // rather than shown by default. A method not already in use, so the
-  // cashier isn't nudged toward duplicating one that's already there.
+  // cashier isn't nudged toward duplicating one that's already there. For
+  // the attendant the only reason to add a line at all is credit — cash and
+  // M-Pesa aren't tracked per canteen sale.
   const addPay = () =>
     setPays((ps) => {
       const used = new Set(ps.map((p) => p.method));
-      const method = (["cash", "mpesa", "credit"] as PaymentMethod[]).find((m) => !used.has(m)) ?? "cash";
+      const method = paymentOptionalForRole
+        ? "credit"
+        : (["cash", "mpesa", "credit"] as PaymentMethod[]).find((m) => !used.has(m)) ?? "cash";
       const next = [...ps, { id: nextPayId, method, amount: "", touched: false, customer: null }];
       setNextPayId((n) => n + 1);
       return fillUntouched(next, total);
@@ -370,9 +389,13 @@ function Till({
   const activePays = pays.filter((p) => Number(p.amount) > 0);
   const creditNeedsCustomer = activePays.some((p) => p.method === "credit" && !p.customer);
   const deliveryNeedsCustomer = fulfilment === "delivery" && !deliveryCustomer;
+  // A canteen sale with no payment lines typed is not "unpaid" — payment
+  // method isn't recorded per sale for this role, so an empty balance owed
+  // is the expected, complete state rather than something blocking it.
+  const balanceSettled = remaining === 0 || (paymentOptionalForRole && activePays.length === 0);
   const canComplete =
     lines.length > 0 &&
-    remaining === 0 &&
+    balanceSettled &&
     !creditNeedsCustomer &&
     !deliveryNeedsCustomer &&
     !submitting;
@@ -660,7 +683,7 @@ function Till({
               data-testid="till-add-payment-method"
             >
               <Plus className="size-3.5" />
-              Add payment method
+              {paymentOptionalForRole ? "Record as credit" : "Add payment method"}
             </Button>
           )}
 
@@ -669,7 +692,7 @@ function Till({
               <span className="text-sm text-muted-foreground">Total</span>
               <span className="text-xl font-semibold tabular-nums">{money(total)}</span>
             </div>
-            {remaining !== 0 && lines.length > 0 && (
+            {!(paymentOptionalForRole && activePays.length === 0) && remaining !== 0 && lines.length > 0 && (
               <div className="flex items-baseline justify-between">
                 <span className="text-sm text-muted-foreground">
                   {remaining > 0 ? "Still to pay" : "Change"}
@@ -908,21 +931,23 @@ function SaleConfirmation({
           )}
         </div>
 
-        <div className="rounded-lg border bg-card p-3">
-          {sale.pays
-            .filter((p) => Number(p.amount) > 0)
-            .map((p) => (
-              <div key={p.id} className="flex justify-between gap-3 py-1.5 text-[13px]">
-                <span className="capitalize">
-                  {p.method === "mpesa" ? "M-Pesa" : p.method}
-                  {p.method === "credit" && p.customer && (
-                    <span className="text-muted-foreground"> — {p.customer.name}</span>
-                  )}
-                </span>
-                <span className="tabular-nums">{money(Number(p.amount))}</span>
-              </div>
-            ))}
-        </div>
+        {sale.pays.some((p) => Number(p.amount) > 0) && (
+          <div className="rounded-lg border bg-card p-3">
+            {sale.pays
+              .filter((p) => Number(p.amount) > 0)
+              .map((p) => (
+                <div key={p.id} className="flex justify-between gap-3 py-1.5 text-[13px]">
+                  <span className="capitalize">
+                    {p.method === "mpesa" ? "M-Pesa" : p.method}
+                    {p.method === "credit" && p.customer && (
+                      <span className="text-muted-foreground"> — {p.customer.name}</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums">{money(Number(p.amount))}</span>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
       <div className="sticky bottom-0 border-t bg-card px-4 py-3">

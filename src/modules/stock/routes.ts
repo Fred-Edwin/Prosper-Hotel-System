@@ -5,9 +5,11 @@ import {
   confirmTransfer,
   correctStockCount,
   getCurrentStockAtLocation,
+  getCurrentStockAtLocationBySource,
   getIngredientStockValuesAtLocation,
   getLowStockItems,
   getPendingTransfersAtLocation,
+  getConfirmedTransfersSentFromLocation,
   getProductStockValueAtLocation,
   getTransferableItems,
   getLatestStockCount,
@@ -32,6 +34,23 @@ export async function stockAtLocationRoute(
 
   const { locationId } = await params;
   const result = await getCurrentStockAtLocation(db, session, locationId);
+  if (!result.ok) {
+    const status = result.reason === "not_found" ? 404 : 403;
+    return Response.json({ error: result.reason }, { status });
+  }
+
+  return Response.json({ levels: result.levels });
+}
+
+export async function stockAtLocationBySourceRoute(
+  _request: Request,
+  { params }: { params: Promise<{ locationId: string }> },
+): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const { locationId } = await params;
+  const result = await getCurrentStockAtLocationBySource(db, session, locationId);
   if (!result.ok) {
     const status = result.reason === "not_found" ? 404 : 403;
     return Response.json({ error: result.reason }, { status });
@@ -133,6 +152,14 @@ export async function pendingTransfersRoute(): Promise<Response> {
   const session = await getSession();
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
   const result = await getPendingTransfersAtLocation(db, session, session.staff.locationId);
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
+  return Response.json({ transfers: result.transfers });
+}
+
+export async function confirmedTransfersSentRoute(): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+  const result = await getConfirmedTransfersSentFromLocation(db, session, session.staff.locationId);
   if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
   return Response.json({ transfers: result.transfers });
 }

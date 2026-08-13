@@ -64,6 +64,25 @@ export async function sumMovementsByProductAtLocation(
   }));
 }
 
+// docs/formulas.md: "Which goods are 'own goods.' ... it is read from how
+// the item arrived: a product that reached the canteen via a transfer from
+// the restaurant is restaurant-supplied; a product received directly from
+// a supplier is the canteen's own goods." Distinct product IDs with a
+// `received` movement at this location, ever — not scoped to current
+// on-hand quantity, since the classification is about how the product is
+// restocked, not which units remain.
+export async function findProductIdsEverReceivedAtLocation(
+  db: PrismaClient,
+  locationId: string,
+): Promise<Set<string>> {
+  const rows = await db.stockMovement.findMany({
+    where: { locationId, reason: "received" },
+    select: { productId: true },
+    distinct: ["productId"],
+  });
+  return new Set(rows.map((r) => r.productId));
+}
+
 // Ticket 39: product-side counterpart to sumIngredientMovementsAtLocationAsOf
 // — quantity on hand at a point in time, not the running total, for the
 // ledger's opening/closing figures.
@@ -685,6 +704,41 @@ export async function findPendingTransfersAtLocation(
   const transfers = await db.transfer.findMany({
     where: { toLocationId, status: "pending" },
     orderBy: { sentAt: "asc" },
+  });
+  if (transfers.length === 0) return [];
+
+  const productIds = transfers.filter((t) => t.itemType === "product").map((t) => t.itemId);
+  const ingredientIds = transfers.filter((t) => t.itemType === "ingredient").map((t) => t.itemId);
+  const [products, ingredients] = await Promise.all([
+    productIds.length > 0
+      ? db.product.findMany({ where: { id: { in: productIds } } })
+      : Promise.resolve([]),
+    ingredientIds.length > 0
+      ? db.ingredient.findMany({ where: { id: { in: ingredientIds } } })
+      : Promise.resolve([]),
+  ]);
+  const nameById = new Map([
+    ...products.map((p) => [p.id, p.name] as const),
+    ...ingredients.map((i) => [i.id, i.name] as const),
+  ]);
+
+  return transfers.map((t) => ({ ...t, itemName: nameById.get(t.itemId) ?? "Unknown item" }));
+}
+
+// 2026-08-13 canteen redesign, item 4: the sender's reconciliation view —
+// transfers they sent that have since been confirmed, so a store manager
+// can see whether the canteen's receipt matched what she sent without
+// digging through transfer-history.tsx (which still reconstructs from
+// movements, not the Transfer model — see item 5's note). Most recently
+// confirmed first, since a fresh shortfall is the one worth noticing.
+export async function findConfirmedTransfersSentFromLocation(
+  db: PrismaClient,
+  fromLocationId: string,
+): Promise<PendingTransferForReader[]> {
+  const transfers = await db.transfer.findMany({
+    where: { fromLocationId, status: "confirmed" },
+    orderBy: { confirmedAt: "desc" },
+    take: 20,
   });
   if (transfers.length === 0) return [];
 

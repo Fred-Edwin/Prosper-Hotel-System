@@ -2,12 +2,14 @@
 
 export {
   getCurrentStockAtLocation,
+  getCurrentStockAtLocationBySource,
   getTransferableItems,
   recordTransfer,
   recordTransfers,
   confirmTransfer,
   cancelPendingTransfer,
   getPendingTransfersAtLocation,
+  getConfirmedTransfersSentFromLocation,
   reverseTransfer,
   listTransfersAtLocation,
   recordStockMovement,
@@ -43,6 +45,7 @@ export {
 export type {
   ProductCostBasis,
   StockAccessResult,
+  StockBySourceResult,
   RecordTransferResult,
   RecordTransfersResult,
   ConfirmTransferResult,
@@ -85,9 +88,11 @@ export type {
 } from "./logic";
 export {
   stockAtLocationRoute,
+  stockAtLocationBySourceRoute,
   stockValueAtLocationRoute,
   recordTransferRoute,
   pendingTransfersRoute,
+  confirmedTransfersSentRoute,
   confirmTransferRoute,
   cancelPendingTransferRoute,
   transferableItemsRoute,

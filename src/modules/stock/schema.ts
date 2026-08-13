@@ -52,6 +52,11 @@ export type StockLevel = {
   quantityOnHand: number;
 };
 
+// 2026-08-13 canteen redesign, item 3: "own" (received directly, hers to
+// reorder) vs "restaurant-supplied" (arrived by transfer) — see
+// getCurrentStockAtLocationBySource in logic.ts for how this is derived.
+export type StockLevelWithSource = StockLevel & { source: "own" | "restaurant-supplied" };
+
 export type IngredientMovement = {
   id: string;
   ingredientId: string;

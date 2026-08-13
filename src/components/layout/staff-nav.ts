@@ -42,7 +42,10 @@ export interface StaffLink {
   tone?: "danger";
 }
 
-const all: Record<string, StaffLink> = {
+/** Every link, including destinations reached only from a banner (e.g.
+ * confirm-transfer) rather than a home-screen tile — keyed lookup for the
+ * task header's title, since not every reachable screen is in staffNav. */
+export const staffLinks: Record<string, StaffLink> = {
   sell: {
     key: "sell",
     label: "New sale",
@@ -104,6 +107,18 @@ const all: Record<string, StaffLink> = {
     hint: "What's on hand at your location",
   },
   transfer: { key: "transfer", label: "Transfer stock", icon: ArrowLeftRight, hint: "Move stock to the other location" },
+  "confirm-transfer": {
+    key: "confirm-transfer",
+    label: "Confirm transfer",
+    icon: ArrowLeftRight,
+    hint: "Confirm what actually arrived",
+  },
+  "sent-transfers": {
+    key: "sent-transfers",
+    label: "Sent transfers",
+    icon: History,
+    hint: "See whether what you sent reconciled",
+  },
 };
 
 /** Six, three and five — the counts settled at setup. Stock added for every
@@ -111,27 +126,27 @@ const all: Record<string, StaffLink> = {
  * a location, not tied to one task the way the others are. */
 export const staffNav: Record<StaffRole, StaffLink[]> = {
   "store-manager": [
-    all.sell,
-    all.sales,
-    all.receive,
-    all.issue,
-    all.production,
-    all.count,
-    all.wastage,
-    all.stock,
-    all.transfer,
-    all.handover,
+    staffLinks.sell,
+    staffLinks.sales,
+    staffLinks.receive,
+    staffLinks.issue,
+    staffLinks.production,
+    staffLinks.count,
+    staffLinks.wastage,
+    staffLinks.stock,
+    staffLinks.transfer,
+    staffLinks.handover,
   ],
-  cashier: [all.sell, all.sales, all.wastage, all.stock, all.handover],
+  cashier: [staffLinks.sell, staffLinks.sales, staffLinks.wastage, staffLinks.stock, staffLinks.handover],
   attendant: [
-    all.sell,
-    all.credit,
-    all.sales,
-    all.receive,
-    all.count,
-    all.wastage,
-    all.stock,
-    all.transfer,
-    all.handover,
+    staffLinks.sell,
+    staffLinks.credit,
+    staffLinks.sales,
+    staffLinks.receive,
+    staffLinks.count,
+    staffLinks.wastage,
+    staffLinks.stock,
+    staffLinks.transfer,
+    staffLinks.handover,
   ],
 };

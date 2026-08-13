@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { StaffShellHome, StaffHome } from "@/components/layout/staff-shell";
-import { staffNav, type StaffRole } from "@/components/layout/staff-nav";
+import { staffLinks, type StaffRole } from "@/components/layout/staff-nav";
 import { HelpPanel } from "@/components/patterns/help-panel";
 import { StockList } from "@/modules/stock/ui/stock-list";
 import { ReceiveDelivery } from "@/modules/stock/ui/receive-delivery";
@@ -12,6 +12,8 @@ import { RecordWastage } from "@/modules/stock/ui/record-wastage";
 import { StockCount } from "@/modules/stock/ui/stock-count";
 import { TransferStock } from "@/modules/stock/ui/transfer-stock";
 import { TransferHistoryView } from "@/modules/stock/ui/transfer-history";
+import { ConfirmTransfer } from "@/modules/stock/ui/confirm-transfer";
+import { SentTransfers } from "@/modules/stock/ui/sent-transfers";
 import { NewSale } from "@/modules/sales/ui/new-sale";
 import { CreditSale } from "@/modules/sales/ui/credit-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
@@ -52,18 +54,23 @@ export function StaffPageClient({
   staffName,
   locationId,
   locationName,
+  locationCode,
   role,
   handedOverToday,
+  pendingTransferCount,
 }: {
   staffName: string;
   locationId: string;
   locationName: string;
+  locationCode: "restaurant" | "canteen";
   role: StaffRole;
   handedOverToday: boolean;
+  /** Transfers sent to this location awaiting confirmation. */
+  pendingTransferCount?: number;
 }) {
   const [active, setActive] = useState<string | null>(null);
 
-  const activeLink = active ? staffNav[role].find((l) => l.key === active) : null;
+  const activeLink = active ? staffLinks[active] : null;
 
   return (
     <StaffShellHome
@@ -75,9 +82,16 @@ export function StaffPageClient({
       actions={active ? helpPanelFor(active) : undefined}
     >
       {active === null && (
-        <StaffHome role={role} handedOverToday={handedOverToday} onOpen={setActive} />
+        <StaffHome
+          role={role}
+          handedOverToday={handedOverToday}
+          pendingTransferCount={pendingTransferCount}
+          onOpen={setActive}
+        />
       )}
-      {active === "stock" && <StockList locationId={locationId} />}
+      {active === "stock" && (
+        <StockList locationId={locationId} isCanteen={locationCode === "canteen"} />
+      )}
       {active === "sell" && <NewSale onDone={() => setActive(null)} role={role} />}
       {active === "credit" && <CreditSale onDone={() => setActive(null)} />}
       {active === "sales" && <TodaysSales />}
@@ -88,6 +102,8 @@ export function StaffPageClient({
       {active === "count" && <StockCount />}
       {active === "transfer" && <TransferStock />}
       {active === "transfer-history" && <TransferHistoryView />}
+      {active === "confirm-transfer" && <ConfirmTransfer />}
+      {active === "sent-transfers" && <SentTransfers />}
       {active === "handover" && <Handover />}
       {active !== null &&
         active !== "stock" &&
@@ -101,6 +117,8 @@ export function StaffPageClient({
         active !== "count" &&
         active !== "transfer" &&
         active !== "transfer-history" &&
+        active !== "confirm-transfer" &&
+        active !== "sent-transfers" &&
         active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>
   );
