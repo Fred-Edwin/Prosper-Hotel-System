@@ -126,5 +126,6 @@ export type {
   TransferItemType,
   TransferStatus,
   PendingTransferForReader,
+  StockLevelWithSource,
 } from "./schema";
 export type { NonSalesMovementLineWithLocation } from "./queries";

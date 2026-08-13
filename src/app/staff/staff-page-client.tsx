@@ -94,7 +94,9 @@ export function StaffPageClient({
       )}
       {active === "sell" && <NewSale onDone={() => setActive(null)} role={role} />}
       {active === "credit" && <CreditSale onDone={() => setActive(null)} />}
-      {active === "sales" && <TodaysSales />}
+      {active === "sales" && (
+        <TodaysSales role={role} locationId={locationId} isCanteen={locationCode === "canteen"} onOpen={setActive} />
+      )}
       {active === "receive" && <ReceiveDelivery onDone={() => setActive(null)} />}
       {active === "issue" && <IssueToKitchen onDone={() => setActive(null)} />}
       {active === "production" && <RecordProduction onDone={() => setActive(null)} />}

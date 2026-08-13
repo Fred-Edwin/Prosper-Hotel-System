@@ -287,6 +287,71 @@ types are independent of the API response) but will render `undefined`/
 Known, disclosed gap from a backend-only implementation pass — not
 rediscovered, don't re-diagnose it as a new bug.
 
+**Closed, 2026-08-13 (same day, items 5-8 pass):** both view types now
+match `getDashboardProfit`/`getLedgerSummary`'s real shape exactly — no
+optional/null fields left where the backend always returns a number, no
+`provisional` badge. Stories updated to match. If this bug resurfaces,
+something drifted between the UI's local type and the logic.ts return
+type again — diff them directly rather than guessing.
+
+## `Transfer.reversedTransferId` (the column on the model itself) is never written
+
+**Symptom:** Looks like it should mark "this transfer is a reversal of an
+earlier one," per its own schema comment — but every transfer row reads
+`reversedTransferId: null`, even for a transfer created by
+`reverseTransfer`.
+
+**Cause:** `reverseTransfer` (undoing an already-confirmed transfer)
+never creates a new `Transfer` row at all — it posts a `StockMovement`/
+`IngredientMovement` pair directly, with `transferId` set to the
+*original* transfer's id and `reversedTransferId` set to that same
+original id on the *movement*, not on any `Transfer` row. `Transfer`'s
+own `reversedTransferId` column exists in the schema (with a comment
+describing exactly this use) but no code path — `recordTransfers`,
+`reverseTransfer`, `cancelPendingTransfer` — ever populates it.
+
+**Fix:** don't trust `Transfer.reversedTransferId` for "is this a
+reversal" — it's always `null` today. `listTransfersAtLocation`
+(`stock/logic.ts`) detects "has this transfer been reversed" by querying
+movements with `reversedTransferId: { in: transferIds }` instead, same
+as the pre-2026-08-13 version did. `TransferHistoryEntry.isReversal` is
+hardcoded `false` for the same reason — there's no real "this row is
+itself a reversal" signal to read yet. If a future change makes
+`reverseTransfer` create a real `Transfer` row for the reversal, this
+note (and `isReversal`) should be revisited.
+**Added:** 2026-08-13
+
+## `listTransfersAtLocation` used to reconstruct history from movement pairs — a pending transfer only writes one side
+
+**Symptom:** A transfer sent but not yet confirmed showed as one-sided or
+was missing entirely from transfer history; there was no way to show
+confirmed-vs-sent quantity or a `pending`/`cancelled` status from this
+function at all.
+
+**Cause:** The pre-2026-08-13 `listTransfersAtLocation` reconstructed
+history entirely from `StockMovement`/`IngredientMovement` rows with
+`reason: "transferred"`. In the two-sided transfer model, `recordTransfers`
+only writes the *sender's* outgoing movement when a transfer is sent —
+the receiver's incoming movement doesn't exist until `confirmTransfer`
+runs (see REQ-02 Part A). A reconstruction keyed on movement pairs has
+no way to represent "sent, still pending" — there's only one movement to
+find, and its direction alone doesn't say whether the other side ever
+confirmed, or whether it was cancelled instead.
+
+**Fix:** `listTransfersAtLocation` now reads `Transfer` directly
+(`findTransfersInvolvingLocation` in `stock/queries.ts`) —
+`Transfer.status`/`sentQuantity`/`confirmedQuantity` are the real source
+of truth for all three states (pending/confirmed/cancelled), one row per
+transfer regardless of which side's movements exist yet.
+`TransferHistoryEntry` gained `status` and `confirmedQuantity` fields;
+`reversed` still comes from movements (see the entry above — there's no
+`Transfer`-level signal for that). Before reconstructing any read from
+movement rows, check whether the thing being read has a real backing
+model (`Transfer`, here) that's already the source of truth — movements
+are a ledger of what happened, not always a complete index of current
+state.
+**Added:** 2026-08-13
+
 ## A `StockMovement` row can carry `quantity: 0` on purpose
 
 **Symptom:** Looks like a bug — why write a movement that doesn't move

@@ -30,6 +30,7 @@ import {
   findReceiptsAtLocation,
   findStockCountById,
   findTransferById,
+  findTransfersInvolvingLocation,
   markStockCountLineCorrected,
   sumIngredientMovementsAtLocationAsOf,
   sumIngredientMovementsByReasonAtLocationInPeriod,
@@ -62,6 +63,7 @@ import type {
   StockMovement,
   StockMovementReason,
   Transfer,
+  TransferStatus,
 } from "./schema";
 
 // CONTEXT.md's Non-sales Stock Consumption: where no per-unit cost is
@@ -843,55 +845,56 @@ export type TransferHistoryLine = {
 export type TransferHistoryEntry = {
   transferId: string;
   direction: "sent" | "received";
+  status: TransferStatus;
   counterpartLocationName: string;
   occurredAt: Date;
+  confirmedQuantity: number | null;
   reversed: boolean;
   isReversal: boolean;
   lines: TransferHistoryLine[];
 };
 
+// 2026-08-13 — rewritten to read the Transfer model directly rather than
+// reconstructing from movement pairs. A pending transfer only ever writes
+// the sender's outgoing movement (see recordTransfers), so the movement
+// reconstruction this replaced could not represent "pending" — a still-
+// pending send showed as one-sided or missing. Transfer.status/
+// confirmedQuantity are the source of truth for all three states now.
+// See gotchas.md's 2026-08-13 entry.
 export async function listTransfersAtLocation(
   db: PrismaClient,
   requester: AuthenticatedStaff,
 ): Promise<{ ok: true; transfers: TransferHistoryEntry[] } | { ok: false; reason: "forbidden" }> {
   if (requester.staff.role === "cashier") return { ok: false, reason: "forbidden" };
   const locationId = requester.staff.locationId;
-  const [ownProducts, ownIngredients, otherLegProducts, otherLegIngredients, locations] = await Promise.all([
-    db.stockMovement.findMany({ where: { locationId, reason: "transferred", transferId: { not: null } }, orderBy: { occurredAt: "desc" } }),
-    db.ingredientMovement.findMany({ where: { locationId, reason: "transferred", transferId: { not: null } }, orderBy: { occurredAt: "desc" } }),
-    db.stockMovement.findMany({ where: { locationId: { not: locationId }, reason: "transferred", transferId: { not: null } } }),
-    db.ingredientMovement.findMany({ where: { locationId: { not: locationId }, reason: "transferred", transferId: { not: null } } }),
+  const [rows, locations] = await Promise.all([
+    findTransfersInvolvingLocation(db, locationId),
     listLocations(db),
   ]);
+  const transferIds = rows.map((row) => row.id);
 
   const locationNameById = new Map(locations.map((location) => [location.id, location.name]));
-  const otherLegByTransferId = new Map<string, { locationId: string }>();
-  for (const movement of [...otherLegProducts, ...otherLegIngredients]) {
-    otherLegByTransferId.set(movement.transferId as string, { locationId: movement.locationId });
-  }
-
+  // reverseTransfer (undoing an already-confirmed transfer) writes plain
+  // movements against the original transfer's id rather than a new
+  // Transfer row — Transfer.reversedTransferId itself is never set by any
+  // code path, so "reversed" has to be read off movements, not the
+  // Transfer model, even after this rewrite.
+  const [reversingProductMovements, reversingIngredientMovements] = await Promise.all([
+    transferIds.length > 0
+      ? db.stockMovement.findMany({ where: { reversedTransferId: { in: transferIds } } })
+      : Promise.resolve([]),
+    transferIds.length > 0
+      ? db.ingredientMovement.findMany({ where: { reversedTransferId: { in: transferIds } } })
+      : Promise.resolve([]),
+  ]);
   const reversedTransferIds = new Set(
-    [...ownProducts, ...ownIngredients, ...otherLegProducts, ...otherLegIngredients]
+    [...reversingProductMovements, ...reversingIngredientMovements]
       .map((movement) => movement.reversedTransferId)
       .filter((id): id is string => id !== null),
   );
 
-  const byTransferId = new Map<string, { occurredAt: Date; isReversal: boolean; lines: TransferHistoryLine[] }>();
-  for (const movement of [...ownProducts, ...ownIngredients]) {
-    const transferId = movement.transferId as string;
-    const group = byTransferId.get(transferId) ?? { occurredAt: movement.occurredAt, isReversal: movement.reversedTransferId !== null, lines: [] };
-    group.lines.push({
-      itemType: "productId" in movement ? "product" : "ingredient",
-      itemId: "productId" in movement ? movement.productId : movement.ingredientId,
-      name: "",
-      quantity: Math.abs(movement.quantity),
-      unit: "",
-    });
-    byTransferId.set(transferId, group);
-  }
-
-  const productIds = [...ownProducts].map((movement) => movement.productId);
-  const ingredientIds = [...ownIngredients].map((movement) => movement.ingredientId);
+  const productIds = rows.filter((row) => row.itemType === "product").map((row) => row.itemId);
+  const ingredientIds = rows.filter((row) => row.itemType === "ingredient").map((row) => row.itemId);
   const [products, ingredients] = await Promise.all([
     findProductsByIds(db, productIds),
     findIngredientsByIds(db, ingredientIds),
@@ -899,22 +902,24 @@ export async function listTransfersAtLocation(
   const productNameById = new Map(products.map((product) => [product.id, product.name]));
   const ingredientById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
 
-  const transfers: TransferHistoryEntry[] = Array.from(byTransferId.entries()).map(([transferId, group]) => {
-    const anyLeg = [...ownProducts, ...ownIngredients].find((movement) => movement.transferId === transferId)!;
-    const direction: "sent" | "received" = anyLeg.quantity < 0 ? "sent" : "received";
-    const counterpartLocationId = otherLegByTransferId.get(transferId)?.locationId;
+  const transfers: TransferHistoryEntry[] = rows.map((row) => {
+    const direction: "sent" | "received" = row.fromLocationId === locationId ? "sent" : "received";
+    const counterpartLocationId = direction === "sent" ? row.toLocationId : row.fromLocationId;
+    const name = row.itemType === "product" ? (productNameById.get(row.itemId) ?? "Unknown product") : (ingredientById.get(row.itemId)?.name ?? "Unknown ingredient");
+    const unit = row.itemType === "product" ? "units" : (ingredientById.get(row.itemId)?.unitOfMeasure ?? "");
     return {
-      transferId,
+      transferId: row.id,
       direction,
-      counterpartLocationName: (counterpartLocationId && locationNameById.get(counterpartLocationId)) ?? "Unknown location",
-      occurredAt: group.occurredAt,
-      reversed: reversedTransferIds.has(transferId),
-      isReversal: group.isReversal,
-      lines: group.lines.map((line) => ({
-        ...line,
-        name: line.itemType === "product" ? (productNameById.get(line.itemId) ?? "Unknown product") : (ingredientById.get(line.itemId)?.name ?? "Unknown ingredient"),
-        unit: line.itemType === "product" ? "units" : (ingredientById.get(line.itemId)?.unitOfMeasure ?? ""),
-      })),
+      status: row.status,
+      counterpartLocationName: locationNameById.get(counterpartLocationId) ?? "Unknown location",
+      occurredAt: row.sentAt,
+      confirmedQuantity: row.confirmedQuantity,
+      // No code path creates a new Transfer row to represent a reversal
+      // (reverseTransfer posts movements against the original transfer's
+      // id instead) — isReversal is always false until that changes.
+      reversed: reversedTransferIds.has(row.id),
+      isReversal: false,
+      lines: [{ itemType: row.itemType, itemId: row.itemId, name, quantity: row.sentQuantity, unit }],
     };
   });
 

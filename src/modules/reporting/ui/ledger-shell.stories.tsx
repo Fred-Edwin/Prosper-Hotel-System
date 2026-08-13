@@ -39,7 +39,6 @@ export const WithData: Story = {
         grossProfitMinor: 1673000,
         nonSalesAtCostMinor: 128400,
         nonSalesAtPriceMinor: 214000,
-        canteenCostRate: 0.72,
       },
     },
   },
@@ -47,28 +46,6 @@ export const WithData: Story = {
 
 export const Loading: Story = {
   args: { state: { status: "loading" } },
-};
-
-// Finding 3: no canteen count yet, so the own-goods rate — and therefore
-// cost of goods sold and gross profit — can't be computed for the period.
-export const CanteenCostUnavailable: Story = {
-  name: "Canteen cost unavailable — no count yet",
-  args: {
-    state: {
-      status: "ready",
-      data: {
-        openingMinor: 6842000,
-        purchasesMinor: 4977000,
-        closingMinor: 7118000,
-        costOfGoodsSoldMinor: null,
-        salesValueMinor: 6374000,
-        grossProfitMinor: null,
-        nonSalesAtCostMinor: 128400,
-        nonSalesAtPriceMinor: 214000,
-        canteenCostRate: null,
-      },
-    },
-  },
 };
 
 export const EmptyNoMovements: Story = {
@@ -85,7 +62,6 @@ export const EmptyNoMovements: Story = {
         grossProfitMinor: 0,
         nonSalesAtCostMinor: 0,
         nonSalesAtPriceMinor: 0,
-        canteenCostRate: null,
       },
     },
   },

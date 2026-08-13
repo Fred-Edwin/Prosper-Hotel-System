@@ -760,6 +760,17 @@ export async function findConfirmedTransfersSentFromLocation(
   return transfers.map((t) => ({ ...t, itemName: nameById.get(t.itemId) ?? "Unknown item" }));
 }
 
+// 2026-08-13 — history view's source of truth. Reads the Transfer model
+// directly (status, sentQuantity, confirmedQuantity) rather than
+// reconstructing from movement pairs, since a pending transfer only ever
+// writes the sender's outgoing movement — see gotchas.md.
+export async function findTransfersInvolvingLocation(db: PrismaClient, locationId: string): Promise<Transfer[]> {
+  return db.transfer.findMany({
+    where: { OR: [{ fromLocationId: locationId }, { toLocationId: locationId }] },
+    orderBy: { sentAt: "desc" },
+  });
+}
+
 // Confirmation writes the incoming movement (at the confirmed quantity,
 // which may be less than what was sent) and marks the transfer confirmed,
 // atomically. The caller (stock/logic.ts's confirmTransfer) is

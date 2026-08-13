@@ -56,7 +56,17 @@ function TransferHistoryViewForAttempt({ onRetry }: { onRetry: () => void }) {
     onRetry();
   };
 
-  return <TransferHistoryViewForState state={state} onRetry={onRetry} onReverse={reverse} />;
+  const cancel = async (transferId: string) => {
+    const response = await fetch(`/api/stock/transfers/${transferId}/cancel`, { method: "POST" });
+    if (!response.ok) {
+      toast.error("Couldn't cancel the transfer", { description: "Nothing changed — try again." });
+      return;
+    }
+    toast.success("Transfer cancelled", { description: "Your stock is back — it never left." });
+    onRetry();
+  };
+
+  return <TransferHistoryViewForState state={state} onRetry={onRetry} onReverse={reverse} onCancel={cancel} />;
 }
 
 /** The presentational half, driven by state rather than fetching — this is
@@ -65,12 +75,14 @@ export function TransferHistoryViewForState({
   state,
   onRetry = () => {},
   onReverse = async () => {},
+  onCancel = async () => {},
 }: {
   state: LoadState;
   onRetry?: () => void;
   onReverse?: (transferId: string) => Promise<void>;
+  onCancel?: (transferId: string) => Promise<void>;
 }) {
-  const [pendingUndo, setPendingUndo] = useState<TransferHistoryEntry | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ entry: TransferHistoryEntry; kind: "cancel" | "reverse" } | null>(null);
   const [detail, setDetail] = useState<TransferHistoryEntry | null>(null);
 
   if (state.status === "loading") {
@@ -123,7 +135,8 @@ export function TransferHistoryViewForState({
       <TransferDetail
         entry={detail}
         onBack={() => setDetail(null)}
-        onUndo={() => setPendingUndo(detail)}
+        onCancel={() => setPendingAction({ entry: detail, kind: "cancel" })}
+        onUndo={() => setPendingAction({ entry: detail, kind: "reverse" })}
       />
     );
   }
@@ -132,7 +145,7 @@ export function TransferHistoryViewForState({
     <div className="flex min-h-full flex-col" data-testid="transfer-history">
       <section className="border-b bg-card p-3">
         <p className="text-sm font-medium">Transfers involving your location</p>
-        <p className="mt-1 text-xs text-muted-foreground">Sent and received stock, including reversals.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Sent and received stock, pending, confirmed or cancelled.</p>
       </section>
       <section className="flex-1 p-3">
         <div className="divide-y rounded-lg border bg-card" data-testid="transfer-history-list">
@@ -141,18 +154,20 @@ export function TransferHistoryViewForState({
               key={entry.transferId}
               entry={entry}
               onOpen={() => setDetail(entry)}
-              onUndo={() => setPendingUndo(entry)}
+              onCancel={() => setPendingAction({ entry, kind: "cancel" })}
+              onUndo={() => setPendingAction({ entry, kind: "reverse" })}
             />
           ))}
         </div>
       </section>
-      <UndoSheet
-        selected={pendingUndo}
-        onClose={() => setPendingUndo(null)}
-        onReverse={async () => {
-          if (!pendingUndo) return;
-          await onReverse(pendingUndo.transferId);
-          setPendingUndo(null);
+      <ActionSheet
+        selected={pendingAction}
+        onClose={() => setPendingAction(null)}
+        onConfirm={async () => {
+          if (!pendingAction) return;
+          if (pendingAction.kind === "cancel") await onCancel(pendingAction.entry.transferId);
+          else await onReverse(pendingAction.entry.transferId);
+          setPendingAction(null);
           setDetail(null);
         }}
       />
@@ -168,11 +183,34 @@ function counterpartLabel(entry: TransferHistoryEntry): string {
   return entry.direction === "sent" ? `Sent to ${entry.counterpartLocationName}` : `Received from ${entry.counterpartLocationName}`;
 }
 
-function canUndo(entry: TransferHistoryEntry): boolean {
-  return entry.direction === "sent" && !entry.reversed && !entry.isReversal;
+function statusLabel(entry: TransferHistoryEntry): string {
+  if (entry.status === "pending") return "Awaiting confirmation";
+  if (entry.status === "cancelled") return "Cancelled";
+  if (entry.confirmedQuantity !== null && entry.confirmedQuantity < entry.lines[0]?.quantity) {
+    return `Confirmed short — ${entry.confirmedQuantity} of ${entry.lines[0]?.quantity}`;
+  }
+  return "Confirmed";
 }
 
-function HistoryRow({ entry, onOpen, onUndo }: { entry: TransferHistoryEntry; onOpen: () => void; onUndo: () => void }) {
+function canCancel(entry: TransferHistoryEntry): boolean {
+  return entry.direction === "sent" && entry.status === "pending";
+}
+
+function canUndo(entry: TransferHistoryEntry): boolean {
+  return entry.direction === "sent" && entry.status === "confirmed" && !entry.reversed;
+}
+
+function HistoryRow({
+  entry,
+  onOpen,
+  onCancel,
+  onUndo,
+}: {
+  entry: TransferHistoryEntry;
+  onOpen: () => void;
+  onCancel: () => void;
+  onUndo: () => void;
+}) {
   const Icon = entry.direction === "sent" ? ArrowUpRight : ArrowDownLeft;
   return (
     <div
@@ -191,9 +229,22 @@ function HistoryRow({ entry, onOpen, onUndo }: { entry: TransferHistoryEntry; on
         <p className="truncate text-xs text-muted-foreground">
           {entry.lines.length} {entry.lines.length === 1 ? "item" : "items"} · {summarize(entry)}
         </p>
+        <p className="truncate text-xs text-muted-foreground">{statusLabel(entry)}</p>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
         <span className="text-xs text-muted-foreground">{new Date(entry.occurredAt).toLocaleString()}</span>
+        {canCancel(entry) && (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              onCancel();
+            }}
+          >
+            Cancel
+          </Button>
+        )}
         {canUndo(entry) && (
           <Button
             variant="ghost"
@@ -211,7 +262,17 @@ function HistoryRow({ entry, onOpen, onUndo }: { entry: TransferHistoryEntry; on
   );
 }
 
-function TransferDetail({ entry, onBack, onUndo }: { entry: TransferHistoryEntry; onBack: () => void; onUndo: () => void }) {
+function TransferDetail({
+  entry,
+  onBack,
+  onCancel,
+  onUndo,
+}: {
+  entry: TransferHistoryEntry;
+  onBack: () => void;
+  onCancel: () => void;
+  onUndo: () => void;
+}) {
   return (
     <div className="flex min-h-full flex-col" data-testid="transfer-detail">
       <section className="border-b bg-card p-3">
@@ -224,6 +285,7 @@ function TransferDetail({ entry, onBack, onUndo }: { entry: TransferHistoryEntry
               {entry.direction === "sent" ? `You → ${entry.counterpartLocationName}` : `${entry.counterpartLocationName} → You`}
             </p>
             <p className="mt-1 text-sm font-medium">{counterpartLabel(entry)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{statusLabel(entry)}</p>
           </div>
           <span className="text-xs text-muted-foreground">{new Date(entry.occurredAt).toLocaleString()}</span>
         </div>
@@ -241,6 +303,13 @@ function TransferDetail({ entry, onBack, onUndo }: { entry: TransferHistoryEntry
           ))}
         </div>
       </section>
+      {canCancel(entry) && (
+        <div className="border-t bg-card p-3">
+          <Button className="h-12 w-full" variant="outline" onClick={onCancel}>
+            Cancel transfer
+          </Button>
+        </div>
+      )}
       {canUndo(entry) && (
         <div className="border-t bg-card p-3">
           <Button className="h-12 w-full" onClick={onUndo}>
@@ -252,33 +321,43 @@ function TransferDetail({ entry, onBack, onUndo }: { entry: TransferHistoryEntry
   );
 }
 
-function UndoSheet({
+function ActionSheet({
   selected,
   onClose,
-  onReverse,
+  onConfirm,
 }: {
-  selected: TransferHistoryEntry | null;
+  selected: { entry: TransferHistoryEntry; kind: "cancel" | "reverse" } | null;
   onClose: () => void;
-  onReverse: () => void;
+  onConfirm: () => void;
 }) {
+  const entry = selected?.entry ?? null;
+  const isCancel = selected?.kind === "cancel";
   return (
     <Sheet open={selected !== null} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="rounded-t-xl">
         <SheetHeader>
-          <SheetTitle>Undo transfer of {selected ? summarize(selected) : "this transfer"}?</SheetTitle>
-          <SheetDescription>This records a new reversing transfer. The original remains in the history.</SheetDescription>
+          <SheetTitle>
+            {isCancel ? "Cancel" : "Undo"} transfer of {entry ? summarize(entry) : "this transfer"}?
+          </SheetTitle>
+          <SheetDescription>
+            {isCancel
+              ? "This location never sent it — the stock stays here. The original send remains in the history."
+              : "This records a new reversing transfer. The original remains in the history."}
+          </SheetDescription>
         </SheetHeader>
-        {selected && (
+        {entry && (
           <div className="mx-4 rounded-lg border bg-muted/40 p-3">
-            <p className="text-sm font-medium">{summarize(selected)}</p>
+            <p className="text-sm font-medium">{summarize(entry)}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Stock will return from {selected.counterpartLocationName} immediately.
+              {isCancel
+                ? "Nothing left this location — cancelling just marks the send void."
+                : `Stock will return from ${entry.counterpartLocationName} immediately.`}
             </p>
           </div>
         )}
         <SheetFooter>
-          <Button className="h-12" onClick={onReverse}>
-            Record reversal
+          <Button className="h-12" onClick={onConfirm}>
+            {isCancel ? "Cancel transfer" : "Record reversal"}
           </Button>
           <Button variant="outline" className="h-12" onClick={onClose}>
             Keep transfer

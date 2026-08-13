@@ -150,6 +150,37 @@ deliberately left untouched — it still reconstructs from movements, which
 under-represents a still-pending two-sided transfer; fixing that is item
 5's job, not folded in here.
 
+**2026-08-13 canteen redesign, items 5–8 (`docs/handover-phase4-canteen-ui-items5-8.md`).**
+`TransferHistory` (row above, still `approved` — same story file, not a
+new row) is now correct and reachable: `listTransfersAtLocation` rewritten
+to read the `Transfer` model directly (`status`, `confirmedQuantity`)
+instead of reconstructing from movement pairs — see `docs/gotchas.md`'s
+2026-08-13 entry on why the old approach under-represented pending
+transfers. Added as a `staffLinks`/`staffNav` tile for `store-manager` and
+`attendant` (10th and 10th tile respectively) — **flagged, not silently
+absorbed:** both roles already exceeded `docs/design.md`'s 5–8-destination
+target before this addition (store-manager was at 10, attendant at 9);
+Edwinfred's 2026-08-13 call was to add the tile now (item 7's cancel
+action needs a home) and treat the nav-budget-wide question as its own
+follow-up, not a blocker for this batch. Item 7 (cancel a still-pending
+send) is a Cancel action on the sender's own pending rows within
+`TransferHistory`, not a separate screen — confirmed with Edwinfred.
+`TodaysSales` (row above, still `approved`) renamed "Today's summary" in
+nav; for `role === "attendant"` only, a `SummaryStrip` above the list adds
+sales-today (cash+M-Pesa), transfers received/sent today (confirmed,
+same-day filtered client-side from `listTransfersAtLocation`), and
+closing stock — composed from items 2–5's already-decided data shapes,
+no new backend read. `DashboardProfit`/`LedgerShell` (rows above, still
+`approved`) had their local view types corrected to match
+`getDashboardProfit`/`getLedgerSummary`'s real response shape — the
+`canteenCostRate`/`lastCanteenCount`/`canteenEstimated`/`provisional`
+fields these two components read no longer exist in the API (see
+`docs/gotchas.md`'s "Closed, 2026-08-13" note); canteen figures now
+render the same way as the restaurant's, no provisional badge.
+`SentTransfers` stays `in review` pending Edwinfred's explicit look during
+this batch's end-of-work real-browser verification pass, per his
+2026-08-13 instruction to bundle that check rather than ask separately.
+
 ## Note on naming
 
 Story titles aren't fully consistent (`Modules/Cash/...` vs.

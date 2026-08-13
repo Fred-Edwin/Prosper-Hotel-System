@@ -25,12 +25,17 @@
  * tab per the design reference's `explains` field, since that is a
  * navigation choice independent of which underlying figures compose the
  * number.
+ *
+ * 2026-08-13 canteen redesign, item 8: the canteen's cost of goods is
+ * final now, computed from real sales at each product's own cost basis —
+ * see getLedgerSummary in reporting/logic.ts. canteenCostRate no longer
+ * exists in the response; the waterfall's "partly provisional" badge is
+ * gone along with it.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -41,7 +46,7 @@ import {
 } from "@/components/ui/select";
 import { ErrorState, PermissionDenied, SectionNotBuilt } from "@/components/patterns/states";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Info, Maximize2, RotateCw, X } from "lucide-react";
+import { Maximize2, RotateCw, X } from "lucide-react";
 import { money } from "@/shared/money";
 import { ProductLedger } from "./product-ledger";
 import { StoreLedger } from "./store-ledger";
@@ -52,12 +57,11 @@ export type LedgerSummaryData = {
   openingMinor: number;
   purchasesMinor: number;
   closingMinor: number;
-  costOfGoodsSoldMinor: number | null;
+  costOfGoodsSoldMinor: number;
   salesValueMinor: number;
-  grossProfitMinor: number | null;
+  grossProfitMinor: number;
   nonSalesAtCostMinor: number;
   nonSalesAtPriceMinor: number;
-  canteenCostRate: number | null;
 };
 
 export type LoadState =
@@ -417,10 +421,9 @@ function LedgerWaterfall({
   const terms: {
     key: StatTerm;
     label: string;
-    value: number | null;
+    value: number;
     operator?: string;
     colour: string;
-    provisional?: boolean;
   }[] = [
     { key: "opening", label: "Opening stock", value: data.openingMinor, colour: "var(--color-neutral-400)" },
     {
@@ -443,10 +446,9 @@ function LedgerWaterfall({
       value: data.costOfGoodsSoldMinor,
       operator: "=",
       colour: "var(--color-danger)",
-      provisional: true,
     },
   ];
-  const max = Math.max(...terms.map((t) => t.value ?? 0), 1);
+  const max = Math.max(...terms.map((t) => t.value), 1);
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm" data-testid="ledger-waterfall">
@@ -455,9 +457,6 @@ function LedgerWaterfall({
           <h2 className="text-sm font-medium">Cost of goods sold</h2>
           <p className="text-xs text-muted-foreground">What the stock movements below add up to.</p>
         </div>
-        <Badge variant="outline" className="text-[10px] font-normal">
-          partly provisional
-        </Badge>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4">
@@ -481,21 +480,14 @@ function LedgerWaterfall({
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   {t.operator && <span className="text-sm text-muted-foreground/60">{t.operator}</span>}
                   {t.label}
-                  {t.provisional && (
-                    <span title="Canteen own-goods cost is estimated between counts">
-                      <Info className="size-3" />
-                    </span>
-                  )}
                 </div>
-                <div className="tabular mt-1 text-2xl font-semibold">
-                  {t.value != null ? money(t.value) : "—"}
-                </div>
+                <div className="tabular mt-1 text-2xl font-semibold">{money(t.value)}</div>
                 <div className="tabular mt-0.5 mb-3 text-[11px] text-muted-foreground">&nbsp;</div>
               </div>
               <div className="h-1.5 w-full bg-muted">
                 <div
                   className="h-full transition-[width] duration-200"
-                  style={{ width: `${((t.value ?? 0) / max) * 100}%`, background: t.colour }}
+                  style={{ width: `${(t.value / max) * 100}%`, background: t.colour }}
                 />
               </div>
             </button>
@@ -529,7 +521,7 @@ function Piece({
   note,
 }: {
   label: string;
-  value: number | null;
+  value: number;
   strong?: boolean;
   tone?: "danger";
   note?: string;
@@ -540,7 +532,7 @@ function Piece({
       <span
         className={`tabular text-[13px] ${strong ? "font-semibold" : ""} ${tone === "danger" ? "text-danger" : ""}`}
       >
-        {value != null ? money(value) : "—"}
+        {money(value)}
       </span>
       {note && <span className="tabular ml-1 text-[11px] text-muted-foreground">· {note}</span>}
     </span>

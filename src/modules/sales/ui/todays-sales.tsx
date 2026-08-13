@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Staff-shell Today's sales — a read-only list of sales this staff member
- * recorded today, at their location, newest first, expanding in place to
- * show lines, payment breakdown and (once ticket 10 lands) a void action.
+ * Staff-shell Today's summary (renamed from "Today's sales" 2026-08-13,
+ * REQ-02 Part B) — a read-only list of sales this staff member recorded
+ * today, at their location, newest first, expanding in place to show
+ * lines, payment breakdown and (once ticket 10 lands) a void action.
  *
  * No design-phase precedent (confirmed against the design-reference
  * worktree — no sale-history screen exists anywhere in it). Built as three
@@ -12,6 +13,16 @@
  * drill-down (too close a copy of the till's own confirmation screen) and a
  * Sheet overlay (extra chrome for what is, on a phone, effectively still a
  * one-column list).
+ *
+ * 2026-08-13 canteen redesign, item 6: for the attendant only, a summary
+ * strip above the list — REQ-02 Part B's expanded content (sales recorded
+ * today, transfers received/sent today, closing stock). Cashier and
+ * store-manager content is unchanged. Composed from data shapes items 2-5
+ * already decided (listTransfersAtLocation, getCurrentStockAtLocationBySource)
+ * rather than a new read — closer to ordinary extension than new design, per
+ * the handover's process note. Count-derived sold quantity is retired along
+ * with the rest of the count-derived sales model (docs/scope.md, 2026-08-13)
+ * — sold quantity here is real, from her own recorded sales.
  */
 
 import { useEffect, useState } from "react";
@@ -19,6 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/patterns/confirm-dialog";
+import { SummaryStrip, type Summary } from "@/components/patterns/summary-strip";
 import {
   EmptyFirstUse,
   ErrorState,
@@ -26,6 +38,8 @@ import {
 } from "@/components/patterns/states";
 import { ChevronDown, Receipt } from "lucide-react";
 import { money } from "@/shared/money";
+import type { StaffRole } from "@/components/layout/staff-nav";
+import type { TransferHistoryEntry, StockLevel, StockLevelWithSource } from "@/modules/stock";
 
 export type SaleLineView = {
   id: string;
@@ -86,13 +100,76 @@ async function voidSaleRequest(saleId: string): Promise<{ ok: true } | { ok: fal
   }
 }
 
-export function TodaysSales() {
-  const [attempt, setAttempt] = useState(0);
-  return <TodaysSalesForAttempt key={attempt} onRetry={() => setAttempt((a) => a + 1)} />;
+async function fetchTransferHistory(): Promise<TransferHistoryEntry[] | null> {
+  try {
+    const response = await fetch("/api/stock/transfers");
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (!Array.isArray(body?.transfers)) return null;
+    return body.transfers;
+  } catch {
+    return null;
+  }
 }
 
-function TodaysSalesForAttempt({ onRetry }: { onRetry: () => void }) {
+async function fetchClosingStock(locationId: string, isCanteen: boolean): Promise<(StockLevel | StockLevelWithSource)[] | null> {
+  try {
+    const response = await fetch(isCanteen ? `/api/stock/${locationId}/by-source` : `/api/stock/${locationId}`);
+    if (!response.ok) return null;
+    const body = await response.json();
+    if (!Array.isArray(body?.levels)) return null;
+    return body.levels;
+  } catch {
+    return null;
+  }
+}
+
+export type AttendantSummaryState =
+  | { status: "loading" }
+  | { status: "ready"; transfers: TransferHistoryEntry[] | null; stockLevels: (StockLevel | StockLevelWithSource)[] | null };
+
+export function TodaysSales({
+  role,
+  locationId,
+  isCanteen = false,
+  onOpen,
+}: {
+  /** Attendant gets the expanded REQ-02 Part B summary; cashier and
+   * store-manager keep the unchanged sales-only view. */
+  role?: StaffRole;
+  /** Required to load the attendant summary's transfer/stock figures. */
+  locationId?: string;
+  isCanteen?: boolean;
+  onOpen?: (destination: string) => void;
+}) {
+  const [attempt, setAttempt] = useState(0);
+  return (
+    <TodaysSalesForAttempt
+      key={attempt}
+      role={role}
+      locationId={locationId}
+      isCanteen={isCanteen}
+      onOpen={onOpen}
+      onRetry={() => setAttempt((a) => a + 1)}
+    />
+  );
+}
+
+function TodaysSalesForAttempt({
+  role,
+  locationId,
+  isCanteen,
+  onOpen,
+  onRetry,
+}: {
+  role?: StaffRole;
+  locationId?: string;
+  isCanteen: boolean;
+  onOpen?: (destination: string) => void;
+  onRetry: () => void;
+}) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [summary, setSummary] = useState<AttendantSummaryState>({ status: "loading" });
 
   // A per-call closure flag rather than a shared ref (BUG-03) — a ref set
   // true by StrictMode's dev-only mount/unmount/remount cycle stays true
@@ -111,7 +188,26 @@ function TodaysSalesForAttempt({ onRetry }: { onRetry: () => void }) {
 
   useEffect(load, []);
 
-  return <TodaysSalesView state={state} onRetry={onRetry} onVoided={load} />;
+  useEffect(() => {
+    if (role !== "attendant" || !locationId) return;
+    let cancelled = false;
+    Promise.all([fetchTransferHistory(), fetchClosingStock(locationId, isCanteen)]).then(([transfers, stockLevels]) => {
+      if (!cancelled) setSummary({ status: "ready", transfers, stockLevels });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, locationId, isCanteen]);
+
+  return (
+    <TodaysSalesView
+      state={state}
+      onRetry={onRetry}
+      onVoided={load}
+      attendantSummary={role === "attendant" ? summary : undefined}
+      onOpen={onOpen}
+    />
+  );
 }
 
 function methodLabel(m: PaymentLineView["method"]) {
@@ -131,6 +227,8 @@ export function TodaysSalesView({
   onRetry = () => {},
   onVoided = () => {},
   onVoid = voidSaleRequest,
+  attendantSummary,
+  onOpen,
 }: {
   state: LoadState;
   onRetry?: () => void;
@@ -138,6 +236,9 @@ export function TodaysSalesView({
   onVoided?: () => void;
   /** Overridable for Storybook, which has no API route to call. */
   onVoid?: (saleId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Present only for the attendant — REQ-02 Part B's expanded summary. */
+  attendantSummary?: AttendantSummaryState;
+  onOpen?: (destination: string) => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirmingVoidId, setConfirmingVoidId] = useState<string | null>(null);
@@ -159,9 +260,18 @@ export function TodaysSalesView({
     onVoided();
   }
 
+  const summaryStrip = attendantSummary && (
+    <AttendantSummary
+      summary={attendantSummary}
+      salesTotalMinor={state.status === "ready" ? soldTotalMinor(state.sales) : 0}
+      onOpen={onOpen}
+    />
+  );
+
   if (state.status === "loading") {
     return (
       <div className="p-3" data-testid="todays-sales-loading">
+        {summaryStrip}
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="mb-2 rounded-lg border bg-card p-3">
             <Skeleton className="h-4 w-24" />
@@ -194,6 +304,7 @@ export function TodaysSalesView({
   if (state.sales.length === 0) {
     return (
       <div className="p-3">
+        {summaryStrip}
         <EmptyFirstUse
           icon={<Receipt className="size-4" />}
           title="No sales recorded yet"
@@ -205,6 +316,7 @@ export function TodaysSalesView({
 
   return (
     <div className="p-3" data-testid="todays-sales-list">
+      {summaryStrip}
       {state.sales.map((sale) => {
         const open = expanded === sale.id;
         const preview = sale.lines.map((l) => `${l.quantity}× ${l.productName}`).join(", ");
@@ -338,6 +450,94 @@ export function TodaysSalesView({
             handleConfirmVoid(id);
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/** Cash + M-Pesa combined, excluding credit — the till figure a cashier or
+ * attendant cares about, not the invoiced total. Voided sales excluded. */
+function soldTotalMinor(sales: SaleView[]): number {
+  return sales
+    .filter((sale) => !sale.voided)
+    .flatMap((sale) => sale.paymentLines)
+    .filter((line) => line.method === "cash" || line.method === "mpesa")
+    .reduce((sum, line) => sum + line.amountMinor, 0);
+}
+
+function isToday(occurredAt: Date): boolean {
+  const now = new Date();
+  return (
+    occurredAt.getFullYear() === now.getFullYear() &&
+    occurredAt.getMonth() === now.getMonth() &&
+    occurredAt.getDate() === now.getDate()
+  );
+}
+
+/** REQ-02 Part B's expanded attendant view: sales recorded today (stated
+ * above, from her own sale list — this strip states the rest), transfers
+ * received/sent today, and current closing stock. A summary strip states,
+ * and links where a link exists (docs/design.md) — each figure links to the
+ * screen that explains it, since transfer-history and stock are both real
+ * records, not just this same data re-filtered. */
+function AttendantSummary({
+  summary,
+  salesTotalMinor,
+  onOpen,
+}: {
+  summary: AttendantSummaryState;
+  salesTotalMinor: number;
+  onOpen?: (destination: string) => void;
+}) {
+  if (summary.status === "loading") {
+    return (
+      <div className="mb-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="bg-card p-4">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="mt-2 h-6 w-12" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const todaysTransfers = (summary.transfers ?? []).filter((t) => isToday(new Date(t.occurredAt)));
+  const receivedToday = todaysTransfers.filter((t) => t.direction === "received" && t.status === "confirmed");
+  const sentToday = todaysTransfers.filter((t) => t.direction === "sent" && t.status === "confirmed");
+  const closingStockUnits = (summary.stockLevels ?? []).reduce((sum, level) => sum + level.quantityOnHand, 0);
+
+  const items: Summary[] = [
+    { label: "Sales today", value: money(salesTotalMinor), sub: "Cash + M-Pesa" },
+    {
+      label: "Received today",
+      value: String(receivedToday.length),
+      sub: receivedToday.length === 1 ? "transfer confirmed" : "transfers confirmed",
+    },
+    {
+      label: "Sent today",
+      value: String(sentToday.length),
+      sub: sentToday.length === 1 ? "transfer confirmed" : "transfers confirmed",
+    },
+    {
+      label: "Closing stock",
+      value: summary.stockLevels === null ? "—" : String(closingStockUnits),
+      sub: "units on hand",
+    },
+  ];
+
+  return (
+    <div className="mb-3">
+      <SummaryStrip items={items} />
+      {onOpen && (
+        <div className="mt-2 flex gap-3 px-1 text-xs">
+          <button className="text-primary underline-offset-2 hover:underline" onClick={() => onOpen("transfer-history")}>
+            See transfers
+          </button>
+          <button className="text-primary underline-offset-2 hover:underline" onClick={() => onOpen("stock")}>
+            See stock
+          </button>
+        </div>
       )}
     </div>
   );

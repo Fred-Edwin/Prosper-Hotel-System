@@ -558,8 +558,13 @@ describe("reverseTransfer — undoing an already-confirmed transfer", () => {
   });
 });
 
+// 2026-08-13 — rewritten to read from the Transfer model directly rather
+// than reconstructing from movement pairs: a pending transfer only ever
+// writes the sender's outgoing movement (see recordTransfers above), so
+// the movement-reconstruction approach could not represent "pending" at
+// all, and had no access to confirmed-vs-sent quantity. See gotchas.md.
 describe("listTransfersAtLocation", () => {
-  test("shows the sender's outgoing leg once sent, before confirmation", async () => {
+  test("shows a still-pending send to the sender as status pending, no confirmedQuantity", async () => {
     await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
       fromLocationId: restaurantId,
       toLocationId: canteenId,
@@ -572,6 +577,79 @@ describe("listTransfersAtLocation", () => {
     expect(sender.ok).toBe(true);
     if (!sender.ok) return;
     expect(sender.transfers).toHaveLength(1);
-    expect(sender.transfers[0]).toMatchObject({ direction: "sent", reversed: false });
+    expect(sender.transfers[0]).toMatchObject({
+      direction: "sent",
+      status: "pending",
+      confirmedQuantity: null,
+      reversed: false,
+    });
+  });
+
+  test("shows the same still-pending transfer to the receiver as status pending too", async () => {
+    await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+
+    const receiver = await listTransfersAtLocation(testDb, staffAt("attendant", canteenId));
+    expect(receiver.ok).toBe(true);
+    if (!receiver.ok) return;
+    expect(receiver.transfers).toHaveLength(1);
+    expect(receiver.transfers[0]).toMatchObject({ direction: "received", status: "pending" });
+  });
+
+  test("shows a confirmed transfer with sent and confirmed quantities to both sides", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("setup failed");
+    await confirmTransfer(testDb, staffAt("attendant", canteenId), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 3,
+    });
+
+    const sender = await listTransfersAtLocation(testDb, staffAt("store_manager", restaurantId));
+    expect(sender.ok).toBe(true);
+    if (!sender.ok) return;
+    expect(sender.transfers[0]).toMatchObject({
+      direction: "sent",
+      status: "confirmed",
+      confirmedQuantity: 3,
+    });
+    expect(sender.transfers[0].lines[0]).toMatchObject({ quantity: 4 });
+
+    const receiver = await listTransfersAtLocation(testDb, staffAt("attendant", canteenId));
+    expect(receiver.ok).toBe(true);
+    if (!receiver.ok) return;
+    expect(receiver.transfers[0]).toMatchObject({
+      direction: "received",
+      status: "confirmed",
+      confirmedQuantity: 3,
+    });
+  });
+
+  test("shows a cancelled transfer as status cancelled, not sent or missing", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("setup failed");
+    await cancelPendingTransfer(testDb, staffAt("store_manager", restaurantId), sent.transfers[0].id);
+
+    const sender = await listTransfersAtLocation(testDb, staffAt("store_manager", restaurantId));
+    expect(sender.ok).toBe(true);
+    if (!sender.ok) return;
+    expect(sender.transfers).toHaveLength(1);
+    expect(sender.transfers[0]).toMatchObject({ direction: "sent", status: "cancelled" });
   });
 });

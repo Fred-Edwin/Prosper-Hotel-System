@@ -54,7 +54,7 @@ export const staffLinks: Record<string, StaffLink> = {
   },
   sales: {
     key: "sales",
-    label: "Today's sales",
+    label: "Today's summary",
     icon: History,
     hint: "Sales you've recorded today",
   },
@@ -119,11 +119,22 @@ export const staffLinks: Record<string, StaffLink> = {
     icon: History,
     hint: "See whether what you sent reconciled",
   },
+  "transfer-history": {
+    key: "transfer-history",
+    label: "Transfer history",
+    icon: History,
+    hint: "Everything sent and received, pending or confirmed",
+  },
 };
 
-/** Six, three and five — the counts settled at setup. Stock added for every
- * role in the tracer slice: it's read-only and useful to everyone who works
- * a location, not tied to one task the way the others are. */
+/** Six, three and five were the counts settled at setup. store-manager and
+ * attendant have since grown past docs/design.md's 5-8 target (10 and 9
+ * tiles as of 2026-08-13, before transfer-history) as the canteen redesign
+ * added real destinations — flagged as its own follow-up rather than
+ * silently absorbed here; see docs/screens.md's 2026-08-13 note. Stock
+ * added for every role in the tracer slice: it's read-only and useful to
+ * everyone who works a location, not tied to one task the way the others
+ * are. */
 export const staffNav: Record<StaffRole, StaffLink[]> = {
   "store-manager": [
     staffLinks.sell,
@@ -135,6 +146,7 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     staffLinks.wastage,
     staffLinks.stock,
     staffLinks.transfer,
+    staffLinks["transfer-history"],
     staffLinks.handover,
   ],
   cashier: [staffLinks.sell, staffLinks.sales, staffLinks.wastage, staffLinks.stock, staffLinks.handover],
@@ -147,6 +159,7 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     staffLinks.wastage,
     staffLinks.stock,
     staffLinks.transfer,
+    staffLinks["transfer-history"],
     staffLinks.handover,
   ],
 };
