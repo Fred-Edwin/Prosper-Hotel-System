@@ -166,6 +166,19 @@ async function main() {
     // demonstrate the Recipes tab's below-40%-margin warning.
     db.product.create({ data: { name: "Rice plate", kind: "cooked_food", priceMinor: 120 } }),
   ]);
+
+  // More products, mostly goods/cooked_food — realistic restaurant→canteen
+  // transfer candidates (the canteen never transfers ingredients; a store
+  // manager sends finished goods or cooked food to the canteen, not raw
+  // stock). Widens what's available to receive/transfer/sell in Storybook
+  // and manual walkthroughs beyond the original 8.
+  const [water, crisps, samosa, chapati, sweets] = await Promise.all([
+    db.product.create({ data: { name: "Bottled water (500ml)", kind: "goods", priceMinor: 60 } }),
+    db.product.create({ data: { name: "Crisps (packet)", kind: "goods", priceMinor: 70 } }),
+    db.product.create({ data: { name: "Samosa", kind: "cooked_food", priceMinor: 40 } }),
+    db.product.create({ data: { name: "Chapati", kind: "cooked_food", priceMinor: 30 } }),
+    db.product.create({ data: { name: "Sweets (piece)", kind: "goods", priceMinor: 10 } }),
+  ]);
   const ricePlate = await db.product.findUniqueOrThrow({ where: { name: "Rice plate" } });
 
   const [maizeFlour, cookingOil, potatoes] = await Promise.all([
@@ -257,6 +270,19 @@ async function main() {
       { productId: chips.id, locationId: restaurant.id, quantity: 15, reason: "received", staffMemberId: sarah.id },
       { productId: chips.id, locationId: restaurant.id, quantity: -12, reason: "sold", staffMemberId: sarah.id },
       { productId: chips.id, locationId: restaurant.id, quantity: -3, reason: "wasted", staffMemberId: sarah.id },
+      // Restaurant-side stock for the new goods/cooked_food products — real
+      // candidates for a restaurant→canteen transfer, so manual/Storybook
+      // walkthroughs of that flow have more than sodas/mukimo to pick from.
+      { productId: water.id, locationId: restaurant.id, quantity: 48, reason: "received", staffMemberId: sarah.id },
+      { productId: water.id, locationId: restaurant.id, quantity: -10, reason: "sold", staffMemberId: sarah.id },
+      { productId: crisps.id, locationId: restaurant.id, quantity: 36, reason: "received", staffMemberId: sarah.id },
+      { productId: crisps.id, locationId: restaurant.id, quantity: -8, reason: "sold", staffMemberId: sarah.id },
+      { productId: samosa.id, locationId: restaurant.id, quantity: 40, reason: "produced", staffMemberId: manager.id },
+      { productId: samosa.id, locationId: restaurant.id, quantity: -22, reason: "sold", staffMemberId: sarah.id },
+      { productId: chapati.id, locationId: restaurant.id, quantity: 60, reason: "produced", staffMemberId: manager.id },
+      { productId: chapati.id, locationId: restaurant.id, quantity: -30, reason: "sold", staffMemberId: sarah.id },
+      { productId: sweets.id, locationId: restaurant.id, quantity: 200, reason: "received", staffMemberId: sarah.id },
+      { productId: sweets.id, locationId: restaurant.id, quantity: -40, reason: "sold", staffMemberId: sarah.id },
       // Printing paper only ever at the canteen — restaurant never received it,
       // so it correctly never appears in the restaurant's stock list.
       { productId: paper.id, locationId: canteen.id, quantity: 40, reason: "received", staffMemberId: anne.id },
@@ -525,7 +551,7 @@ async function main() {
   });
 
   console.log(
-    "Seeded 2 locations, 8 staff members, 8 products, 12 ingredients, 3 recipe versions, stock/ingredient movements, 3 customers, 7 sales (incl. delivery, credit, split payment, void), 2 handovers (1 agreed, 1 short), 5 expenses (1 reversed), and 2 stock counts (1 with open + corrected differences).",
+    "Seeded 2 locations, 8 staff members, 13 products, 12 ingredients, 3 recipe versions, stock/ingredient movements, 3 customers, 7 sales (incl. delivery, credit, split payment, void), 2 handovers (1 agreed, 1 short), 5 expenses (1 reversed), and 2 stock counts (1 with open + corrected differences).",
   );
   console.log(`Every seeded staff member's PIN is ${SEED_PIN}.`);
   console.log("Log in as 'Restaurant Cashier' or 'Brian Otieno' to see today's sales and a completed handover.");
