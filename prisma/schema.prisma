@@ -31,11 +31,12 @@ model Location {
   ingredientMovements IngredientMovement[]
   sales               Sale[]
   handovers           Handover[]
-  takings             Takings[]
   expenses            Expense[]
   stockCounts         StockCount[]
   assets              Asset[]
   repayments          Repayment[]
+  transfersSent       Transfer[]           @relation("TransferFromLocation")
+  transfersReceived   Transfer[]           @relation("TransferToLocation")
 
   @@map("locations")
 }
@@ -67,7 +68,8 @@ model StaffMember {
   daysWorked          DaysWorked[]         @relation("DaysWorkedByStaff")
   daysWorkedRecorded  DaysWorked[]         @relation("DaysWorkedRecordedBy")
   repayments          Repayment[]
-  takings             Takings[]
+  transfersSent       Transfer[]           @relation("TransferSentBy")
+  transfersConfirmed  Transfer[]           @relation("TransferConfirmedBy")
 
   @@map("staff_members")
 }
@@ -225,20 +227,31 @@ model RecipeLine {
 // used on the IngredientMovement side is `issued`, reused rather than a
 // separate reason — the ingredients really did leave the store for this
 // production run.
-// sold_derived added by ticket 24: CONTEXT.md's "Sold, derived" — a sale
-// inferred at a canteen count rather than recorded at the moment of sale.
-// Product (StockMovement) only, by construction — an IngredientMovement
-// row is never written with this reason, since ingredients are never sold
-// (CONTEXT.md). There is no separate IngredientMovementReason enum to
-// split this against; both movement tables share this one, and the
-// asymmetry is enforced by which table each reason is actually written to
-// (e.g. `produced`/`sold`/`sold_derived` never appear on
-// IngredientMovement, `issued` never appears on StockMovement).
+// sold_derived (ticket 24) retired 2026-08-13: the canteen now records
+// real sales the same as the restaurant — see docs/proposal.md §4 and
+// docs/architecture.md's canteen comparison table for why. Replaced by
+// transfer_shortfall (below), a different reason for a different event.
+//
+// transfer_shortfall added 2026-08-13, alongside the Transfer model: the
+// gap between what a transfer's sender recorded as sent and what the
+// receiver confirmed as received. Distinct from wastage, from a
+// stock-count correction, and from ordinary shrinkage — clearly
+// attributable to the transfer itself, per REQ-02 Part A
+// (docs/feature-requests.md). Written on the *receiving* location only,
+// at the point of confirmation, quantity always 0 — never on the
+// sending side, since the sender's stock already left at the sent
+// quantity regardless of what arrives, and the loss is already fully
+// reflected by the paired incoming `transferred` row being only
+// +confirmedQuantity. This row is a reportable, attributable marker
+// ("N lost in transit on this transfer"), not a further stock
+// deduction — deducting again would double-count the same missing
+// unit. The actual gap size lives on Transfer.sentQuantity −
+// Transfer.confirmedQuantity, which any report reads from directly.
 enum StockMovementReason {
   received
   transferred
   sold
-  sold_derived
+  transfer_shortfall
   wasted
   consumed
   given_away
@@ -358,6 +371,86 @@ model Repayment {
   reversedAt    DateTime?
 
   @@map("repayments")
+}
+
+// Added 2026-08-13 — REQ-02 Part A / docs/scope.md's "Canteen: real
+// sales, two-sided transfers, retiring count-derived sales". A transfer
+// used to be a single atomic pair of movement rows (both locations'
+// stock changed in the same instant, no acknowledgement). It is now a
+// two-step event: the sender's stock still leaves immediately (the
+// outgoing StockMovement/IngredientMovement row is written at send
+// time, same as before), but the receiver's stock does not increase
+// until they separately confirm what actually arrived — the incoming
+// row, and any transfer_shortfall row for a confirmed-short quantity,
+// are written only at confirmation. Applies in both directions
+// (restaurant→canteen and canteen→restaurant), not special-cased to
+// either location.
+//
+// While `status = pending`, the transfer is "in transit": it has
+// already reduced the sender's stock (via the outgoing movement, linked
+// by sharing this row's id as `transferId`) but has not yet increased
+// the receiver's — neither location's stock count includes it.
+//
+// `id` doubles as the `transferId` grouping value already used on
+// StockMovement/IngredientMovement (ticket 21) — a plain shared string,
+// not a hard foreign key, matching how `receiptId` already groups
+// movement rows without a relation. Product-or-ingredient uses the same
+// itemType/itemId string-discriminator convention as StockCountLine
+// (this file, below), not two nullable relations.
+enum TransferItemType {
+  product
+  ingredient
+}
+
+enum TransferStatus {
+  pending
+  confirmed
+  // A sender's own undo of a still-pending send, before the receiver has
+  // confirmed anything — same "void your own entry, same day, no
+  // permission needed" principle as everywhere else (docs/architecture.md's
+  // data lifecycle). Distinct from an already-confirmed transfer's
+  // reversal, which restores stock at both locations via a new opposite
+  // transfer instead (see stock/logic.ts's reverseTransfer) — a
+  // cancelled transfer never had an incoming movement to undo.
+  cancelled
+}
+
+model Transfer {
+  id                       String           @id @default(cuid())
+  fromLocationId           String
+  fromLocation             Location         @relation("TransferFromLocation", fields: [fromLocationId], references: [id])
+  toLocationId             String
+  toLocation               Location         @relation("TransferToLocation", fields: [toLocationId], references: [id])
+  itemType                 TransferItemType
+  itemId                   String
+  sentQuantity             Int
+  status                   TransferStatus   @default(pending)
+  sentByStaffMemberId      String
+  sentByStaffMember        StaffMember      @relation("TransferSentBy", fields: [sentByStaffMemberId], references: [id])
+  sentAt                   DateTime         @default(now())
+  // Populated only once confirmed. May differ from sentQuantity — a
+  // shortfall is recorded as its own transfer_shortfall movement, not
+  // silently absorbed. Never exceeds sentQuantity in ordinary use (there
+  // is nothing to confirm beyond what was sent); not enforced at the DB
+  // level, same trust-the-caller convention as the rest of this schema.
+  confirmedQuantity        Int?
+  confirmedByStaffMemberId String?
+  confirmedByStaffMember   StaffMember?     @relation("TransferConfirmedBy", fields: [confirmedByStaffMemberId], references: [id])
+  confirmedAt              DateTime?
+  // Set when this transfer is itself a reversal of an earlier one (same
+  // reversedTransferId convention as StockMovement/IngredientMovement) —
+  // reversing an already-confirmed transfer is a new transfer in the
+  // opposite direction, not an edit to this row.
+  reversedTransferId       String?
+  // Populated only when status = cancelled — the sender undoing their own
+  // still-pending send. Always the same person as sentByStaffMemberId in
+  // practice (only the sender or the owner may cancel), kept as its own
+  // field rather than reusing sentByStaffMemberId so "who sent it" and
+  // "who cancelled it" stay independently readable.
+  cancelledByStaffMemberId String?
+  cancelledAt              DateTime?
+
+  @@map("transfers")
 }
 
 model StockMovement {
@@ -517,8 +610,17 @@ model Handover {
   location           Location    @relation(fields: [locationId], references: [id])
   staffMemberId      String
   staffMember        StaffMember @relation(fields: [staffMemberId], references: [id])
+  // At the restaurant, cash and M-Pesa are each a real, independently
+  // expected figure — both non-null. At the canteen (2026-08-13 revision
+  // — a sale carries no payment method at entry, so the split isn't
+  // knowable from the sale record), expectedCashMinor holds the
+  // combined expected total and expectedMpesaMinor is left null,
+  // meaning "not tracked separately here — see expectedCashMinor for
+  // the whole figure," not "expected zero M-Pesa." Any comparison
+  // against actualCashMinor/actualMpesaMinor must branch on this null
+  // rather than assume both are always populated.
   expectedCashMinor  Int
-  expectedMpesaMinor Int
+  expectedMpesaMinor Int?
   actualCashMinor    Int
   actualMpesaMinor   Int
   occurredAt         DateTime    @default(now())
@@ -528,28 +630,11 @@ model Handover {
   @@map("handovers")
 }
 
-// CONTEXT.md's Takings: the canteen's structural substitute for
-// per-sale recording — cash and M-Pesa totals declared at close, no
-// expected figure to compare against (there's nothing recorded per-sale
-// to expect from). One record per location per day, same-day editable.
-model Takings {
-  id            String      @id @default(cuid())
-  locationId    String
-  location      Location    @relation(fields: [locationId], references: [id])
-  cashMinor     Int
-  mpesaMinor    Int
-  // Ticket 45 — who recorded it (or last edited it, since a same-day
-  // re-entry overwrites the amounts in place already). Nullable so
-  // existing rows, recorded before this column existed, don't need a
-  // fabricated attribution.
-  staffMemberId String?
-  staffMember   StaffMember? @relation(fields: [staffMemberId], references: [id])
-  occurredAt    DateTime    @default(now())
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  @@map("takings")
-}
+// Takings (cash/M-Pesa totals declared separately from a handover) was
+// retired 2026-08-13 — see CONTEXT.md's "Takings — retired" entry. The
+// canteen now records real sales the same as the restaurant, and hands
+// over through the same single Handover step; a separate declaration
+// had nothing left to answer that Handover doesn't already capture.
 
 // CONTEXT.md's Expense: money the owner pays out, one of four categories
 // that behave differently in profit — see docs/architecture.md and
@@ -619,18 +704,18 @@ model DrawingDebt {
 // repayment against the outstanding drawings balance. Same shape
 // discipline (never edited, only added to or marked reversed).
 model DrawingRepayment {
-  id          String    @id @default(cuid())
-  amountMinor Int
+  id            String        @id @default(cuid())
+  amountMinor   Int
   // Cash or M-Pesa only — never credit, same reasoning as Expense.
   // Defaulted to cash for rows recorded before this field existed, since
   // there is no real record of which method they used. Ticket 40 — the
   // cash ledger needs a method on every transaction, and repayments are
   // one of its categories.
   paymentMethod PaymentMethod @default(cash)
-  recordedBy  String
-  occurredAt  DateTime  @default(now())
-  reversed    Boolean   @default(false)
-  reversedAt  DateTime?
+  recordedBy    String
+  occurredAt    DateTime      @default(now())
+  reversed      Boolean       @default(false)
+  reversedAt    DateTime?
 
   @@map("drawing_repayments")
 }

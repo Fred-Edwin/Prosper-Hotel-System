@@ -84,6 +84,55 @@ export const HomeHandedOver: Story = {
   ),
 };
 
+/**
+ * 2026-08-13 canteen redesign — REQ-02 Part A: a second banner, stacked
+ * below the handover one, for stock sent to this location awaiting
+ * confirmation. Applies at both locations, not canteen-only — this example
+ * uses the restaurant store manager receiving a transfer back from the
+ * canteen. Two separate sentences rather than one combined box, confirmed
+ * with Edwinfred.
+ */
+export const HomePendingTransfer: Story = {
+  name: "Home — pending transfer to confirm",
+  render: () => (
+    <StaffShellHome
+      staffName="Janiffer"
+      locationName="restaurant"
+      active={null}
+      title=""
+    >
+      <StaffHome
+        role="store-manager"
+        handedOverToday={false}
+        pendingTransferCount={1}
+        onOpen={() => {}}
+      />
+    </StaffShellHome>
+  ),
+};
+
+/** Both banners at once — handover not yet done, and stock waiting to be
+ * confirmed. Each stays a single clear sentence rather than merging into
+ * one "waiting on you" box. */
+export const HomeBothBanners: Story = {
+  name: "Home — handover + pending transfers",
+  render: () => (
+    <StaffShellHome
+      staffName="Anne"
+      locationName="canteen"
+      active={null}
+      title=""
+    >
+      <StaffHome
+        role="attendant"
+        handedOverToday={false}
+        pendingTransferCount={3}
+        onOpen={() => {}}
+      />
+    </StaffShellHome>
+  ),
+};
+
 /** Inside a task the whole screen belongs to the task, and leaving is the
  * back arrow every phone user already knows. */
 export const InsideATask: Story = {

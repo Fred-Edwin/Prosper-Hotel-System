@@ -120,11 +120,16 @@ export function StaffShellHome({
 export function StaffHome({
   role,
   handedOverToday,
+  pendingTransferCount,
   onOpen,
 }: {
   role: StaffRole;
   /** Whether today's handover is already recorded. */
   handedOverToday: boolean;
+  /** Transfers sent to this location, awaiting her confirmation of what
+   * actually arrived. Undefined while still loading — renders nothing
+   * rather than a false "none waiting" flash. */
+  pendingTransferCount?: number;
   onOpen: (key: string) => void;
 }) {
   const links = staffNav[role];
@@ -133,9 +138,11 @@ export function StaffHome({
 
   return (
     <div className="p-3">
-      {/* What is waiting. A sentence, because a badge cannot say "why".
-          Deliberately no figure: the count is blind, so the home screen must
-          not leak what the till expects either. */}
+      {/* What is waiting. A sentence each, because a badge cannot say "why" —
+          two separate, stacked statements rather than one combined box, so
+          each stays legible on its own (confirmed with Edwinfred 2026-08-13).
+          Deliberately no figure on the handover one: the count is blind, so
+          the home screen must not leak what the till expects either. */}
       {!handedOverToday && (
         <button
           onClick={() => onOpen("handover")}
@@ -147,6 +154,26 @@ export function StaffHome({
             </div>
             <div className="text-[11px] text-muted-foreground">
               Count your cash and M-Pesa at the end of your shift
+            </div>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      )}
+
+      {!!pendingTransferCount && pendingTransferCount > 0 && (
+        <button
+          onClick={() => onOpen("confirm-transfer")}
+          className="mb-3 flex w-full items-center gap-3 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-left"
+          data-testid="pending-transfer-banner"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-medium">
+              {pendingTransferCount === 1
+                ? "Stock is waiting for you to confirm"
+                : `${pendingTransferCount} transfers are waiting for you to confirm`}
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Check what actually arrived before it counts as your stock
             </div>
           </div>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />

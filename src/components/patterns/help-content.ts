@@ -319,22 +319,12 @@ export const helpContent: Record<string, HelpEntry> = {
     ],
   },
 
-  takings: {
-    title: "Takings",
-    sections: [
-      {
-        heading: "Takings",
-        summary: "Recording today's total cash and M-Pesa taken, at the end of the day.",
-        points: [
-          "Enter Cash (notes and coins taken today) and M-Pesa (from your payment messages) as two totals — not item by item.",
-          "Confirm, then Record today's takings.",
-          "Already recorded today? You'll see what you entered. Made a mistake? Record again to correct it, any time later that day.",
-          "This is what your Handover is checked against, so enter it before you hand over.",
-        ],
-      },
-    ],
-  },
-
+  // TODO(2026-08-13 canteen redesign): the last point below is stale —
+  // the canteen now records every sale individually (docs/proposal.md
+  // §4), not just credit ones, and Takings no longer exists. This copy
+  // is client-approved verbatim (REQ-01) so it isn't being redrafted
+  // unreviewed here; needs a real rewrite once the canteen's sell screen
+  // is designed and new copy is approved the same way the rest was.
   "credit-sale": {
     title: "Credit sale",
     sections: [

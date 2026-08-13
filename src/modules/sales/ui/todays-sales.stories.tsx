@@ -122,3 +122,51 @@ export const VoidDayClosed: Story = {
     onVoid: async () => ({ ok: false, error: "day_closed" }),
   },
 };
+
+export const AttendantExpanded: Story = {
+  name: "Attendant — expanded summary (REQ-02 Part B)",
+  args: {
+    state: Default.args.state,
+    attendantSummary: {
+      status: "ready",
+      transfers: [
+        {
+          transferId: "tr-1",
+          direction: "received",
+          status: "confirmed",
+          counterpartLocationName: "Restaurant",
+          occurredAt: new Date(),
+          confirmedQuantity: 6,
+          reversed: false,
+          isReversal: false,
+          lines: [{ itemType: "ingredient", itemId: "eggs", name: "Eggs", quantity: 6, unit: "trays" }],
+        },
+        {
+          transferId: "tr-2",
+          direction: "sent",
+          status: "confirmed",
+          counterpartLocationName: "Restaurant",
+          occurredAt: new Date(),
+          confirmedQuantity: 2,
+          reversed: false,
+          isReversal: false,
+          lines: [{ itemType: "product", itemId: "sodas", name: "Sodas (500ml)", quantity: 2, unit: "units" }],
+        },
+      ],
+      stockLevels: [
+        { productId: "sodas", productName: "Sodas (500ml)", quantityOnHand: 18, isOwn: true },
+        { productId: "chips", productName: "Chips", quantityOnHand: 40, isOwn: false },
+      ],
+    },
+    onOpen: () => {},
+  },
+};
+
+export const AttendantExpandedLoading: Story = {
+  name: "Attendant — expanded summary loading",
+  args: {
+    state: Default.args.state,
+    attendantSummary: { status: "loading" },
+    onOpen: () => {},
+  },
+};

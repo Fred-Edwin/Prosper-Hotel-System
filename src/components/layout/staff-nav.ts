@@ -8,7 +8,10 @@
  * Cashiers get three, and should barely notice navigation exists: they sell,
  * and at the end of a shift they hand over. Janiffer runs the restaurant store
  * as well as selling, so she gets receiving, issuing and counts. Anne runs the
- * canteen alone, which means she records takings rather than individual sales.
+ * canteen alone — she sells the same way a cashier does (2026-08-13 revision:
+ * real per-sale recording replaced declaring a daily takings total), plus
+ * receiving and counts, since she is effectively cashier and store manager
+ * for one location.
  */
 
 import {
@@ -18,7 +21,6 @@ import {
   ArrowLeftRight,
   ClipboardList,
   Trash2,
-  Receipt,
   Boxes,
   History,
   ChefHat,
@@ -40,7 +42,10 @@ export interface StaffLink {
   tone?: "danger";
 }
 
-const all: Record<string, StaffLink> = {
+/** Every link, including destinations reached only from a banner (e.g.
+ * confirm-transfer) rather than a home-screen tile — keyed lookup for the
+ * task header's title, since not every reachable screen is in staffNav. */
+export const staffLinks: Record<string, StaffLink> = {
   sell: {
     key: "sell",
     label: "New sale",
@@ -49,15 +54,9 @@ const all: Record<string, StaffLink> = {
   },
   sales: {
     key: "sales",
-    label: "Today's sales",
+    label: "Today's summary",
     icon: History,
     hint: "Sales you've recorded today",
-  },
-  takings: {
-    key: "takings",
-    label: "Takings",
-    icon: Receipt,
-    hint: "Record the day's takings",
   },
   credit: {
     key: "credit",
@@ -108,34 +107,59 @@ const all: Record<string, StaffLink> = {
     hint: "What's on hand at your location",
   },
   transfer: { key: "transfer", label: "Transfer stock", icon: ArrowLeftRight, hint: "Move stock to the other location" },
+  "confirm-transfer": {
+    key: "confirm-transfer",
+    label: "Confirm transfer",
+    icon: ArrowLeftRight,
+    hint: "Confirm what actually arrived",
+  },
+  "sent-transfers": {
+    key: "sent-transfers",
+    label: "Sent transfers",
+    icon: History,
+    hint: "See whether what you sent reconciled",
+  },
+  "transfer-history": {
+    key: "transfer-history",
+    label: "Transfer history",
+    icon: History,
+    hint: "Everything sent and received, pending or confirmed",
+  },
 };
 
-/** Six, three and five — the counts settled at setup. Stock added for every
- * role in the tracer slice: it's read-only and useful to everyone who works
- * a location, not tied to one task the way the others are. */
+/** Six, three and five were the counts settled at setup. store-manager and
+ * attendant have since grown past docs/design.md's 5-8 target (10 and 9
+ * tiles as of 2026-08-13, before transfer-history) as the canteen redesign
+ * added real destinations — flagged as its own follow-up rather than
+ * silently absorbed here; see docs/screens.md's 2026-08-13 note. Stock
+ * added for every role in the tracer slice: it's read-only and useful to
+ * everyone who works a location, not tied to one task the way the others
+ * are. */
 export const staffNav: Record<StaffRole, StaffLink[]> = {
   "store-manager": [
-    all.sell,
-    all.sales,
-    all.receive,
-    all.issue,
-    all.production,
-    all.count,
-    all.wastage,
-    all.stock,
-    all.transfer,
-    all.handover,
+    staffLinks.sell,
+    staffLinks.sales,
+    staffLinks.receive,
+    staffLinks.issue,
+    staffLinks.production,
+    staffLinks.count,
+    staffLinks.wastage,
+    staffLinks.stock,
+    staffLinks.transfer,
+    staffLinks["transfer-history"],
+    staffLinks.handover,
   ],
-  cashier: [all.sell, all.sales, all.wastage, all.stock, all.handover],
+  cashier: [staffLinks.sell, staffLinks.sales, staffLinks.wastage, staffLinks.stock, staffLinks.handover],
   attendant: [
-    all.takings,
-    all.credit,
-    all.sales,
-    all.receive,
-    all.count,
-    all.wastage,
-    all.stock,
-    all.transfer,
-    all.handover,
+    staffLinks.sell,
+    staffLinks.credit,
+    staffLinks.sales,
+    staffLinks.receive,
+    staffLinks.count,
+    staffLinks.wastage,
+    staffLinks.stock,
+    staffLinks.transfer,
+    staffLinks["transfer-history"],
+    staffLinks.handover,
   ],
 };

@@ -67,7 +67,6 @@ async function resetDb() {
   await testDb.stockCountLine.deleteMany({});
   await testDb.stockCount.deleteMany({});
   await testDb.stockMovement.deleteMany({});
-  await testDb.takings.deleteMany({});
   await testDb.handover.deleteMany({});
   await testDb.drawingRepayment.deleteMany({});
   await testDb.drawingDebt.deleteMany({});
@@ -189,10 +188,13 @@ describe("getActivity", () => {
       },
     });
 
-    // takings (canteen, Anne)
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 4800, mpesaMinor: 0, staffMemberId: attendantId },
+    // canteen sale (Anne) — 2026-08-13: the canteen records real sales
+    // the same as the restaurant now, no separate Takings row.
+    const canteenSale = await recordCounterSale(testDb, attendant(), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [],
     });
+    expect(canteenSale.ok).toBe(true);
 
     // expense (restaurant, owner)
     const expense = await recordExpense(testDb, owner(), {
@@ -231,14 +233,14 @@ describe("getActivity", () => {
     const kinds = result.rows.map((r) => r.kind).sort();
     expect(kinds).toEqual(
       [
-        "sale",
+        "sale", // Sarah's restaurant sale
+        "sale", // Anne's canteen sale
         "void",
         "correction",
         "movement", // wastage
         "movement", // the stock count itself
         "movement", // the owner's count correction
         "handover",
-        "takings",
         "expense", // running
         "expense", // drawing
         "repayment",
@@ -252,8 +254,8 @@ describe("getActivity", () => {
     expect(correctionRow?.effectiveOn.toDateString()).toBe(threeDaysAgo.toDateString());
     expect(correctionRow?.enteredAt.toDateString()).toBe(new Date().toDateString());
 
-    const takingsRow = result.rows.find((r) => r.kind === "takings");
-    expect(takingsRow?.who).toBe("Anne");
+    const canteenSaleRow = result.rows.find((r) => r.kind === "sale" && r.who === "Anne");
+    expect(canteenSaleRow).toBeDefined();
 
     // voidSale's own stock reversal shares StockMovement.reason
     // "corrected" with an owner's count correction, but must not surface

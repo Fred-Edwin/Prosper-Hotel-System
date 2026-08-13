@@ -10,7 +10,6 @@ import type {
   ExpenseCategory,
   ExpensePaymentMethod,
   Handover,
-  Takings,
 } from "./schema";
 
 // Prisma's generated PaymentMethod is shared with PaymentLine, so it
@@ -47,7 +46,9 @@ export async function createHandoverRecord(
     locationId: string;
     staffMemberId: string;
     expectedCashMinor: number;
-    expectedMpesaMinor: number;
+    // Null at the canteen — see Handover.expectedMpesaMinor's schema
+    // comment: "not tracked separately," not "expected zero."
+    expectedMpesaMinor: number | null;
     actualCashMinor: number;
     actualMpesaMinor: number;
   },
@@ -61,48 +62,6 @@ export async function updateHandoverActuals(
   data: { actualCashMinor: number; actualMpesaMinor: number },
 ): Promise<Handover> {
   return db.handover.update({ where: { id }, data });
-}
-
-export async function findTodaysTakings(
-  db: PrismaClient,
-  locationId: string,
-  dayStart: Date,
-  dayEnd: Date,
-): Promise<Takings | null> {
-  return db.takings.findFirst({
-    where: {
-      locationId,
-      occurredAt: { gte: dayStart, lt: dayEnd },
-    },
-  });
-}
-
-export async function createTakingsRecord(
-  db: PrismaClient,
-  data: { locationId: string; cashMinor: number; mpesaMinor: number; staffMemberId: string },
-): Promise<Takings> {
-  return db.takings.create({ data });
-}
-
-export async function updateTakingsAmounts(
-  db: PrismaClient,
-  id: string,
-  data: { cashMinor: number; mpesaMinor: number; staffMemberId: string },
-): Promise<Takings> {
-  return db.takings.update({ where: { id }, data });
-}
-
-// Ticket 45 — Activity's takings rows, business-wide across both
-// locations in a period.
-export async function listTakingsInPeriod(
-  db: PrismaClient,
-  periodStart: Date,
-  periodEnd: Date,
-): Promise<Takings[]> {
-  return db.takings.findMany({
-    where: { occurredAt: { gt: periodStart, lte: periodEnd } },
-    orderBy: { occurredAt: "asc" },
-  });
 }
 
 export async function createExpense(
@@ -194,23 +153,6 @@ export async function sumRunningCostsMinorInPeriod(
     _sum: { amountMinor: true },
   });
   return result._sum.amountMinor ?? 0;
-}
-
-// Ticket 25 — formulas.md §5/§6's takings figure at an arbitrary
-// location/period, for the owner's dashboard (distinct from
-// findTodaysTakings, which is scoped to "today" only and used by the
-// declaring staff member's own read).
-export async function sumTakingsMinorAtLocationInPeriod(
-  db: PrismaClient,
-  locationId: string,
-  periodStart: Date,
-  periodEnd: Date,
-): Promise<{ cashMinor: number; mpesaMinor: number }> {
-  const result = await db.takings.aggregate({
-    where: { locationId, occurredAt: { gt: periodStart, lte: periodEnd } },
-    _sum: { cashMinor: true, mpesaMinor: true },
-  });
-  return { cashMinor: result._sum.cashMinor ?? 0, mpesaMinor: result._sum.mpesaMinor ?? 0 };
 }
 
 export async function sumUnreversedDrawingDebt(db: PrismaClient): Promise<number> {

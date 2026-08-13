@@ -1,5 +1,10 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import { canAccessLocation, findCustomerById, type AuthenticatedStaff } from "@/modules/people";
+import {
+  canAccessLocation,
+  findCustomerById,
+  findLocationById,
+  type AuthenticatedStaff,
+} from "@/modules/people";
 import { findProductsByIds } from "@/modules/catalogue";
 import { recordStockMovement } from "@/modules/stock";
 import { isDayClosedFor } from "@/modules/cash";
@@ -31,7 +36,9 @@ export type RecordSaleResult =
         | "payment_mismatch"
         | "credit_requires_customer"
         | "delivery_requires_customer"
-        | "customer_not_found";
+        | "customer_not_found"
+        | "unpaid_sale_not_allowed"
+        | "not_found";
     };
 
 type PriceAndCreateSaleResult =
@@ -116,7 +123,14 @@ async function priceAndCreateSale(
   const totalMinor =
     saleLines.reduce((sum, l) => sum + l.quantity * l.priceMinor, 0) + (deliveryFeeMinor ?? 0);
   const paidMinor = input.paymentLines.reduce((sum, p) => sum + p.amountMinor, 0);
-  if (paidMinor !== totalMinor) {
+  // docs/proposal.md §4 (revised 2026-08-13): a canteen cash/M-Pesa sale
+  // carries no payment line at the point of entry — it's reconciled
+  // against the day's declared handover totals instead of per sale, since
+  // per-sale payment entry is too slow for rush trade. Zero payment lines
+  // is that case and skips the match check entirely; any payment lines
+  // present (a credit sale, or an ordinary restaurant sale) must still
+  // balance exactly, unchanged from before.
+  if (input.paymentLines.length > 0 && paidMinor !== totalMinor) {
     return { ok: false, reason: "payment_mismatch" };
   }
 
@@ -170,6 +184,19 @@ export async function recordCounterSale(
   const fulfilment = input.fulfilment ?? "counter";
   if (requester.staff.role === "store_manager" && fulfilment !== "delivery") {
     return { ok: false, reason: "forbidden" };
+  }
+
+  // docs/proposal.md §4 (revised 2026-08-13): only the canteen records a
+  // sale with no payment line at entry, reconciled later via the day's
+  // handover total. The restaurant's per-sale payment discipline stays
+  // enforced by the system, not just by the till UI always sending
+  // payment lines — the exact gap that let BUG-10's double-count happen
+  // undetected.
+  if (input.paymentLines.length === 0) {
+    const location = await findLocationById(db, locationId);
+    if (location?.code !== "canteen") {
+      return { ok: false, reason: "unpaid_sale_not_allowed" };
+    }
   }
 
   return priceAndCreateSale(db, requester, locationId, input, {

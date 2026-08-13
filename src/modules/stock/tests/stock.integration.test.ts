@@ -136,3 +136,74 @@ describe("getCurrentStockAtLocation", () => {
     expect(result).toEqual({ ok: false, reason: "not_found" });
   });
 });
+
+// Ticket 53: own vs transferred-in on StockLevel now comes from
+// Product.locationId (docs/architecture.md's "Product home location" note),
+// not a "received directly vs arrived by transfer" movement-history
+// heuristic — the staff-shell Stock page's My stock / From restaurant
+// filter reads this same isOwn field.
+describe("getCurrentStockAtLocation — isOwn", () => {
+  let canteenOwnedProductId: string;
+  let transferredInProductId: string;
+
+  beforeAll(async () => {
+    const canteenOwnedProduct = await testDb.product.create({
+      data: { name: "Biscuits", kind: "goods", locationId: canteenId },
+    });
+    canteenOwnedProductId = canteenOwnedProduct.id;
+
+    const transferredInProduct = await testDb.product.create({
+      data: { name: "Chapati", kind: "cooked_food", locationId: restaurantId },
+    });
+    transferredInProductId = transferredInProduct.id;
+
+    const staff = await testDb.staffMember.findFirstOrThrow({
+      where: { locationId: restaurantId },
+    });
+
+    await testDb.stockMovement.createMany({
+      data: [
+        {
+          productId: canteenOwnedProductId,
+          locationId: canteenId,
+          quantity: 25,
+          reason: "received",
+          staffMemberId: staff.id,
+        },
+        {
+          productId: transferredInProductId,
+          locationId: canteenId,
+          quantity: 20,
+          reason: "transferred",
+          staffMemberId: staff.id,
+        },
+      ],
+    });
+  });
+
+  test("a product whose home location is here is own, regardless of movement reason", async () => {
+    const result = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", canteenId, "canteen"),
+      canteenId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const line = result.levels.find((l) => l.productId === canteenOwnedProductId);
+    expect(line).toMatchObject({ isOwn: true, quantityOnHand: 25 });
+  });
+
+  test("a product transferred in whose home location is elsewhere is not own", async () => {
+    const result = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", canteenId, "canteen"),
+      canteenId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const line = result.levels.find((l) => l.productId === transferredInProductId);
+    expect(line).toMatchObject({ isOwn: false, quantityOnHand: 20 });
+  });
+});

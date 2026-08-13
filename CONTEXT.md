@@ -81,15 +81,14 @@ shelf, at whatever cycle suits each location's stock. It is an **event, not a sc
 it may be taken on any day — but it no longer determines the period for any revenue or cost
 figure, since those now come from sales as recorded.
 
-## Takings
+## Takings — retired 2026-08-13
 
-*Revised 2026-08-13 — the canteen now records individual [[Sale]]s, so this is no longer a
-separate record of what sold. See [[Sale]] and [[Handover]].*
-
-The cash and M-Pesa totals a [[Staff Member]] declares and hands over at the close of a day,
-at either [[Location]]. What she is handing over — not, as before, the system's only record of
-what sold at the canteen. What sold is now the sum of that day's recorded [[Sale]]s at both
-locations, and takings are checked against that sum the same way at both.
+Removed, not merely redefined. Takings used to be a separate record — cash and M-Pesa totals
+declared at close — because the canteen had no other record of what sold. Now that the canteen
+records individual [[Sale]]s the same as the restaurant, that separate declaration step no
+longer answers a question nothing else already answers: what she is handing over is entered
+directly on the [[Handover]] itself (cash held, M-Pesa held), the same single step a
+restaurant cashier already goes through. See [[Sale]] and [[Handover]].
 
 ## Sale
 
@@ -109,8 +108,9 @@ Credit is a payment line like any other, settled later. See [[Customer]].
 **Sales are recorded per sale at both locations.** *Revised 2026-08-13.* A canteen sale
 records product and quantity, the same as a restaurant sale, but carries **no payment line at
 the point of entry** — trade is too fast, mid-rush, for payment method to be captured per
-sale. Instead the attendant declares cash and M-Pesa [[Takings]] totals at close, checked
-against the day's recorded sales as a whole rather than reconciled line by line. A credit sale
+sale. It is settled at close instead, when the attendant hands over: the cash and M-Pesa she
+is holding are entered directly on the [[Handover]] and checked against the day's recorded
+sales as a combined total rather than reconciled line by line. A credit sale
 is the one exception: it is still recorded individually with a named [[Customer]] attached, at
 either location, because a debt needs a name and cannot be inferred from a total.
 
@@ -194,7 +194,13 @@ handing over does not control. Cash cannot be independently verified the same wa
 location; the periodic count is a secondary shrinkage check, not the primary basis for the
 expected figure — see `docs/formulas.md`.
 
-Cash and M-Pesa are handed over and checked separately.
+**Restaurant** — cash and M-Pesa are handed over and checked separately, since a restaurant
+sale carries a real payment method per line.
+
+**Canteen** — checked as one **combined** figure. A canteen [[Sale]] carries no payment method
+at entry, so the split between cash and M-Pesa expected is not knowable from the sale record;
+only the combined total is. What she hands over (cash held plus M-Pesa held) is compared
+against that one combined expectation, not against each currency separately.
 
 ## Cash Movement
 

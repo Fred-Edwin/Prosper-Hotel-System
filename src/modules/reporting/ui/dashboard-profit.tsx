@@ -15,53 +15,41 @@
  * were added to the same ticket by user decision (2026-08-11) once ticket
  * 25's own text ruled them out as already-real elsewhere, since a
  * partly-placeholder waterfall wasn't what was wanted — see the ticket file
- * for that scope note. Every canteen figure here is provisional
- * (formulas.md §7's own-goods estimate) and labelled as such; restaurant,
- * revenue and running costs are final.
+ * for that scope note.
+ *
+ * 2026-08-13 canteen redesign, item 8: the canteen's cost of goods and
+ * profit are final now, same status as the restaurant's — the count-
+ * derived estimate (canteenCostRate/lastCanteenCount/canteenEstimated/
+ * provisional) this view previously read no longer exists in
+ * getDashboardProfit's response (see reporting/logic.ts). Every figure
+ * here is final and presented the same way, no "provisional" badge.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import {
   SectionHeader,
   ErrorState,
   PermissionDenied,
 } from "@/components/patterns/states";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRight, Info } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { money } from "@/shared/money";
 
 export type DashboardProfitLocationBreakdown = {
   revenueMinor: number;
-  costOfGoodsMinor: number | null;
-  grossProfitMinor: number | null;
+  costOfGoodsMinor: number;
+  grossProfitMinor: number;
   runningCostsMinor: number;
-  netProfitMinor: number | null;
-  provisional: boolean;
+  netProfitMinor: number;
 };
 
 export type DashboardProfitData = {
   revenue: { restaurant: number; canteen: number; total: number };
-  costOfGoods: {
-    restaurant: number;
-    canteenExact: number;
-    canteenEstimated: number | null;
-    total: number | null;
-  };
+  costOfGoods: { restaurant: number; canteen: number; total: number };
   runningCostsMinor: number;
-  grossProfitMinor: number | null;
-  netProfitMinor: number | null;
-  canteenCostRate: number | null;
-  lastCanteenCount: string | null;
-  correction:
-    | {
-        available: true;
-        estimatedSinceLastCountMinor: number;
-        measuredAtCountMinor: number;
-        differenceMinor: number;
-      }
-    | { available: false };
+  grossProfitMinor: number;
+  netProfitMinor: number;
   byLocation: {
     restaurant: DashboardProfitLocationBreakdown;
     canteen: DashboardProfitLocationBreakdown;
@@ -253,7 +241,6 @@ function DashboardProfitViewForPeriod({
     value: number | null;
     width: number;
     colour: string;
-    provisional?: boolean;
     operator?: string;
   }[] = [
     {
@@ -269,7 +256,6 @@ function DashboardProfitViewForPeriod({
       value: data.costOfGoods.total,
       width: pct(data.costOfGoods.total),
       colour: "var(--color-danger)",
-      provisional: true,
       operator: "−",
     },
     {
@@ -286,7 +272,6 @@ function DashboardProfitViewForPeriod({
       value: data.netProfitMinor,
       width: pct(data.netProfitMinor),
       colour: "var(--color-success)",
-      provisional: true,
       operator: "=",
     },
   ];
@@ -297,9 +282,6 @@ function DashboardProfitViewForPeriod({
       <div className="flex items-center justify-between px-5 pt-4 pb-3">
         <h2 className="text-sm font-medium">Profit</h2>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[10px] font-normal">
-            partly provisional
-          </Badge>
           <Tabs value={period} onValueChange={(value) => onPeriodChange(value as Period)}>
             <TabsList>
               <TabsTrigger value="day">Day</TabsTrigger>
@@ -365,50 +347,10 @@ function DashboardProfitViewForPeriod({
           {open === "cogs" && (
             <Detail title="What stock was used up">
               <Term label="Restaurant" value={data.costOfGoods.restaurant} muted />
-              <div className="mt-3 border-t pt-2">
-                <Term label="Canteen — food from restaurant" value={data.costOfGoods.canteenExact} muted />
-                <Term
-                  label={
-                    data.canteenCostRate != null
-                      ? `Canteen — own goods, takings × ${(data.canteenCostRate * 100).toFixed(0)}%`
-                      : "Canteen — own goods (no count yet)"
-                  }
-                  value={data.costOfGoods.canteenEstimated}
-                  muted
-                  note="estimated"
-                />
-                <Term
-                  label="Canteen cost"
-                  value={
-                    data.costOfGoods.canteenEstimated != null
-                      ? data.costOfGoods.canteenExact + data.costOfGoods.canteenEstimated
-                      : null
-                  }
-                  rule
-                  strong
-                />
-              </div>
+              <Term label="Canteen" value={data.costOfGoods.canteen} muted />
               <div className="mt-3 border-t pt-2">
                 <Term label="Cost of goods sold" value={data.costOfGoods.total} strong />
               </div>
-              <div className="mt-3">
-                <ProvisionalNote lastCount={data.lastCanteenCount} />
-              </div>
-              {data.correction.available && (
-                <div className="mt-3 border-t pt-2" data-testid="dashboard-profit-correction">
-                  <h4 className="mb-1 text-[11px] font-medium text-muted-foreground">
-                    The last count corrected the estimate
-                  </h4>
-                  <Term label="Estimated since last count" value={data.correction.estimatedSinceLastCountMinor} muted />
-                  <Term label="Measured at the count" value={data.correction.measuredAtCountMinor} muted />
-                  <Term
-                    label="Correction"
-                    value={data.correction.differenceMinor}
-                    sign={data.correction.differenceMinor < 0 ? "−" : undefined}
-                    strong
-                  />
-                </div>
-              )}
             </Detail>
           )}
           {open === "running" && (
@@ -426,14 +368,6 @@ function DashboardProfitViewForPeriod({
               <Term label="Gross profit" value={data.grossProfitMinor} rule strong />
               <Term label="Running costs" value={data.runningCostsMinor} sign="−" muted />
               <Term label="Net profit" value={data.netProfitMinor} rule strong />
-              {data.netProfitMinor == null && (
-                <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
-                  <Info className="mt-0.5 size-3 shrink-0" />
-                  Business-wide profit isn&apos;t available until the canteen has a rate to cost
-                  its own goods against — see the restaurant&apos;s figures under &ldquo;By
-                  location&rdquo; below.
-                </p>
-              )}
             </Detail>
           )}
           <LedgerLink />
@@ -461,11 +395,6 @@ function ByLocation({ byLocation }: { byLocation: DashboardProfitData["byLocatio
             <div key={key} className="px-5 py-3">
               <div className="mb-2 flex items-center gap-1.5">
                 <span className="text-sm font-medium">{label}</span>
-                {l.provisional && (
-                  <Badge variant="outline" className="text-[10px] font-normal">
-                    provisional
-                  </Badge>
-                )}
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
                 <LocationCell label="Revenue" value={l.revenueMinor} />
@@ -475,7 +404,7 @@ function ByLocation({ byLocation }: { byLocation: DashboardProfitData["byLocatio
                 <LocationCell
                   label="Net profit"
                   value={l.netProfitMinor}
-                  tone={l.netProfitMinor != null && l.netProfitMinor < 0 ? "danger" : undefined}
+                  tone={l.netProfitMinor < 0 ? "danger" : undefined}
                 />
               </div>
             </div>
@@ -521,7 +450,6 @@ function Term({
   rule,
   strong,
   muted,
-  note,
 }: {
   label: string;
   value: number | null;
@@ -529,20 +457,12 @@ function Term({
   rule?: boolean;
   strong?: boolean;
   muted?: boolean;
-  note?: string;
 }) {
   return (
     <div
       className={`flex items-baseline justify-between gap-3 py-1 text-sm ${rule ? "mt-1 border-t pt-2" : ""} ${strong ? "font-semibold" : ""}`}
     >
-      <span className={muted ? "text-muted-foreground" : ""}>
-        {label}
-        {note && (
-          <Badge variant="outline" className="ml-1.5 text-[10px] font-normal">
-            {note}
-          </Badge>
-        )}
-      </span>
+      <span className={muted ? "text-muted-foreground" : ""}>{label}</span>
       <span className="tabular whitespace-nowrap">
         {value == null ? "—" : (sign === "−" ? "−" : "") + money(Math.abs(value))}
       </span>
@@ -555,16 +475,5 @@ function LedgerLink({ label = "Open the ledger" }: { label?: string }) {
     <button className="mt-2 flex items-center gap-1 text-xs text-muted-foreground transition-colors duration-100 hover:text-foreground">
       {label} <ArrowRight className="size-3" />
     </button>
-  );
-}
-
-function ProvisionalNote({ lastCount }: { lastCount: string | null }) {
-  return (
-    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-      <Info className="mt-0.5 size-3 shrink-0" />
-      {lastCount
-        ? `Canteen own-goods cost is estimated from the rate measured at the last count on ${new Date(lastCount).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}. Replaced by a measured figure at the next count, and the correction is reported rather than applied silently.`
-        : "Canteen own-goods cost has no measured rate yet — record a canteen stock count to replace this estimate with a real figure."}
-    </p>
   );
 }

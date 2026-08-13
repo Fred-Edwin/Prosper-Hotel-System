@@ -42,13 +42,15 @@ export type TransferVariantKind = "inline" | "tray" | "review";
 
 export function TransferVariant({ variant, items = defaultInventory, onTransfer }: { variant: TransferVariantKind; items?: TransferDraftItem[]; onTransfer?: (lines: DraftLine[]) => Promise<boolean> }) {
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"Product" | "Ingredient">("Product");
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const shown = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return term ? items.filter((item) => item.name.toLowerCase().includes(term)) : items;
-  }, [items, query]);
+    const byType = items.filter((item) => item.type === tab);
+    return term ? byType.filter((item) => item.name.toLowerCase().includes(term)) : byType;
+  }, [items, query, tab]);
 
   const add = (item: TransferDraftItem) => {
     setDraft((current) => {
@@ -82,9 +84,40 @@ export function TransferVariant({ variant, items = defaultInventory, onTransfer 
     <div className="flex min-h-full flex-col" data-testid={`transfer-variant-${variant}`}>
       <RouteHeader />
       <section className="border-b bg-card p-3">
+        <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="Item type">
+          <button
+            role="tab"
+            aria-selected={tab === "Product"}
+            onClick={() => setTab("Product")}
+            data-testid="transfer-tab-product"
+            className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+              tab === "Product" ? "bg-card shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            Products
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "Ingredient"}
+            onClick={() => setTab("Ingredient")}
+            data-testid="transfer-tab-ingredient"
+            className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+              tab === "Ingredient" ? "bg-card shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            Ingredients
+          </button>
+        </div>
         <div className="relative">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 pl-9" placeholder="Search stock" aria-label="Search stock" autoFocus />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-11 pl-9"
+            placeholder={tab === "Product" ? "Search products" : "Search ingredients"}
+            aria-label="Search stock"
+            autoFocus
+          />
         </div>
       </section>
       {variant === "inline" && <DraftRows draft={draft} onQuantity={setQuantity} onRemove={remove} />}
@@ -93,7 +126,11 @@ export function TransferVariant({ variant, items = defaultInventory, onTransfer 
           <p className="text-sm font-medium">Stock on hand</p>
           <p className="text-xs text-muted-foreground">{shown.length} items</p>
         </div>
-        {shown.length === 0 ? <p className="py-12 text-center text-sm text-muted-foreground">Nothing matches “{query}”.</p> : (
+        {shown.length === 0 ? (
+          <p className="py-12 text-center text-sm text-muted-foreground">
+            {query ? `Nothing matches “${query}”.` : tab === "Product" ? "No products on hand." : "No ingredients on hand."}
+          </p>
+        ) : (
           <div className="grid grid-cols-2 gap-2">
             {shown.map((item) => {
               const quantity = draft.find((line) => line.id === item.id)?.quantity;

@@ -10,6 +10,23 @@
  * the admin table on purpose: no table-toolbar chrome, no cost/value
  * columns (owner-only concerns), large tap-target rows per docs/design.md's
  * mobile rules rather than a dense record-table.
+ *
+ * 2026-08-13 canteen redesign, item 3: at the canteen only, a two-tab
+ * filter — "My stock" (hers) vs "From restaurant" (arrived by transfer) —
+ * per docs/scope.md's definition of done and docs/proposal.md §4 ("her
+ * stock screen distinguishes the two only for her own reference... not
+ * because they are recorded differently"). Same tab pattern as
+ * receive-delivery.tsx's Ingredients/Products toggle, reused rather than
+ * invented. Restaurant-only staff never see this — their stock is entirely
+ * their own by definition.
+ *
+ * Ticket 53: the own/transferred-in classification now comes from
+ * StockLevel.isOwn (Product.locationId === here), the same rule New Sale
+ * and Credit Sale use to decide what's sellable — replacing an earlier
+ * "received directly vs arrived by transfer" movement-history heuristic
+ * and its dedicated by-source endpoint, superseded once Product.locationId
+ * existed to answer the question directly. The tabbed interaction itself
+ * (not a stacked-sections layout) is unchanged.
  */
 
 import { useEffect, useState } from "react";
@@ -41,12 +58,21 @@ async function fetchStock(locationId: string): Promise<LoadState> {
   }
 }
 
-export function StockList({ locationId }: { locationId: string }) {
+export function StockList({
+  locationId,
+  isCanteen = false,
+}: {
+  locationId: string;
+  /** Only the canteen sources stock two ways — restaurant-only staff never
+   * see the My stock / From restaurant split. */
+  isCanteen?: boolean;
+}) {
   const [attempt, setAttempt] = useState(0);
   return (
     <StockListForAttempt
       key={`${locationId}-${attempt}`}
       locationId={locationId}
+      isCanteen={isCanteen}
       onRetry={() => setAttempt((a) => a + 1)}
     />
   );
@@ -54,9 +80,11 @@ export function StockList({ locationId }: { locationId: string }) {
 
 function StockListForAttempt({
   locationId,
+  isCanteen,
   onRetry,
 }: {
   locationId: string;
+  isCanteen: boolean;
   onRetry: () => void;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -71,18 +99,24 @@ function StockListForAttempt({
     };
   }, [locationId]);
 
-  return <StockListView state={state} onRetry={onRetry} />;
+  return <StockListView state={state} onRetry={onRetry} isCanteen={isCanteen} />;
 }
+
+type SourceFilter = "all" | "own" | "transferred";
 
 /** The presentational half, driven by state rather than fetching — this is
  * what Storybook mounts to show every state without a network. */
 export function StockListView({
   state,
   onRetry = () => {},
+  isCanteen = false,
 }: {
   state: LoadState;
   onRetry?: () => void;
+  isCanteen?: boolean;
 }) {
+  const [filter, setFilter] = useState<SourceFilter>("all");
+
   if (state.status === "loading") {
     return (
       <div className="p-3" data-testid="stock-loading">
@@ -127,61 +161,74 @@ export function StockListView({
     );
   }
 
-  const own = state.levels.filter((l) => l.isOwn);
-  const transferredIn = state.levels.filter((l) => !l.isOwn);
+  const shown = isCanteen
+    ? state.levels.filter((level) => {
+        if (filter === "all") return true;
+        return filter === "own" ? level.isOwn : !level.isOwn;
+      })
+    : state.levels;
 
   return (
-    <div className="p-3" data-testid="stock-list">
-      {own.length > 0 && (
-        <StockLevelGroup title="My stock" levels={own} testIdPrefix="own" />
-      )}
-      {transferredIn.length > 0 && (
-        <StockLevelGroup
-          title="From another location"
-          levels={transferredIn}
-          testIdPrefix="transferred"
-          className={own.length > 0 ? "mt-4" : undefined}
-        />
-      )}
-    </div>
-  );
-}
-
-/** A titled section of stock rows — "My stock" / "From another location",
- * docs/architecture.md's required split between a location's own products
- * and items on hand there only via a confirmed transfer. Mirrors new-sale.tsx's
- * ProductTileGroup split, applied to rows instead of tiles. */
-function StockLevelGroup({
-  title,
-  levels,
-  testIdPrefix,
-  className,
-}: {
-  title: string;
-  levels: StockLevel[];
-  testIdPrefix: string;
-  className?: string;
-}) {
-  return (
-    <div className={className}>
-      <h3 className="mb-1.5 px-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {title}
-      </h3>
-      {levels.map((level) => (
+    <div className="p-3">
+      {isCanteen && (
         <div
-          key={level.productId}
-          className="mb-2 flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
-          data-testid="stock-row"
-          data-source={testIdPrefix}
+          className="mb-3 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1"
+          role="tablist"
+          aria-label="Stock source"
         >
-          <span className="min-w-0 truncate text-[13px] font-medium">
-            {level.productName}
-          </span>
-          <span className="shrink-0 text-[15px] font-semibold tabular-nums">
-            {level.quantityOnHand}
-          </span>
+          {(
+            [
+              { key: "all" as const, label: "All" },
+              { key: "own" as const, label: "My stock" },
+              { key: "transferred" as const, label: "From restaurant" },
+            ]
+          ).map((tab) => (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={filter === tab.key}
+              onClick={() => setFilter(tab.key)}
+              data-testid={`stock-source-tab-${tab.key}`}
+              className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+                filter === tab.key ? "bg-card shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-      ))}
+      )}
+
+      {shown.length === 0 ? (
+        <div className="py-12 text-center" data-testid="stock-filtered-empty">
+          <p className="text-sm text-muted-foreground">
+            {filter === "own" ? "Nothing you've stocked directly yet." : "Nothing from the restaurant yet."}
+          </p>
+          <button
+            className="mt-3 text-[13px] font-medium text-primary underline-offset-2 hover:underline"
+            onClick={() => setFilter("all")}
+          >
+            Clear filter
+          </button>
+        </div>
+      ) : (
+        <div data-testid="stock-list">
+          {shown.map((level) => (
+            <div
+              key={level.productId}
+              className="mb-2 flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
+              data-testid="stock-row"
+            >
+              <span className="min-w-0 truncate text-[13px] font-medium">
+                {level.productName}
+              </span>
+              <span className="shrink-0 text-[15px] font-semibold tabular-nums">
+                {level.quantityOnHand}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

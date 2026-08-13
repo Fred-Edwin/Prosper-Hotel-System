@@ -7,7 +7,6 @@ import {
   getTodaysHandoversAtLocation,
   isDayClosedFor,
   recordHandover,
-  recordTakings,
 } from "../logic";
 import { testDb } from "@/shared/test-db";
 
@@ -98,7 +97,6 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await testDb.handover.deleteMany({});
-  await testDb.takings.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
@@ -108,7 +106,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await testDb.handover.deleteMany({});
-  await testDb.takings.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
@@ -270,7 +267,6 @@ describe("recordHandover", () => {
       location: { id: canteenId, code: "canteen", name: "Test Canteen" },
     };
 
-    await recordTakings(testDb, cashierAtCanteen, { cashMinor: 0, mpesaMinor: 0 });
     const result = await recordHandover(testDb, cashierAtCanteen, { cashMinor: 0, mpesaMinor: 0 });
 
     expect(result.ok).toBe(true);
@@ -279,61 +275,89 @@ describe("recordHandover", () => {
   });
 });
 
+// 2026-08-13 revision: the canteen records real sales the same as the
+// restaurant (docs/proposal.md §4), with no payment line at entry — the
+// expected figure is the combined total of those sales, and
+// expectedMpesaMinor is null (see Handover.expectedMpesaMinor's schema
+// comment) rather than a separately declared Takings total.
 describe("recordHandover — canteen", () => {
   function attendant(): AuthenticatedStaff {
     return staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
   }
 
-  test("expected cash/M-Pesa equal today's recorded Takings exactly, not summed sales", async () => {
-    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+  test("expected is the combined total of today's recorded sales, with no separate M-Pesa split", async () => {
+    await recordCounterSale(testDb, attendant(), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [],
+    });
 
     const result = await recordHandover(testDb, attendant(), {
-      cashMinor: 5000,
-      mpesaMinor: 3200,
+      cashMinor: 100,
+      mpesaMinor: 60,
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.handover.expectedCashMinor).toBe(5000);
-    expect(result.handover.expectedMpesaMinor).toBe(3200);
+    expect(result.handover.expectedCashMinor).toBe(160);
+    expect(result.handover.expectedMpesaMinor).toBeNull();
   });
 
-  test("a mismatch between actual and takings-derived expected does not block recording", async () => {
-    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+  test("a mismatch between the combined actual and expected does not block recording", async () => {
+    await recordCounterSale(testDb, attendant(), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [],
+    });
 
     const result = await recordHandover(testDb, attendant(), {
-      cashMinor: 4750,
-      mpesaMinor: 3200,
+      cashMinor: 100,
+      mpesaMinor: 0,
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.handover.expectedCashMinor).toBe(5000);
-    expect(result.handover.actualCashMinor).toBe(4750);
+    expect(result.handover.expectedCashMinor).toBe(160);
+    expect(result.handover.actualCashMinor).toBe(100);
   });
 
-  test("is blocked with takings_not_recorded when no takings have been recorded yet today", async () => {
-    const result = await recordHandover(testDb, attendant(), { cashMinor: 100, mpesaMinor: 0 });
+  test("can be recorded with nothing sold yet today — no Takings step blocking it", async () => {
+    const result = await recordHandover(testDb, attendant(), { cashMinor: 0, mpesaMinor: 0 });
 
-    expect(result).toEqual({ ok: false, reason: "takings_not_recorded" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handover.expectedCashMinor).toBe(0);
+  });
 
-    const rows = await testDb.handover.findMany({ where: { locationId: canteenId } });
-    expect(rows).toHaveLength(0);
+  test("a credit sale is excluded from the expected total", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Jane Wanjiru" } });
+    await recordCounterSale(testDb, attendant(), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      customerId: customer.id,
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    const result = await recordHandover(testDb, attendant(), { cashMinor: 0, mpesaMinor: 0 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.handover.expectedCashMinor).toBe(0);
   });
 
   test("a second attempt the same day at the canteen is rejected once the day is closed", async () => {
-    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+    await recordCounterSale(testDb, attendant(), {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [],
+    });
 
-    const first = await recordHandover(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
+    const first = await recordHandover(testDb, attendant(), { cashMinor: 160, mpesaMinor: 0 });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
 
-    const second = await recordHandover(testDb, attendant(), { cashMinor: 4800, mpesaMinor: 3200 });
+    const second = await recordHandover(testDb, attendant(), { cashMinor: 100, mpesaMinor: 0 });
     expect(second).toEqual({ ok: false, reason: "day_closed" });
 
     const all = await testDb.handover.findMany({ where: { staffMemberId: "staff-3" } });
     expect(all).toHaveLength(1);
-    expect(all[0].actualCashMinor).toBe(5000);
+    expect(all[0].actualCashMinor).toBe(160);
   });
 });
 
@@ -341,7 +365,7 @@ describe("getTodaysHandoverForStaff", () => {
   test("returns null when nothing has been recorded today", async () => {
     const result = await getTodaysHandoverForStaff(testDb, staffAt("cashier", restaurantId));
 
-    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: true });
+    expect(result).toEqual({ ok: true, handover: null });
   });
 
   test("returns the requester's own handover for today after recording", async () => {
@@ -367,24 +391,15 @@ describe("getTodaysHandoverForStaff", () => {
 
     const result = await getTodaysHandoverForStaff(testDb, staffAt("cashier", restaurantId));
 
-    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: true });
+    expect(result).toEqual({ ok: true, handover: null });
   });
 
-  test("reports takingsRecordedToday false at the canteen when no takings have been recorded", async () => {
+  test("at the canteen, returns null with no blocking state when nothing has been recorded today", async () => {
     const attendant = staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
 
     const result = await getTodaysHandoverForStaff(testDb, attendant);
 
-    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: false });
-  });
-
-  test("reports takingsRecordedToday true at the canteen once takings have been recorded", async () => {
-    const attendant = staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
-    await recordTakings(testDb, attendant, { cashMinor: 5000, mpesaMinor: 3200 });
-
-    const result = await getTodaysHandoverForStaff(testDb, attendant);
-
-    expect(result).toEqual({ ok: true, handover: null, takingsRecordedToday: true });
+    expect(result).toEqual({ ok: true, handover: null });
   });
 });
 
@@ -493,53 +508,6 @@ describe("isDayClosedFor", () => {
 
     const closed = await isDayClosedFor(testDb, "staff-1", canteenId, new Date());
     expect(closed).toBe(false);
-  });
-});
-
-describe("recordTakings — day-close enforcement", () => {
-  function attendant(): AuthenticatedStaff {
-    return staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
-  }
-
-  test("a non-owner cannot edit takings after recording their own handover for the day", async () => {
-    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
-    const handover = await recordHandover(testDb, attendant(), {
-      cashMinor: 5000,
-      mpesaMinor: 3200,
-    });
-    expect(handover.ok).toBe(true);
-
-    const result = await recordTakings(testDb, attendant(), {
-      cashMinor: 5100,
-      mpesaMinor: 3200,
-    });
-
-    expect(result).toEqual({ ok: false, reason: "day_closed" });
-
-    const takings = await testDb.takings.findFirst({ where: { locationId: canteenId } });
-    expect(takings?.cashMinor).toBe(5000);
-  });
-
-  test("the owner can still edit takings after a handover has been recorded", async () => {
-    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
-    await recordHandover(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
-
-    const owner = staffAt("owner", canteenId, "canteen");
-    const result = await recordTakings(testDb, owner, { cashMinor: 5100, mpesaMinor: 3200 });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.takings.cashMinor).toBe(5100);
-  });
-
-  test("before any handover is recorded, takings can still be edited same-day", async () => {
-    await recordTakings(testDb, attendant(), { cashMinor: 5000, mpesaMinor: 3200 });
-
-    const result = await recordTakings(testDb, attendant(), { cashMinor: 5100, mpesaMinor: 3200 });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.takings.cashMinor).toBe(5100);
   });
 });
 

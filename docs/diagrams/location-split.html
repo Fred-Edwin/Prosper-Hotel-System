@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prosper Hotel · How the two locations trade</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-sans);
+      font-size: 0.9rem;
+      color: var(--color-muted);
+      margin-bottom: 1.5rem;
+      max-width: 680px;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Swimlane · Prosper Hotel</p>
+    <h1>Location is the cutting dimension</h1>
+    <p class="subtitle">Not a preference to configure away — it follows from how each location physically trades. Two stocking points supplying each other, not a hub and spoke.</p>
+
+    <svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="locsplit-title locsplit-desc">
+      <title id="locsplit-title">How the restaurant and canteen record trade differently</title>
+      <desc id="locsplit-desc">Swimlane showing the restaurant recording sales individually against a daily stock count, and the canteen recording takings at close against a weekly stock count, with prepared food and packaging materials transferred between the two lanes in both directions.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- Lane dividers -->
+      <line x1="140" y1="72" x2="140" y2="420" stroke="rgba(45,49,66,0.14)" stroke-width="1"/>
+      <line x1="140" y1="246" x2="960" y2="246" stroke="rgba(45,49,66,0.14)" stroke-width="1"/>
+
+      <!-- Lane labels -->
+      <text x="60" y="164" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle" transform="rotate(-90 60 164)">RESTAURANT</text>
+      <text x="60" y="338" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle" transform="rotate(-90 60 338)">CANTEEN</text>
+
+      <!-- ===== Restaurant lane ===== -->
+
+      <!-- Arrow: sale -> daily close -->
+      <path d="M 288,128 H 420 Q 428,128 428,136 V 152"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- Node: sale recorded (focal — the accent step, "as they happen") -->
+      <rect x="168" y="96" width="176" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="168" y="96" width="176" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="256" y="124" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Sale recorded</text>
+      <text x="256" y="140" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">per sale, as it happens</text>
+
+      <!-- Node: daily stock count -->
+      <rect x="360" y="152" width="176" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="360" y="152" width="176" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="448" y="180" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Daily stock count</text>
+      <text x="448" y="196" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">compared to closing balance</text>
+
+      <!-- Node: prepared food (source of transfer) -->
+      <rect x="600" y="96" width="176" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="600" y="96" width="176" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#7a8399" stroke-width="1"/>
+      <text x="688" y="124" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Prepared food</text>
+      <text x="688" y="140" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cooked, ready to send</text>
+
+      <!-- ===== Canteen lane ===== -->
+
+      <!-- Node: M-Pesa + cash read -->
+      <rect x="168" y="270" width="176" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="168" y="270" width="176" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="256" y="298" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">M-Pesa read aloud</text>
+      <text x="256" y="314" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">while distributing items</text>
+
+      <!-- Arrow: mpesa -> takings -->
+      <path d="M 288,302 H 420 Q 428,302 428,310 V 326"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- Node: takings at close (focal — the accent step, mirrors "sale recorded" on the other lane) -->
+      <rect x="360" y="326" width="176" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="360" y="326" width="176" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="448" y="354" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Takings entered</text>
+      <text x="448" y="370" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cash + M-Pesa totals, at close</text>
+
+      <!-- Node: weekly stock count -->
+      <rect x="600" y="270" width="176" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="600" y="270" width="176" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="688" y="298" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Weekly stock count</text>
+      <text x="688" y="314" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">own goods · item detail derived</text>
+
+      <!-- Node: packaging goods (source of return transfer) -->
+      <rect x="600" y="16" width="176" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="600" y="16" width="176" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#7a8399" stroke-width="1"/>
+      <text x="688" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Printing stock</text>
+      <text x="688" y="58" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">sent back to restaurant</text>
+
+      <!-- Transfer arrows across the lane boundary (the handoffs — most important edges) -->
+      <!-- Restaurant food -> canteen weekly count zone (down across boundary) -->
+      <path d="M 720,160 V 238 Q 720,246 712,246 H 700 V 270"
+            fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <rect x="700" y="196" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="736" y="205" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TRANSFER OUT</text>
+
+      <!-- Canteen printing stock -> restaurant (up, offset from the food arrow to stay independently traceable) -->
+      <path d="M 850,270 V 100 Q 850,72 822,72 H 776"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="812" y="150" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="848" y="159" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TRANSFER IN</text>
+
+      <!-- Legend -->
+      <line x1="40" y1="446" x2="960" y2="446" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="462" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+
+      <rect x="140" y="454" width="16" height="16" rx="3" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="164" y="466" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Where money is captured</text>
+
+      <line x1="420" y1="462" x2="452" y2="462" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="460" y="466" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Cross-lane transfer (both directions, never a hub)</text>
+    </svg>
+  </div>
+</body>
+</html>
