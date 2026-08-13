@@ -54,7 +54,7 @@ export function CustomerDetail({
   }, [customer.id]);
 
   async function handleRepay() {
-    const amountMinor = Math.round(Number(amount) * 100);
+    const amountMinor = Math.round(Number(amount));
     if (!amountMinor || amountMinor <= 0) {
       setError("Enter an amount greater than zero.");
       return;

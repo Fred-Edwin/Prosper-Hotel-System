@@ -808,6 +808,25 @@ describe("recordRepayment", () => {
     expect(result).toEqual({ ok: false, reason: "exceeds_balance" });
   });
 
+  // BUG-11 regression: the UI once sent amount * 100, so a repayment of the
+  // exact balance owed (unscaled) was rejected as exceeding it. Both halves
+  // matter — exact balance must succeed, balance + 1 must still be rejected.
+  test("a repayment of exactly the balance owed succeeds and zeroes the balance", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Kioko" } });
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    const result = await recordRepayment(testDb, staffAt("cashier", restaurantId), {
+      customerId: customer.id,
+      amountMinor: 80,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(0);
+  });
+
   test("rejects a repayment against an unknown customer", async () => {
     const result = await recordRepayment(testDb, staffAt("cashier", restaurantId), {
       customerId: "nonexistent",
@@ -911,6 +930,29 @@ describe("getTotalCustomerBalance — repayments", () => {
     const result = await getTotalCustomerBalance(testDb, staffAt("owner", restaurantId));
 
     expect(result).toEqual({ ok: true, totalMinor: 230 });
+  });
+
+  // BUG-12 regression: sumCreditForCustomer/sumCreditAcrossAllCustomers
+  // aggregated PaymentLine with no exclusion for voided sales, so a voided
+  // credit sale counted as debt forever.
+  test("a voided credit sale drops the customer's balance and the business-wide total to zero", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Fatuma" } });
+    const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 3 }],
+      paymentLines: [{ method: "credit", amountMinor: 240, customerId: customer.id }],
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(240);
+
+    const voided = await voidSale(testDb, staffAt("cashier", restaurantId), recorded.sale.id);
+    expect(voided.ok).toBe(true);
+
+    expect(await getCustomerBalance(testDb, customer.id)).toBe(0);
+
+    const total = await getTotalCustomerBalance(testDb, staffAt("owner", restaurantId));
+    expect(total).toEqual({ ok: true, totalMinor: 0 });
   });
 });
 

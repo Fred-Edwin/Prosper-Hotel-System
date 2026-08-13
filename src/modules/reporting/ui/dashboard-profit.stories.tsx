@@ -93,6 +93,11 @@ export const JustCorrectedByCount: Story = {
   },
 };
 
+// Finding 3: brand-new canteen, takings on day one but no count yet — the
+// own-goods rate is genuinely unavailable, not zero. Canteen cost/profit
+// figures render as "—", and the business-wide total shows only the
+// restaurant's exact figures (the canteen's takings still show under
+// Revenue — a rate being unavailable doesn't mean nothing was sold).
 export const NoCanteenCountYet: Story = {
   name: "No canteen count yet — own-goods rate unavailable",
   args: {
@@ -100,16 +105,16 @@ export const NoCanteenCountYet: Story = {
     state: {
       status: "ready",
       data: {
-        revenue: { restaurant: 1860000, canteen: 0, total: 1860000 },
+        revenue: { restaurant: 1860000, canteen: 400000, total: 2260000 },
         costOfGoods: {
           restaurant: 960000,
           canteenExact: 0,
-          canteenEstimated: 0,
-          total: 960000,
+          canteenEstimated: null,
+          total: null,
         },
         runningCostsMinor: 230000,
-        grossProfitMinor: 900000,
-        netProfitMinor: 670000,
+        grossProfitMinor: null,
+        netProfitMinor: null,
         canteenCostRate: null,
         lastCanteenCount: null,
         correction: { available: false },
@@ -123,11 +128,11 @@ export const NoCanteenCountYet: Story = {
             provisional: false,
           },
           canteen: {
-            revenueMinor: 0,
-            costOfGoodsMinor: 0,
-            grossProfitMinor: 0,
-            runningCostsMinor: 0,
-            netProfitMinor: 0,
+            revenueMinor: 400000,
+            costOfGoodsMinor: null,
+            grossProfitMinor: null,
+            runningCostsMinor: 50000,
+            netProfitMinor: null,
             provisional: true,
           },
         },

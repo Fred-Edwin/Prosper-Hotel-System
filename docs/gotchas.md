@@ -245,3 +245,31 @@ something looks off; hit it a second time before concluding the logic is
 wrong. Worth remembering before sinking time re-reading logic that
 already has passing integration tests.
 **Added:** 2026-08-10
+
+## Turning a zero-substituted figure into a genuine `null` can crash a UI that never expected `null`
+
+**Symptom:** After fixing a backend `logic.ts` function to return `null`
+for a genuinely uncomputable figure (instead of the old wrong default of
+`0`), a chart or card that consumed that figure crashed at runtime with
+`Cannot read properties of null (reading 'toLocaleString')`, thrown from
+inside `money()`.
+
+**Cause:** Elsewhere in the same result type, a *different* field was
+already legitimately `number | null` (e.g. `revenue: number | null` for
+a "closed day" gap). A consuming component wrote `money(x!)` — a
+non-null assertion — reasoning "this field is only null when the day is
+closed, and I already branched on that." That reasoning was true only
+because the sibling field (`netProfit`) had never actually been `null`
+on a traded day before; the type already said `number | null`, but no
+code path produced that combination. Fixing the backend to correctly
+return `null` in a new circumstance (a traded day with a genuinely
+uncomputable rate) exercised a path the `!` assertion was never actually
+safe for — the type was honest, the assertion wasn't.
+
+**Fix:** `grep` the whole codebase for every consumer of a field before
+loosening its computed value from "always a number" to "sometimes
+null," even when the type signature already said `number | null` for
+other reasons. A pre-existing `| null` in a type is not proof every `!`
+assertion against that field has been exercised — check what actually
+produced the value before the fix, not just what the type allowed.
+**Added:** 2026-08-13

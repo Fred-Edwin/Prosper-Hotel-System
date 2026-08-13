@@ -77,19 +77,22 @@ export async function listSalesInPeriod(
   });
 }
 
+// Non-void only, via the sale relation — "cancelled entries count
+// nowhere" (formulas.md's opening rule); BUG-12 was this filter missing.
 export async function sumCreditForCustomer(db: PrismaClient, customerId: string): Promise<number> {
   const result = await db.paymentLine.aggregate({
-    where: { customerId, method: "credit" },
+    where: { customerId, method: "credit", sale: { voided: false } },
     _sum: { amountMinor: true },
   });
   return result._sum.amountMinor ?? 0;
 }
 
 // Ticket 33: "Owed to you" on the Dashboard — the sum across all
-// customers, both locations, per formulas.md §11.
+// customers, both locations, per formulas.md §11. Non-void only, via the
+// sale relation — BUG-12 was this filter missing.
 export async function sumCreditAcrossAllCustomers(db: PrismaClient): Promise<number> {
   const result = await db.paymentLine.aggregate({
-    where: { method: "credit" },
+    where: { method: "credit", sale: { voided: false } },
     _sum: { amountMinor: true },
   });
   return result._sum.amountMinor ?? 0;
