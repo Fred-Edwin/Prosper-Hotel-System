@@ -273,3 +273,41 @@ other reasons. A pre-existing `| null` in a type is not proof every `!`
 assertion against that field has been exercised — check what actually
 produced the value before the fix, not just what the type allowed.
 **Added:** 2026-08-13
+
+**Follow-up, same day:** the 2026-08-13 canteen redesign (real sales
+instead of count-derived-sales) retires the entire class of bug this
+entry describes — `canteenCostRate`, `lastCanteenCount`,
+`canteenEstimated`, and `provisional` are gone from
+`getDashboardProfit`/`getLedgerSummary` entirely, and profit is never
+`null` at either location anymore. `dashboard-profit.tsx` and
+`ledger-shell.tsx` (and their stories) still reference these retired
+fields in their own local view types — they compile clean (the UI's
+types are independent of the API response) but will render `undefined`/
+`NaN` for the removed figures at runtime until a UI pass updates them.
+Known, disclosed gap from a backend-only implementation pass — not
+rediscovered, don't re-diagnose it as a new bug.
+
+## A `StockMovement` row can carry `quantity: 0` on purpose
+
+**Symptom:** Looks like a bug — why write a movement that doesn't move
+anything?
+
+**Cause:** `transfer_shortfall` (2026-08-13, REQ-02 Part A's two-sided
+transfers) needs to record "N units never arrived, attributable to this
+transfer" on the *receiving* location's ledger for reporting/audit
+purposes. The receiving side's actual stock change is already fully
+captured by the paired `transferred` row being written at only
+`+confirmedQuantity` (less than what was sent) — the sender's stock
+already left at the full `sentQuantity` when they sent it. Writing the
+shortfall as a further negative quantity on top of the already-reduced
+incoming amount double-counts the same missing unit (caught by an
+integration test expecting `quantityOnHand: 3` after sending 4 and
+confirming 3, which returned `2`).
+
+**Fix:** the shortfall row is a marker, not a quantity change —
+`quantity: 0`, `reason: "transfer_shortfall"`. The actual gap size lives
+on `Transfer.sentQuantity − Transfer.confirmedQuantity`, which any
+report reads from directly. Before assuming every `StockMovement`
+quantity must be non-zero, check whether the row's job is "change stock"
+or "attribute an event that already happened elsewhere."
+**Added:** 2026-08-13

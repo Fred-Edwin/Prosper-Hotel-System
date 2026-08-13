@@ -4,10 +4,8 @@ import { listReceiptsAtLocation } from "@/modules/stock";
 import {
   getTodaysHandoverForStaff,
   getTodaysHandoversAtLocation,
-  getTodaysTakingsForStaff,
   getRunningCashBalance,
   recordHandover,
-  recordTakings,
   listExpenses,
   recordExpense,
   reverseExpense,
@@ -77,7 +75,6 @@ export async function todaysHandoverRoute(): Promise<Response> {
         }
       : null,
     locationCode: session.location.code,
-    takingsRecordedToday: result.takingsRecordedToday,
   });
 }
 
@@ -106,46 +103,6 @@ export async function todaysHandoversAtRestaurantRoute(): Promise<Response> {
       actualMpesaMinor: h.actualMpesaMinor,
       occurredAt: h.occurredAt,
     })),
-  });
-}
-
-export async function recordTakingsRoute(request: Request): Promise<Response> {
-  const session = await getSession();
-  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
-
-  const body = await request.json();
-  const result = await recordTakings(db, session, {
-    cashMinor: body.cashMinor,
-    mpesaMinor: body.mpesaMinor,
-  });
-  if (!result.ok) {
-    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
-  }
-
-  return Response.json({
-    takings: {
-      cashMinor: result.takings.cashMinor,
-      mpesaMinor: result.takings.mpesaMinor,
-    },
-  });
-}
-
-export async function todaysTakingsRoute(): Promise<Response> {
-  const session = await getSession();
-  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
-
-  const result = await getTodaysTakingsForStaff(db, session);
-  if (!result.ok) {
-    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
-  }
-
-  return Response.json({
-    takings: result.takings
-      ? {
-          cashMinor: result.takings.cashMinor,
-          mpesaMinor: result.takings.mpesaMinor,
-        }
-      : null,
   });
 }
 

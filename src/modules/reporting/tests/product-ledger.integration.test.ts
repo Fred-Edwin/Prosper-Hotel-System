@@ -47,7 +47,6 @@ async function resetDb() {
   await testDb.stockMovement.deleteMany({});
   await testDb.ingredientMovement.deleteMany({});
   await testDb.expense.deleteMany({});
-  await testDb.takings.deleteMany({});
   await testDb.recipeLine.deleteMany({});
   await testDb.recipe.deleteMany({});
   await testDb.product.deleteMany({});

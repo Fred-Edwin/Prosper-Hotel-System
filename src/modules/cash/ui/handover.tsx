@@ -24,18 +24,15 @@
  * view — the ticket's own addition, since the prototype's static example
  * never had to render post-submit or same-day-reopen states.
  *
- * Ticket 27 extends this to the canteen rather than building a parallel
- * screen — same blind-count shape, only the expected-amount source differs
- * (Takings, not summed sales — see cash/logic.ts's computeExpectedFromTakings).
- * The blind count still applies at the canteen: the attendant never sees
- * the takings-derived expected figure any more than restaurant staff see
- * summed sales, so there is no "agreed/short/over" state here — that
- * comparison stays the owner's alone, in the Dashboard (out of this
- * ticket's scope). The one canteen-only addition is a **blocked** state:
- * if today's takings haven't been recorded yet, there is nothing real to
- * check the handover against, so recording is refused rather than silently
- * comparing against a false zero baseline (proposal.md §5 / CONTEXT.md's
- * Handover canteen case).
+ * Ticket 27 extended this to the canteen rather than building a parallel
+ * screen — same blind-count shape. Revised 2026-08-13: the canteen now
+ * records real sales the same as the restaurant (docs/proposal.md §4), so
+ * the expected figure is built from those sales at both locations —
+ * see cash/logic.ts's computeExpectedFromSales — and there is no longer a
+ * separate Takings declaration to record before a handover can be
+ * submitted. The "record today's takings first" blocked state this
+ * screen used to show at the canteen is retired along with Takings
+ * itself; handing over is the single step at both locations now.
  */
 
 import { useEffect, useState } from "react";
@@ -43,7 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ErrorState, PermissionDenied } from "@/components/patterns/states";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Check, Info, ClipboardList } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import { money } from "@/shared/money";
 
 export type HandoverView = {
@@ -61,7 +58,6 @@ export type LoadState =
       status: "ready";
       handover: HandoverView | null;
       locationCode: LocationCode;
-      takingsRecordedToday: boolean;
     };
 
 async function fetchTodaysHandover(): Promise<LoadState> {
@@ -74,7 +70,6 @@ async function fetchTodaysHandover(): Promise<LoadState> {
       status: "ready",
       handover: body.handover ?? null,
       locationCode: body.locationCode,
-      takingsRecordedToday: body.takingsRecordedToday,
     };
   } catch {
     return { status: "error" };
@@ -164,28 +159,6 @@ export function HandoverView({
     return (
       <div className="p-3">
         <ErrorState what="today's handover" onRetry={onRetry} />
-      </div>
-    );
-  }
-
-  // Canteen only: no takings recorded yet today means there is nothing
-  // real to check the handover against — same reasoning as ticket 24's
-  // first-count caveat. Recording is blocked at the data layer too
-  // (cash/logic.ts), this just gets ahead of it before the attendant
-  // starts a count that can't be submitted.
-  if (state.handover === null && !state.takingsRecordedToday) {
-    return (
-      <div className="p-3" data-testid="handover-takings-not-recorded">
-        <div className="flex flex-col items-center justify-center rounded-lg border bg-card px-6 py-16 text-center">
-          <div className="mb-3 flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <ClipboardList className="size-4" />
-          </div>
-          <p className="text-sm font-medium">Record today&apos;s takings first</p>
-          <p className="mt-1 max-w-sm text-[13px] text-muted-foreground">
-            The handover is checked against today&apos;s takings. Record
-            those first, then come back here.
-          </p>
-        </div>
       </div>
     );
   }
@@ -295,23 +268,17 @@ function HandoverCount({
             <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
             <p className="text-[11px] text-muted-foreground">
               {locationCode === "canteen"
-                ? "The owner checks this against today's takings. You can still change it later today if you need to."
+                ? "The owner checks this against today's recorded sales. You can still change it later today if you need to."
                 : "The owner checks this against what the till recorded. You can still change it later today if you need to."}
             </p>
           </div>
 
-          {submitError === "takings_not_recorded" && (
-            <p className="text-[12px] text-destructive" data-testid="handover-submit-error">
-              Today&apos;s takings haven&apos;t been recorded yet. Record those
-              first, then come back here.
-            </p>
-          )}
           {submitError === "day_closed" && (
             <p className="text-[12px] text-destructive" data-testid="handover-submit-error">
               This day is closed — ask the owner.
             </p>
           )}
-          {submitError && submitError !== "takings_not_recorded" && submitError !== "day_closed" && (
+          {submitError && submitError !== "day_closed" && (
             <p className="text-[12px] text-destructive" data-testid="handover-submit-error">
               Couldn&apos;t record the handover. Try again.
             </p>

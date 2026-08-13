@@ -14,7 +14,6 @@ import {
   recordProductCost,
   type Product,
 } from "@/modules/catalogue";
-import { creditSaleQuantityByProductAtLocation } from "@/modules/sales";
 import {
   createIngredientConsumptionMovement,
   createIngredientCorrectionMovement,
@@ -23,12 +22,13 @@ import {
   createProductionMovement,
   createStockCount,
   createStockMovement,
-  findDerivedSalesAtOccurredAt,
   findLatestStockCountAtLocation,
+  findPendingTransfersAtLocation,
   findPreviousStockCountAtLocation,
   findReceiptById,
   findReceiptsAtLocation,
   findStockCountById,
+  findTransferById,
   markStockCountLineCorrected,
   sumIngredientMovementsAtLocationAsOf,
   sumIngredientMovementsByReasonAtLocationInPeriod,
@@ -47,10 +47,10 @@ import {
   type NonSalesMovementLineWithLocation,
 } from "./queries";
 import type {
-  DerivedSaleLine,
   IngredientMovement,
   LowStockItem,
   NonSalesCategory,
+  PendingTransferForReader,
   Receipt,
   StockCount,
   StockCountItemType,
@@ -58,6 +58,7 @@ import type {
   StockLevel,
   StockMovement,
   StockMovementReason,
+  Transfer,
 } from "./schema";
 
 // CONTEXT.md's Non-sales Stock Consumption: where no per-unit cost is
@@ -348,7 +349,7 @@ export async function getTransferableItems(
 }
 
 export type RecordTransferResult =
-  | { ok: true; movements: [TransferMovement, TransferMovement] }
+  | { ok: true; transfers: [Transfer] }
   | {
       ok: false;
       reason:
@@ -362,12 +363,21 @@ export type RecordTransferResult =
     };
 
 export type RecordTransfersResult =
-  | { ok: true; movements: TransferMovement[] }
+  | { ok: true; transfers: Transfer[] }
   | Exclude<RecordTransferResult, { ok: true }>;
 
-// A transfer is a paired ledger event: the source loses stock at the same
-// moment the destination receives it. The transaction prevents a partial
-// transfer from ever being visible if the second write fails.
+// Added 2026-08-13 — REQ-02 Part A / docs/scope.md's canteen redesign.
+// A transfer is now two steps: the sender's stock leaves immediately
+// (the outgoing movement, written here), but the receiver's stock does
+// not increase until they separately confirm — see confirmTransfer
+// below. While pending, the sent quantity has already left the sender
+// and has not yet reached the receiver; neither location's stock count
+// includes it (getCurrentStockAtLocation only ever sums written
+// movements, and no incoming movement exists yet).
+//
+// Applies in both directions, restaurant→canteen and canteen→restaurant
+// — one consistent mechanic, not special-cased to either location, per
+// REQ-02's explicit framing in docs/feature-requests.md.
 export async function recordTransfer(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -385,7 +395,7 @@ export async function recordTransfer(
     lines: [{ itemType: input.itemType, itemId: input.itemId, quantity: input.quantity }],
   });
   if (!result.ok) return result;
-  return { ok: true, movements: [result.movements[0], result.movements[1]] };
+  return { ok: true, transfers: [result.transfers[0]] };
 }
 
 export async function recordTransfers(
@@ -395,14 +405,11 @@ export async function recordTransfers(
     fromLocationId: string;
     toLocationId: string;
     lines: { itemType: "product" | "ingredient"; itemId: string; quantity: number }[];
-    allowReversalFromOtherLocation?: boolean;
-    reversedTransferId?: string;
   },
 ): Promise<RecordTransfersResult> {
   if (
     requester.staff.role === "cashier" ||
-    (!input.allowReversalFromOtherLocation &&
-      !canAccessLocation(requester.staff.role, requester.staff.locationId, input.fromLocationId))
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, input.fromLocationId)
   ) {
     return { ok: false, reason: "forbidden" };
   }
@@ -418,122 +425,361 @@ export async function recordTransfers(
   if (!fromLocation || !toLocation) return { ok: false, reason: "not_found" };
 
   return db.$transaction(async (tx) => {
-    const transferId = crypto.randomUUID();
-    const movements: TransferMovement[] = [];
+    const transfers: Transfer[] = [];
 
     for (const line of input.lines) {
       if (line.itemType === "product") {
         const product = await tx.product.findUnique({ where: { id: line.itemId } });
-      if (!product) return { ok: false, reason: "not_found" } as const;
-      if (!product.active) return { ok: false, reason: "inactive_item" } as const;
+        if (!product) return { ok: false, reason: "not_found" } as const;
+        if (!product.active) return { ok: false, reason: "inactive_item" } as const;
 
-      const stock = await tx.stockMovement.aggregate({
-        where: { productId: product.id, locationId: input.fromLocationId },
-        _sum: { quantity: true },
-      });
+        const stock = await tx.stockMovement.aggregate({
+          where: { productId: product.id, locationId: input.fromLocationId },
+          _sum: { quantity: true },
+        });
         if ((stock._sum.quantity ?? 0) < line.quantity) {
-        return { ok: false, reason: "insufficient_stock" } as const;
-      }
+          return { ok: false, reason: "insufficient_stock" } as const;
+        }
 
-      const outgoing = await tx.stockMovement.create({
-        data: {
-          productId: product.id,
-          locationId: input.fromLocationId,
-          quantity: -line.quantity,
-          reason: "transferred",
-          staffMemberId: requester.staff.id,
-          transferId,
-          reversedTransferId: input.reversedTransferId,
-        },
-      });
-      const incoming = await tx.stockMovement.create({
-        data: {
-          productId: product.id,
-          locationId: input.toLocationId,
-          quantity: line.quantity,
-          reason: "transferred",
-          staffMemberId: requester.staff.id,
-          transferId,
-          reversedTransferId: input.reversedTransferId,
-        },
-      });
-        movements.push(outgoing, incoming);
+        const transfer = await tx.transfer.create({
+          data: {
+            fromLocationId: input.fromLocationId,
+            toLocationId: input.toLocationId,
+            itemType: "product",
+            itemId: product.id,
+            sentQuantity: line.quantity,
+            sentByStaffMemberId: requester.staff.id,
+          },
+        });
+        await tx.stockMovement.create({
+          data: {
+            productId: product.id,
+            locationId: input.fromLocationId,
+            quantity: -line.quantity,
+            reason: "transferred",
+            staffMemberId: requester.staff.id,
+            transferId: transfer.id,
+          },
+        });
+        transfers.push(transfer);
         continue;
       }
 
       const ingredient = await tx.ingredient.findUnique({ where: { id: line.itemId } });
-    if (!ingredient) return { ok: false, reason: "not_found" } as const;
-    if (!ingredient.active) return { ok: false, reason: "inactive_item" } as const;
+      if (!ingredient) return { ok: false, reason: "not_found" } as const;
+      if (!ingredient.active) return { ok: false, reason: "inactive_item" } as const;
 
-    const stock = await tx.ingredientMovement.aggregate({
-      where: { ingredientId: ingredient.id, locationId: input.fromLocationId },
-      _sum: { quantity: true },
-    });
+      const stock = await tx.ingredientMovement.aggregate({
+        where: { ingredientId: ingredient.id, locationId: input.fromLocationId },
+        _sum: { quantity: true },
+      });
       if ((stock._sum.quantity ?? 0) < line.quantity) {
-      return { ok: false, reason: "insufficient_stock" } as const;
+        return { ok: false, reason: "insufficient_stock" } as const;
+      }
+
+      const transfer = await tx.transfer.create({
+        data: {
+          fromLocationId: input.fromLocationId,
+          toLocationId: input.toLocationId,
+          itemType: "ingredient",
+          itemId: ingredient.id,
+          sentQuantity: line.quantity,
+          sentByStaffMemberId: requester.staff.id,
+        },
+      });
+      await tx.ingredientMovement.create({
+        data: {
+          ingredientId: ingredient.id,
+          locationId: input.fromLocationId,
+          quantity: -line.quantity,
+          reason: "transferred",
+          staffMemberId: requester.staff.id,
+          transferId: transfer.id,
+        },
+      });
+      transfers.push(transfer);
     }
 
-    const outgoing = await tx.ingredientMovement.create({
-      data: {
-        ingredientId: ingredient.id,
-        locationId: input.fromLocationId,
-        quantity: -line.quantity,
-        reason: "transferred",
-        staffMemberId: requester.staff.id,
-        transferId,
-        reversedTransferId: input.reversedTransferId,
-      },
-    });
-    const incoming = await tx.ingredientMovement.create({
-      data: {
-        ingredientId: ingredient.id,
-        locationId: input.toLocationId,
-        quantity: line.quantity,
-        reason: "transferred",
-        staffMemberId: requester.staff.id,
-        transferId,
-        reversedTransferId: input.reversedTransferId,
-      },
-    });
-      movements.push(outgoing, incoming);
-    }
-
-    return { ok: true, movements } as const;
+    return { ok: true, transfers } as const;
   });
 }
 
+export type PendingTransfersResult =
+  | { ok: true; transfers: PendingTransferForReader[] }
+  | { ok: false; reason: "forbidden" };
+
+// Added 2026-08-13 — REQ-02 Part A's unmissable notification: what a
+// location's staff should see the moment they land on a task screen,
+// surfaced from the home screen per docs/scope.md's definition of done
+// ("visible on the attendant's home screen without her navigating to
+// find it"). Applies at both locations, not canteen-only.
+export async function getPendingTransfersAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<PendingTransfersResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const transfers = await findPendingTransfersAtLocation(db, locationId);
+  return { ok: true, transfers };
+}
+
+export type ConfirmTransferResult =
+  | { ok: true; transfer: Transfer }
+  | {
+      ok: false;
+      reason: "forbidden" | "not_found" | "already_confirmed" | "invalid_quantity";
+    };
+
+// Added 2026-08-13. The receiving half of recordTransfers: only the
+// receiver, at the receiving location, may confirm — never the sender,
+// and never from the other location, since confirmation is a claim about
+// what physically arrived. A confirmed quantity less than what was sent
+// writes a transfer_shortfall movement for the gap (docs/proposal.md §4's
+// "auto-recorded as its own discrepancy movement"), distinct from
+// wastage or a stock-count correction. That movement carries quantity 0
+// — the loss is already fully reflected by the incoming movement being
+// only +confirmedQuantity (the sender's own -sentQuantity already
+// happened at send time), so a second deduction here would double-count
+// the same missing unit. The shortfall row exists purely as an
+// attributable, reportable marker ("N lost in transit on this
+// transfer") for the ledger/activity feed, not as a further stock
+// change. A confirmed quantity greater than what was sent is rejected
+// outright — there is nothing to attribute an excess to; that scenario
+// is a miscount to fix at the next physical count, not something this
+// action can absorb.
+export async function confirmTransfer(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { transferId: string; confirmedQuantity: number },
+): Promise<ConfirmTransferResult> {
+  const transfer = await findTransferById(db, input.transferId);
+  if (!transfer) return { ok: false, reason: "not_found" };
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, transfer.toLocationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (transfer.status !== "pending") return { ok: false, reason: "already_confirmed" };
+  if (input.confirmedQuantity < 0 || input.confirmedQuantity > transfer.sentQuantity) {
+    return { ok: false, reason: "invalid_quantity" };
+  }
+
+  const shortfall = transfer.sentQuantity - input.confirmedQuantity;
+
+  return db.$transaction(async (tx) => {
+    const updated = await tx.transfer.update({
+      where: { id: transfer.id },
+      data: {
+        status: "confirmed",
+        confirmedQuantity: input.confirmedQuantity,
+        confirmedByStaffMemberId: requester.staff.id,
+        confirmedAt: new Date(),
+      },
+    });
+
+    if (transfer.itemType === "product") {
+      if (input.confirmedQuantity > 0) {
+        await tx.stockMovement.create({
+          data: {
+            productId: transfer.itemId,
+            locationId: transfer.toLocationId,
+            quantity: input.confirmedQuantity,
+            reason: "transferred",
+            staffMemberId: requester.staff.id,
+            transferId: transfer.id,
+          },
+        });
+      }
+      if (shortfall > 0) {
+        // Quantity 0 — see this function's comment. shortfallQuantity is
+        // stored on the Transfer row itself (sentQuantity − confirmedQuantity)
+        // and is what "N lost in transit" actually reads.
+        await tx.stockMovement.create({
+          data: {
+            productId: transfer.itemId,
+            locationId: transfer.toLocationId,
+            quantity: 0,
+            reason: "transfer_shortfall",
+            staffMemberId: requester.staff.id,
+            transferId: transfer.id,
+          },
+        });
+      }
+    } else {
+      if (input.confirmedQuantity > 0) {
+        await tx.ingredientMovement.create({
+          data: {
+            ingredientId: transfer.itemId,
+            locationId: transfer.toLocationId,
+            quantity: input.confirmedQuantity,
+            reason: "transferred",
+            staffMemberId: requester.staff.id,
+            transferId: transfer.id,
+          },
+        });
+      }
+      if (shortfall > 0) {
+        // Quantity 0 — see this function's comment above.
+        await tx.ingredientMovement.create({
+          data: {
+            ingredientId: transfer.itemId,
+            locationId: transfer.toLocationId,
+            quantity: 0,
+            reason: "transfer_shortfall",
+            staffMemberId: requester.staff.id,
+            transferId: transfer.id,
+          },
+        });
+      }
+    }
+
+    return { ok: true, transfer: updated } as const;
+  });
+}
+
+export type CancelPendingTransferResult =
+  | { ok: true; transfer: Transfer }
+  | { ok: false; reason: "forbidden" | "not_found" | "already_confirmed" };
+
+// Added 2026-08-13. The sender's own undo of a still-pending send —
+// architecture.md's "void your own entry, same day, no permission
+// needed." Restores the outgoing movement via its own reversing entry
+// (architecture.md's reversal-not-deletion rule — the original stays
+// readable) and marks the Transfer cancelled. Distinct from
+// reverseTransfer below, which undoes an already-confirmed transfer and
+// needs a real opposite transfer, since stock already moved on both
+// sides by then.
+export async function cancelPendingTransfer(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  transferId: string,
+): Promise<CancelPendingTransferResult> {
+  const transfer = await findTransferById(db, transferId);
+  if (!transfer) return { ok: false, reason: "not_found" };
+  if (
+    transfer.sentByStaffMemberId !== requester.staff.id &&
+    requester.staff.role !== "owner"
+  ) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (transfer.status !== "pending") return { ok: false, reason: "already_confirmed" };
+
+  return db.$transaction(async (tx) => {
+    const updated = await tx.transfer.update({
+      where: { id: transfer.id },
+      data: { status: "cancelled", cancelledByStaffMemberId: requester.staff.id, cancelledAt: new Date() },
+    });
+
+    if (transfer.itemType === "product") {
+      await tx.stockMovement.create({
+        data: {
+          productId: transfer.itemId,
+          locationId: transfer.fromLocationId,
+          quantity: transfer.sentQuantity,
+          reason: "transferred",
+          staffMemberId: requester.staff.id,
+          transferId: transfer.id,
+          reversedTransferId: transfer.id,
+        },
+      });
+    } else {
+      await tx.ingredientMovement.create({
+        data: {
+          ingredientId: transfer.itemId,
+          locationId: transfer.fromLocationId,
+          quantity: transfer.sentQuantity,
+          reason: "transferred",
+          staffMemberId: requester.staff.id,
+          transferId: transfer.id,
+          reversedTransferId: transfer.id,
+        },
+      });
+    }
+
+    return { ok: true, transfer: updated } as const;
+  });
+}
+
+// Undoes an already-confirmed transfer by recording a new transfer in the
+// opposite direction — stock genuinely moved on both sides by the time a
+// transfer is confirmed, so undoing it is itself a real (immediate,
+// atomic) transfer back, not a reversing entry on the original. This is
+// the sender or owner correcting a completed transfer, same-role rule as
+// cancelPendingTransfer, but the mechanics differ because there is real
+// stock at the destination to move back rather than a pending send to
+// simply not happen.
 export async function reverseTransfer(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   transferId: string,
-): Promise<RecordTransfersResult> {
-  const [products, ingredients, existingReversal] = await Promise.all([
-    db.stockMovement.findMany({ where: { transferId } }),
-    db.ingredientMovement.findMany({ where: { transferId } }),
-    Promise.all([
-      db.stockMovement.findFirst({ where: { reversedTransferId: transferId } }),
-      db.ingredientMovement.findFirst({ where: { reversedTransferId: transferId } }),
-    ]),
-  ]);
-  if (existingReversal[0] || existingReversal[1]) return { ok: false, reason: "already_reversed" };
-  const productOut = products.filter((movement) => movement.quantity < 0);
-  const ingredientOut = ingredients.filter((movement) => movement.quantity < 0);
-  const original = productOut[0] ?? ingredientOut[0];
-  if (!original) return { ok: false, reason: "not_found" };
-  if (original.staffMemberId !== requester.staff.id && requester.staff.role !== "owner") {
+): Promise<{ ok: true; movements: TransferMovement[] } | Exclude<RecordTransfersResult, { ok: true }>> {
+  const transfer = await findTransferById(db, transferId);
+  if (!transfer) return { ok: false, reason: "not_found" };
+  if (transfer.status !== "confirmed") return { ok: false, reason: "not_found" };
+
+  const existingReversal =
+    transfer.itemType === "product"
+      ? await db.stockMovement.findFirst({ where: { reversedTransferId: transferId } })
+      : await db.ingredientMovement.findFirst({ where: { reversedTransferId: transferId } });
+  if (existingReversal) return { ok: false, reason: "already_reversed" };
+
+  if (transfer.sentByStaffMemberId !== requester.staff.id && requester.staff.role !== "owner") {
     return { ok: false, reason: "forbidden" };
   }
-  const incoming = products.find((movement) => movement.quantity > 0) ?? ingredients.find((movement) => movement.quantity > 0);
-  if (!incoming) return { ok: false, reason: "not_found" };
-  return recordTransfers(db, requester, {
-    fromLocationId: incoming.locationId,
-    toLocationId: original.locationId,
-    allowReversalFromOtherLocation: true,
-    reversedTransferId: transferId,
-    lines: [
-      ...productOut.map((movement) => ({ itemType: "product" as const, itemId: movement.productId, quantity: -movement.quantity })),
-      ...ingredientOut.map((movement) => ({ itemType: "ingredient" as const, itemId: movement.ingredientId, quantity: -movement.quantity })),
-    ],
+
+  const quantity = transfer.confirmedQuantity ?? transfer.sentQuantity;
+  if (quantity <= 0) return { ok: false, reason: "not_found" };
+
+  return db.$transaction(async (tx) => {
+    const outgoing =
+      transfer.itemType === "product"
+        ? await tx.stockMovement.create({
+            data: {
+              productId: transfer.itemId,
+              locationId: transfer.toLocationId,
+              quantity: -quantity,
+              reason: "transferred",
+              staffMemberId: requester.staff.id,
+              transferId: transfer.id,
+              reversedTransferId: transfer.id,
+            },
+          })
+        : await tx.ingredientMovement.create({
+            data: {
+              ingredientId: transfer.itemId,
+              locationId: transfer.toLocationId,
+              quantity: -quantity,
+              reason: "transferred",
+              staffMemberId: requester.staff.id,
+              transferId: transfer.id,
+              reversedTransferId: transfer.id,
+            },
+          });
+    const incoming =
+      transfer.itemType === "product"
+        ? await tx.stockMovement.create({
+            data: {
+              productId: transfer.itemId,
+              locationId: transfer.fromLocationId,
+              quantity,
+              reason: "transferred",
+              staffMemberId: requester.staff.id,
+              transferId: transfer.id,
+              reversedTransferId: transfer.id,
+            },
+          })
+        : await tx.ingredientMovement.create({
+            data: {
+              ingredientId: transfer.itemId,
+              locationId: transfer.fromLocationId,
+              quantity,
+              reason: "transferred",
+              staffMemberId: requester.staff.id,
+              transferId: transfer.id,
+              reversedTransferId: transfer.id,
+            },
+          });
+    return { ok: true, movements: [outgoing, incoming] } as const;
   });
 }
 
@@ -1062,156 +1308,13 @@ export async function recordStockCount(
     })),
   });
 
-  // CONTEXT.md's "Sold, derived" / formulas.md §2: the canteen's only
-  // source of item-by-item trading detail is worked out at a count, since
-  // individual sales aren't recorded there. Restaurant-only counts never
-  // trigger this — the restaurant records every sale directly.
-  const location = await findLocationById(db, input.locationId);
-  if (location?.code === "canteen") {
-    await recordCountDerivedSales(db, requester, count);
-  }
+  // 2026-08-13: count-derived sales retired — see docs/proposal.md §4.
+  // A count is now purely a shrinkage check (formulas.md §2/§6) at both
+  // locations; it no longer infers what sold. What sold comes from
+  // sales/logic.ts's recorded sales directly, the same as the
+  // restaurant always has.
 
   return { ok: true, count };
-}
-
-// formulas.md §2's canteen formula:
-//   sold = previous count + received + transferred in
-//        − recorded credit sales − wasted − consumed − given away
-//        − transferred out − this count
-// Reads every reason's movements in the period strictly after the
-// previous count and up to (inclusive of) this one, per product, then
-// writes one `sold_derived` movement per item where the result is
-// non-zero. Nothing is written for a product with no previous count to
-// compare against ("the first period has no measured rate") — silently
-// skipped, not treated as an error, since a first-ever canteen count is
-// an expected, normal event.
-//
-// Reads credit-sale quantities from sales/index.ts (creditSaleQuantityByProductAtLocation)
-// rather than through stock's own movement ledger — credit sales are
-// recorded on the Sale/PaymentLine tables, not as stock movements. This is
-// a one-directional stock -> sales read, the same shape as
-// docs/architecture.md's tracer slice: "stock reading catalogue... two
-// modules that actually need each other," never the reverse. sales/logic.ts
-// separately imports recordStockMovement from stock (pre-existing, for
-// recordCounterSale) — that's a different, older relationship this ticket
-// didn't create and isn't in scope to invert. Reviewed and confirmed
-// (ticket 24 review note) that reporting isn't the right home for this
-// instead: reporting "owns no data," but this function writes a
-// sold_derived StockMovement, which is stock's own data.
-async function recordCountDerivedSales(
-  db: PrismaClient,
-  requester: AuthenticatedStaff,
-  count: StockCount,
-): Promise<void> {
-  const previousCount = await findPreviousStockCountAtLocation(
-    db,
-    count.locationId,
-    count.occurredAt,
-  );
-  if (!previousCount) return;
-
-  const previousByProduct = new Map(
-    previousCount.lines
-      .filter((line) => line.itemType === "product")
-      .map((line) => [line.itemId, line.countedQuantity]),
-  );
-
-  const productIds = count.lines
-    .filter((line) => line.itemType === "product" && previousByProduct.has(line.itemId))
-    .map((line) => line.itemId);
-  if (productIds.length === 0) return;
-
-  const [movementSums, creditSales, products] = await Promise.all([
-    sumMovementsByProductReasonAtLocationInPeriod(
-      db,
-      count.locationId,
-      ["received", "transferred", "wasted", "consumed", "given_away"],
-      previousCount.occurredAt,
-      count.occurredAt,
-    ),
-    creditSaleQuantityByProductAtLocation(
-      db,
-      count.locationId,
-      previousCount.occurredAt,
-      count.occurredAt,
-    ),
-    findProductsByIds(db, productIds),
-  ]);
-
-  const productById = new Map(products.map((p) => [p.id, p]));
-  const creditQuantityByProduct = new Map(creditSales.map((s) => [s.productId, s.quantity]));
-
-  // transferred is signed (positive in, negative out) — split it back into
-  // its two named terms rather than summing it once, since the formula
-  // treats "transferred in" and "transferred out" as separate lines.
-  const sumsByProduct = new Map<string, { transferredIn: number; transferredOut: number; wasted: number; consumed: number; givenAway: number }>();
-  for (const sum of movementSums) {
-    const entry = sumsByProduct.get(sum.productId) ?? {
-      transferredIn: 0,
-      transferredOut: 0,
-      wasted: 0,
-      consumed: 0,
-      givenAway: 0,
-    };
-    if (sum.reason === "received") {
-      // received is folded into the formula as its own positive term below.
-    } else if (sum.reason === "transferred") {
-      if (sum.quantity > 0) entry.transferredIn += sum.quantity;
-      else entry.transferredOut += -sum.quantity;
-    } else if (sum.reason === "wasted") {
-      entry.wasted += -sum.quantity;
-    } else if (sum.reason === "consumed") {
-      entry.consumed += -sum.quantity;
-    } else if (sum.reason === "given_away") {
-      entry.givenAway += -sum.quantity;
-    }
-    sumsByProduct.set(sum.productId, entry);
-  }
-  const receivedByProduct = new Map(
-    movementSums.filter((s) => s.reason === "received").map((s) => [s.productId, s.quantity]),
-  );
-
-  for (const line of count.lines) {
-    if (line.itemType !== "product") continue;
-    const previousCounted = previousByProduct.get(line.itemId);
-    if (previousCounted === undefined) continue;
-
-    const sums = sumsByProduct.get(line.itemId) ?? {
-      transferredIn: 0,
-      transferredOut: 0,
-      wasted: 0,
-      consumed: 0,
-      givenAway: 0,
-    };
-    const received = receivedByProduct.get(line.itemId) ?? 0;
-    const creditSold = creditQuantityByProduct.get(line.itemId) ?? 0;
-
-    const sold =
-      previousCounted +
-      received +
-      sums.transferredIn -
-      creditSold -
-      sums.wasted -
-      sums.consumed -
-      sums.givenAway -
-      sums.transferredOut -
-      line.countedQuantity;
-
-    if (sold === 0) continue;
-
-    const product = productById.get(line.itemId);
-    const sellingValueMinor = product?.priceMinor != null ? product.priceMinor * sold : null;
-
-    await createStockMovement(db, {
-      productId: line.itemId,
-      locationId: count.locationId,
-      quantity: -sold,
-      reason: "sold_derived",
-      staffMemberId: requester.staff.id,
-      sellingValueMinor,
-      occurredAt: count.occurredAt,
-    });
-  }
 }
 
 async function withItemNames(
@@ -1285,55 +1388,18 @@ export async function getStockCount(
 // Ticket 24: "since last count" is only ever meaningful at the canteen
 // (the restaurant records every sale directly, per CONTEXT.md) and only
 // once a previous count exists to derive against — formulas.md's "the
-// first period has no measured rate" caveat. `available: false` covers
-// both a restaurant count and a canteen first count; the UI shows the
-// same "not yet available" messaging either way rather than distinguishing
-// them, since the ticket only asks the detail be absent/labelled
-// unavailable, not that the two reasons read differently.
-// sincePreviousCountAt (ticket 25): the previous count's own occurredAt —
-// the period the derived lines were measured over began strictly after
-// this. Reporting's own-goods rate (formulas.md §6) needs to classify
-// which of these products were restaurant-supplied vs. the canteen's own
-// goods *within that same period*, which needs the period's start.
-export type DerivedSalesDetail =
-  | { available: false }
-  | { available: true; lines: DerivedSaleLine[]; sincePreviousCountAt: Date };
-
 export type LatestStockCountResult =
-  | { ok: true; count: StockCountForReader | null; derivedSales: DerivedSalesDetail }
+  | { ok: true; count: StockCountForReader | null }
   | { ok: false; reason: "forbidden" };
-
-async function derivedSalesDetailForCount(
-  db: PrismaClient,
-  locationId: string,
-  count: StockCount,
-): Promise<DerivedSalesDetail> {
-  const location = await findLocationById(db, locationId);
-  if (location?.code !== "canteen") return { available: false };
-
-  const previousCount = await findPreviousStockCountAtLocation(db, locationId, count.occurredAt);
-  if (!previousCount) return { available: false };
-
-  const derived = await findDerivedSalesAtOccurredAt(db, locationId, count.occurredAt);
-  const products = derived.length > 0 ? await findProductsByIds(db, derived.map((d) => d.productId)) : [];
-  const nameById = new Map(products.map((p) => [p.id, p.name]));
-
-  return {
-    available: true,
-    lines: derived.map((d) => ({
-      productId: d.productId,
-      itemName: nameById.get(d.productId) ?? "Unknown product",
-      quantity: d.quantity,
-      revenueMinor: d.sellingValueMinor,
-    })),
-    sincePreviousCountAt: previousCount.occurredAt,
-  };
-}
 
 // The owner's review/correct table under the admin Stock destination —
 // shows the current/most recent count at a location, not a full history
 // (out of scope per the ticket). Owner-only: this is the comparison view,
 // same restriction as getStockCount's expected/difference fields.
+//
+// 2026-08-13: no longer returns a derivedSales detail — the count is a
+// pure shrinkage check now (docs/formulas.md §2/§6), not a source of
+// item-level revenue, so there is nothing derived from it to report.
 export async function getLatestStockCount(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -1347,20 +1413,12 @@ export async function getLatestStockCount(
   }
 
   const count = await findLatestStockCountAtLocation(db, locationId);
-  if (!count) return { ok: true, count: null, derivedSales: { available: false } };
+  if (!count) return { ok: true, count: null };
 
-  return {
-    ok: true,
-    count: await withItemNames(db, count),
-    derivedSales: await derivedSalesDetailForCount(db, locationId, count),
-  };
+  return { ok: true, count: await withItemNames(db, count) };
 }
 
-// Ticket 25 — formulas.md's count-correction figure ("estimated since
-// last count" vs. "measured at the count") needs the rate in force
-// *before* the latest count, i.e. the count immediately before it, with
-// its own derived-sales detail computed the same way. Same shape and
-// gating as getLatestStockCount, parameterised by "before this count"
+// Same shape as getLatestStockCount, parameterised by "before this count"
 // instead of "most recent."
 export async function getPreviousStockCount(
   db: PrismaClient,
@@ -1376,13 +1434,9 @@ export async function getPreviousStockCount(
   }
 
   const count = await findPreviousStockCountAtLocation(db, locationId, beforeOccurredAt);
-  if (!count) return { ok: true, count: null, derivedSales: { available: false } };
+  if (!count) return { ok: true, count: null };
 
-  return {
-    ok: true,
-    count: await withItemNames(db, count),
-    derivedSales: await derivedSalesDetailForCount(db, locationId, count),
-  };
+  return { ok: true, count: await withItemNames(db, count) };
 }
 
 export type CorrectStockCountResult =

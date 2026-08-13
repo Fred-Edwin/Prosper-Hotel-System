@@ -1,12 +1,11 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { recordStockCount, recordTransfer, reverseTransfer } from "@/modules/stock";
+import { confirmTransfer, recordTransfer, reverseTransfer } from "@/modules/stock";
 import {
   computeTransferCost,
   computeRestaurantCostOfGoods,
   computeCanteenCostOfGoods,
-  computeCountCorrection,
   getDashboardProfit,
   getLedgerSummary,
 } from "../logic";
@@ -47,6 +46,7 @@ function attendant(locationId: string): AuthenticatedStaff {
 }
 
 async function resetDb() {
+  await testDb.transfer.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
@@ -55,7 +55,6 @@ async function resetDb() {
   await testDb.stockMovement.deleteMany({});
   await testDb.ingredientMovement.deleteMany({});
   await testDb.expense.deleteMany({});
-  await testDb.takings.deleteMany({});
   await testDb.recipeLine.deleteMany({});
   await testDb.recipe.deleteMany({});
   await testDb.product.deleteMany({});
@@ -104,63 +103,12 @@ afterAll(async () => {
   await testDb.$disconnect();
 });
 
+// 2026-08-13 revision: transfer cost travels with the item at its own
+// unit cost (recipe cost, or the shared 60%-of-selling-price estimate as
+// a last resort) — docs/formulas.md §5. The dynamic kitchen-consumption
+// rate this file used to test is retired.
 describe("computeTransferCost — formulas.md §5", () => {
-  test("rate = kitchen ingredients consumed ÷ kitchen food's selling value, applied to transferred food's selling value", async () => {
-    const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
-    });
-
-    const dayStart = new Date("2026-08-06T00:00:00Z");
-    const dayEnd = new Date("2026-08-06T23:59:59Z");
-
-    // Kitchen consumed KSh 40,000 of ingredients (issued to production).
-    const flour = await testDb.ingredient.create({
-      data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 40000 },
-    });
-    await testDb.ingredientMovement.create({
-      data: {
-        ingredientId: flour.id,
-        locationId: restaurantId,
-        quantity: -1,
-        reason: "issued",
-        staffMemberId: ownerId,
-        occurredAt: new Date("2026-08-06T08:00:00Z"),
-      },
-    });
-
-    // Kitchen food sold for KSh 100,000 (restaurant sales revenue).
-    await testDb.sale.create({
-      data: {
-        locationId: restaurantId,
-        staffMemberId: ownerId,
-        fulfilment: "counter",
-        totalMinor: 100000,
-        occurredAt: new Date("2026-08-06T09:00:00Z"),
-        lines: { create: [{ productId: chips.id, quantity: 1, priceMinor: 100000 }] },
-      },
-    });
-
-    // Food worth KSh 6,000 (selling value) goes to the canteen.
-    await testDb.stockMovement.create({
-      data: {
-        productId: chips.id,
-        locationId: canteenId,
-        quantity: 60, // 60 units at 100/unit = 6,000 selling value
-        reason: "transferred",
-        staffMemberId: ownerId,
-        occurredAt: new Date("2026-08-06T10:00:00Z"),
-      },
-    });
-
-    const result = await computeTransferCost(testDb, owner(), { periodStart: dayStart, periodEnd: dayEnd });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-
-    expect(result.rate).toBeCloseTo(0.4);
-    expect(result.transferCostMinor).toBe(2400);
-  });
-
-  test("uses recipe cost instead of the derived rate where the transferred item has a recipe", async () => {
+  test("uses recipe cost where the transferred item has a recipe", async () => {
     const chips = await testDb.product.create({
       data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
     });
@@ -198,8 +146,41 @@ describe("computeTransferCost — formulas.md §5", () => {
 
     const line = result.lines.find((l) => l.productId === chips.id);
     expect(line?.usedRecipeCost).toBe(true);
+    expect(line?.isEstimated).toBe(false);
     // 22.5/plate rounds to 23 (Math.round used in getCurrentRecipe) — assert against actual recipe cost.
     expect(line?.costMinor).toBe(23 * 5);
+    expect(result.transferCostMinor).toBe(23 * 5);
+  });
+
+  test("falls back to the 60%-of-selling-price estimate where the item has no recipe", async () => {
+    const chips = await testDb.product.create({
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+    });
+
+    const dayStart = new Date("2026-08-06T00:00:00Z");
+    const dayEnd = new Date("2026-08-06T23:59:59Z");
+
+    await testDb.stockMovement.create({
+      data: {
+        productId: chips.id,
+        locationId: canteenId,
+        quantity: 60,
+        reason: "transferred",
+        staffMemberId: ownerId,
+        occurredAt: new Date("2026-08-06T10:00:00Z"),
+      },
+    });
+
+    const result = await computeTransferCost(testDb, owner(), { periodStart: dayStart, periodEnd: dayEnd });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const line = result.lines.find((l) => l.productId === chips.id);
+    expect(line?.usedRecipeCost).toBe(false);
+    expect(line?.isEstimated).toBe(true);
+    // 60 units at 100/unit selling value, 60% estimate -> 60 * 100 * 0.6 = 3600.
+    expect(line?.costMinor).toBe(3600);
+    expect(result.transferCostMinor).toBe(3600);
   });
 
   test("rejects a non-owner", async () => {
@@ -273,7 +254,7 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
     expect(result.totalMinor).toBe(18000 + 9000 - 15000);
   });
 
-  test("subtracts food sent to canteen from the restaurant total", async () => {
+  test("subtracts food sent to canteen from the restaurant total, at the transferred item's own cost basis", async () => {
     const chips = await testDb.product.create({
       data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
     });
@@ -317,9 +298,6 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
       },
     });
 
-    // Kitchen sold KSh 100,000 of chips, consumed nothing extra tracked
-    // (rate uses issued minor above => 0 issued for "consumed" split? we
-    // use a separate ingredient consumption line to drive a non-zero rate)
     await testDb.sale.create({
       data: {
         locationId: restaurantId,
@@ -330,8 +308,8 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
         lines: { create: [{ productId: chips.id, quantity: 1, priceMinor: 100000 }] },
       },
     });
-    // The 12 units issued above (value 12,000) is what's "consumed" for
-    // the rate: 12,000 / 100,000 = 0.12
+    // No recipe on chips — falls back to the 60% estimate: 60 units at
+    // 100/unit selling value = 6000, 60% -> 3600.
     await testDb.stockMovement.create({
       data: {
         productId: chips.id,
@@ -347,87 +325,13 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // rate = 12000 / 100000 = 0.12; transferred selling value = 60 * 100 = 6000; cost = 720
-    expect(result.transferCostMinor).toBe(720);
-    expect(result.totalMinor).toBe(18000 + 9000 - 15000 - 720);
+    expect(result.transferCostMinor).toBe(3600);
+    expect(result.totalMinor).toBe(18000 + 9000 - 15000 - 3600);
   });
 });
 
 describe("business-total invariant — formulas.md §5", () => {
-  test("business cost of goods sold is unaffected by the transfer rate chosen", async () => {
-    const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
-    });
-    const flour = await testDb.ingredient.create({
-      data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 1000 },
-    });
-
-    const dayStart = new Date("2026-08-06T00:00:00Z");
-    const dayEnd = new Date("2026-08-06T23:59:59Z");
-
-    await testDb.ingredientMovement.create({
-      data: {
-        ingredientId: flour.id,
-        locationId: restaurantId,
-        quantity: 18,
-        reason: "received",
-        unitCostMinor: 1000,
-        staffMemberId: ownerId,
-        occurredAt: new Date("2026-08-05T12:00:00Z"),
-      },
-    });
-    await testDb.ingredientMovement.create({
-      data: {
-        ingredientId: flour.id,
-        locationId: restaurantId,
-        quantity: -12,
-        reason: "issued",
-        staffMemberId: ownerId,
-        occurredAt: new Date("2026-08-06T09:00:00Z"),
-      },
-    });
-    await testDb.sale.create({
-      data: {
-        locationId: restaurantId,
-        staffMemberId: ownerId,
-        fulfilment: "counter",
-        totalMinor: 100000,
-        occurredAt: new Date("2026-08-06T09:30:00Z"),
-        lines: { create: [{ productId: chips.id, quantity: 1, priceMinor: 100000 }] },
-      },
-    });
-    await testDb.stockMovement.create({
-      data: {
-        productId: chips.id,
-        locationId: canteenId,
-        quantity: 60,
-        reason: "transferred",
-        staffMemberId: ownerId,
-        occurredAt: new Date("2026-08-06T10:00:00Z"),
-      },
-    });
-
-    const transfer = await computeTransferCost(testDb, owner(), { periodStart: dayStart, periodEnd: dayEnd });
-    const restaurantCogs = await computeRestaurantCostOfGoods(testDb, owner(), { dayStart, dayEnd });
-    const canteenCogs = await computeCanteenCostOfGoods(testDb, owner(), { dayStart, dayEnd });
-    expect(transfer.ok && restaurantCogs.ok && canteenCogs.ok).toBe(true);
-    if (!transfer.ok || !restaurantCogs.ok || !canteenCogs.ok) return;
-
-    // The same transferCostMinor must appear subtracted from the
-    // restaurant and added (as canteenExact) to the canteen — so it
-    // cancels in the business total regardless of the rate's value.
-    expect(restaurantCogs.transferCostMinor).toBe(transfer.transferCostMinor);
-    expect(canteenCogs.exactMinor).toBe(transfer.transferCostMinor);
-  });
-
-  // Finding 5 regression: computeTransferCost recomputes fresh on every
-  // call rather than being computed once and read twice — the invariant
-  // that cost out of the restaurant equals cost into the canteen holds
-  // today only because every caller happens to pass the same date window.
-  // This asserts a transfer + reversal round-trip leaves the business
-  // total unchanged, and that restaurant COGS-reduction exactly equals
-  // canteen COGS-addition for the same window.
-  test("a transfer + reversal round-trip leaves the business total unchanged, and restaurant COGS-reduction equals canteen COGS-addition", async () => {
+  test("business cost of goods sold is unaffected by which cost basis a transfer uses", async () => {
     const chips = await testDb.product.create({
       data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
     });
@@ -459,9 +363,7 @@ describe("business-total invariant — formulas.md §5", () => {
         lines: { create: [{ productId: chips.id, quantity: 1, priceMinor: 100000 }] },
       },
     });
-    // Stock to transfer — recordTransfer (unlike the raw stockMovement
-    // rows this file's other tests write directly) enforces sufficient
-    // stock at the source location.
+    // Real, confirmed stock to transfer at the restaurant.
     await testDb.stockMovement.create({
       data: {
         productId: chips.id,
@@ -488,44 +390,46 @@ describe("business-total invariant — formulas.md §5", () => {
     });
     expect(transferResult.ok).toBe(true);
     if (!transferResult.ok) return;
+    const transferId = transferResult.transfers[0].id;
+
+    // Cost only moves once confirmed — the receiving side's sold quantity
+    // (computeCanteenCostOfGoods now reads real "sold" movements, not the
+    // transfer itself) needs a confirmed, then sold, unit to reconcile.
+    const confirmed = await confirmTransfer(testDb, attendant(canteenId), {
+      transferId,
+      confirmedQuantity: 60,
+    });
+    expect(confirmed.ok).toBe(true);
 
     const restaurantAfterTransfer = await computeRestaurantCostOfGoods(testDb, owner(), { dayStart, dayEnd });
-    const canteenAfterTransfer = await computeCanteenCostOfGoods(testDb, owner(), { dayStart, dayEnd });
-    expect(restaurantAfterTransfer.ok && canteenAfterTransfer.ok).toBe(true);
-    if (!restaurantAfterTransfer.ok || !canteenAfterTransfer.ok) return;
+    expect(restaurantAfterTransfer.ok).toBe(true);
+    if (!restaurantAfterTransfer.ok) return;
 
+    // Confirming the transfer reduced the restaurant's cost of goods sold
+    // by the transfer's own cost basis, regardless of what that basis is.
     const restaurantReduction = restaurantBefore.totalMinor - restaurantAfterTransfer.totalMinor;
-    const canteenAddition = canteenAfterTransfer.exactMinor - canteenBefore.exactMinor;
-    expect(restaurantReduction).toBe(canteenAddition);
-    // Business total (restaurant + canteen exact/own-goods-free) is
-    // unaffected by the transfer.
-    expect(restaurantAfterTransfer.totalMinor + canteenAfterTransfer.exactMinor).toBe(
-      restaurantBefore.totalMinor + canteenBefore.exactMinor,
-    );
+    expect(restaurantReduction).toBe(restaurantAfterTransfer.transferCostMinor);
 
-    const transferId = transferResult.movements[0].transferId;
-    if (!transferId) throw new Error("expected a transferId on the recorded movement");
     const reversal = await reverseTransfer(testDb, owner(), transferId);
     expect(reversal.ok).toBe(true);
 
     const restaurantAfterReversal = await computeRestaurantCostOfGoods(testDb, owner(), { dayStart, dayEnd });
-    const canteenAfterReversal = await computeCanteenCostOfGoods(testDb, owner(), { dayStart, dayEnd });
-    expect(restaurantAfterReversal.ok && canteenAfterReversal.ok).toBe(true);
-    if (!restaurantAfterReversal.ok || !canteenAfterReversal.ok) return;
+    expect(restaurantAfterReversal.ok).toBe(true);
+    if (!restaurantAfterReversal.ok) return;
 
-    // The round-trip returns the business total to its pre-transfer value.
-    expect(restaurantAfterReversal.totalMinor + canteenAfterReversal.exactMinor).toBe(
-      restaurantBefore.totalMinor + canteenBefore.exactMinor,
-    );
+    // The round-trip returns the restaurant's cost of goods to its
+    // pre-transfer value.
+    expect(restaurantAfterReversal.totalMinor).toBe(restaurantBefore.totalMinor);
   });
 });
 
+// 2026-08-13 revision: the canteen's cost of goods sold is now the same
+// question as the restaurant's, asked at product granularity — the cost
+// of what was actually recorded sold, at each product's own cost basis.
+// No more exact/estimated split, no more own-goods rate measured at a
+// count (docs/formulas.md §6).
 describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
-  test("restaurant food: opening + transferred in − closing − wasted, valued at the transfer's own cost basis", async () => {
-    // Recipe cost overrides the derived rate (§5's note) — makes the
-    // per-unit cost deterministic for this test: 10 units of an
-    // ingredient at 5/unit, yielding 40 samosas => 50/40 = 1.25/unit,
-    // rounds to 1 (Math.round in getCurrentRecipe -> 50/40 = 1.25 -> 1).
+  test("restaurant-supplied food, sold with a recipe: valued at recipe cost", async () => {
     const samosa = await testDb.product.create({
       data: { name: "Samosa", kind: "cooked_food", priceMinor: 20 },
     });
@@ -544,7 +448,6 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     const dayStart = new Date("2026-08-06T00:00:00Z");
     const dayEnd = new Date("2026-08-06T23:59:59Z");
 
-    // Monday: 40 samosas arrive, none carried in, 8 left at close (wasted for this test).
     await testDb.stockMovement.create({
       data: {
         productId: samosa.id,
@@ -555,14 +458,15 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
         occurredAt: new Date("2026-08-06T08:00:00Z"),
       },
     });
+    // 32 sold, 8 left at close (not sold — no cost contribution here).
     await testDb.stockMovement.create({
       data: {
         productId: samosa.id,
         locationId: canteenId,
-        quantity: -8,
-        reason: "wasted",
-        staffMemberId: ownerId,
-        occurredAt: new Date("2026-08-06T20:00:00Z"),
+        quantity: -32,
+        reason: "sold",
+        staffMemberId: "attendant-1",
+        occurredAt: new Date("2026-08-06T12:00:00Z"),
       },
     });
 
@@ -570,26 +474,18 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // per-unit recipe cost = round(50/40) = 1; 40 - 8 = 32 consumed at cost 1/unit = 32.
-    expect(result.exactMinor).toBe(32);
+    // per-unit recipe cost = round(50/40) = 1; 32 sold at cost 1/unit = 32.
+    expect(result.totalMinor).toBe(32);
   });
 
-  test("own goods: estimated cost = today's takings from those goods × rate measured at the last count", async () => {
+  test("the canteen's own goods, sold: valued at purchase cost, exact — no rate, no estimate", async () => {
     const soda = await testDb.product.create({
       data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
     });
 
-    // Previous count establishes the period the rate is measured over.
-    const previous = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(previous.ok).toBe(true);
+    const dayStart = new Date("2026-08-06T00:00:00Z");
+    const dayEnd = new Date("2026-08-06T23:59:59Z");
 
-    // Own goods received (own-goods classification) then sold down to 0
-    // by the next count, so count-derived-sales attributes the full
-    // quantity as sold. No explicit occurredAt — must land strictly
-    // after the previous count's own (real, "now") timestamp.
     await testDb.stockMovement.create({
       data: {
         productId: soda.id,
@@ -597,36 +493,29 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
         quantity: 100,
         reason: "received",
         staffMemberId: ownerId,
+        occurredAt: new Date("2026-08-06T07:00:00Z"),
       },
     });
-
-    const latest = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(latest.ok).toBe(true);
-
-    // 100 sold at 100/unit selling price = 10,000 revenue. Cost at
-    // lastKnownCostMinor 72 = 7,200. Rate = 7200 / 10000 = 0.72 — the
-    // formulas.md example's own figure.
-    const dayStart = new Date("2026-08-10T00:00:00Z");
-    const dayEnd = new Date("2026-08-10T23:59:59Z");
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 2500, mpesaMinor: 1500, occurredAt: new Date("2026-08-10T18:00:00Z") },
+    await testDb.stockMovement.create({
+      data: {
+        productId: soda.id,
+        locationId: canteenId,
+        quantity: -60,
+        reason: "sold",
+        staffMemberId: "attendant-1",
+        occurredAt: new Date("2026-08-06T12:00:00Z"),
+      },
     });
 
     const result = await computeCanteenCostOfGoods(testDb, owner(), { dayStart, dayEnd });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.canteenCostRate).toBeCloseTo(0.72);
-    // Today's takings 4,000 × 0.72 = 2,880 — the formulas.md example.
-    expect(result.estimatedMinor).toBe(Math.round(4000 * 0.72));
+    // 60 sold at 72/unit purchase cost = 4320, exact.
+    expect(result.totalMinor).toBe(4320);
   });
 
-  // Finding 3 regression: a missing rate must surface as unavailable
-  // (null), not silently cost the goods at zero.
-  test("no previous count: own-goods estimate is unavailable rather than guessed", async () => {
+  test("a day with nothing sold has zero cost of goods, not unavailable", async () => {
     const dayStart = new Date("2026-08-06T00:00:00Z");
     const dayEnd = new Date("2026-08-06T23:59:59Z");
 
@@ -634,10 +523,7 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.canteenCostRate).toBeNull();
-    expect(result.estimatedMinor).toBeNull();
-    expect(result.totalMinor).toBeNull();
-    expect(result.lastCanteenCount).toBeNull();
+    expect(result.totalMinor).toBe(0);
   });
 
   test("rejects a non-owner", async () => {
@@ -649,89 +535,34 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
   });
 });
 
-describe("computeCountCorrection — formulas.md §6, 'the count corrects the estimate'", () => {
-  test("unavailable when there is no count history deep enough to derive an earlier rate", async () => {
-    const result = await computeCountCorrection(testDb, owner());
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.available).toBe(false);
-  });
-
-  test("computes estimated vs. measured vs. difference once three counts of history exist", async () => {
-    const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
-    });
-
-    // computeCountCorrection needs the rate in force *before* the period
-    // it's correcting, which is itself measured at the count before the
-    // previous one — three counts of history deep, not two:
-    //   zeroth -> first: establishes the "prior" rate (0.72)
-    //   first -> second: the period computeCountCorrection reports on
-    //   second: the latest count, triggering the report
-    const zeroth = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(zeroth.ok).toBe(true);
-
-    await testDb.stockMovement.create({
-      data: {
-        productId: soda.id,
-        locationId: canteenId,
-        quantity: 50,
-        reason: "received",
-        staffMemberId: ownerId,
-      },
-    });
-
-    // First count: everything sold — measures the 0.72 rate that will be
-    // "in force" for the period after this count.
-    const first = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(first.ok).toBe(true);
-
-    await testDb.stockMovement.create({
-      data: {
-        productId: soda.id,
-        locationId: canteenId,
-        quantity: 40,
-        reason: "received",
-        staffMemberId: ownerId,
-      },
-    });
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 3000, mpesaMinor: 1000 },
-    });
-
-    // Second count: the latest — computeCountCorrection reports on the
-    // first→second period, using the rate measured at the zeroth→first
-    // count.
-    const second = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(second.ok).toBe(true);
-
-    const result = await computeCountCorrection(testDb, owner());
-    expect(result.ok).toBe(true);
-    if (!result.ok || !result.available) throw new Error("expected available correction");
-
-    // rate before this period (from the zeroth→first count) = 0.72,
-    // applied to takings since the first count (4,000) => 2,880.
-    expect(result.estimatedSinceLastCountMinor).toBe(2880);
-    // measured: 40 sold at 100/unit = 4,000 revenue.
-    expect(result.measuredAtCountMinor).toBe(4000);
-    expect(result.differenceMinor).toBe(4000 - 2880);
-  });
-});
-
 describe("getDashboardProfit", () => {
-  test("assembles revenue, cost of goods, running costs and net profit for a day", async () => {
+  test("assembles revenue, cost of goods, running costs and net profit for a day — all final, never null", async () => {
     const dayStart = new Date("2026-08-06T00:00:00Z");
     const dayEnd = new Date("2026-08-06T23:59:59Z");
 
+    const soda = await testDb.product.create({
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: "attendant-1",
+        fulfilment: "counter",
+        totalMinor: 3000,
+        occurredAt: new Date("2026-08-06T18:00:00Z"),
+        lines: { create: [{ productId: soda.id, quantity: 30, priceMinor: 100 }] },
+      },
+    });
+    await testDb.stockMovement.create({
+      data: {
+        productId: soda.id,
+        locationId: canteenId,
+        quantity: -30,
+        reason: "sold",
+        staffMemberId: "attendant-1",
+        occurredAt: new Date("2026-08-06T18:00:00Z"),
+      },
+    });
     await testDb.expense.create({
       data: {
         locationId: restaurantId,
@@ -741,9 +572,6 @@ describe("getDashboardProfit", () => {
         occurredAt: new Date("2026-08-06T12:00:00Z"),
       },
     });
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 2000, mpesaMinor: 1000, occurredAt: new Date("2026-08-06T18:00:00Z") },
-    });
 
     const result = await getDashboardProfit(testDb, owner(), { dayStart, dayEnd });
     expect(result.ok).toBe(true);
@@ -751,11 +579,11 @@ describe("getDashboardProfit", () => {
 
     expect(result.revenue.canteen).toBe(3000);
     expect(result.runningCostsMinor).toBe(2300);
-    // No canteen count exists in this test, so the own-goods rate — and
-    // everything downstream of it — is unavailable, not zero (Finding 3).
-    expect(result.costOfGoods.total).toBeNull();
-    expect(result.grossProfitMinor).toBeNull();
-    expect(result.netProfitMinor).toBeNull();
+    // 2026-08-13: no longer provisional or unavailable — every figure
+    // here is final as recorded, at both locations (docs/formulas.md §7).
+    expect(result.costOfGoods.total).toBe(30 * 72);
+    expect(result.grossProfitMinor).not.toBeNull();
+    expect(result.netProfitMinor).toBe(result.grossProfitMinor! - 2300);
   });
 
   test("rejects a non-owner", async () => {
@@ -827,32 +655,19 @@ describe("getDashboardProfit", () => {
     const dayStart = new Date("2026-08-06T00:00:00Z");
     const dayEnd = new Date("2026-08-06T23:59:59Z");
 
-    // A prior count establishes a real own-goods rate, so this test's
-    // canteen cost/profit figures are numbers, not Finding 3's
-    // unavailable (null) — otherwise the reconciliation assertions below
-    // would be reconciling null + null against null, which proves nothing.
     const soda = await testDb.product.create({
       data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
     });
-    const previousCount = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(previousCount.ok).toBe(true);
     await testDb.stockMovement.create({
       data: {
         productId: soda.id,
         locationId: canteenId,
-        quantity: 100,
-        reason: "received",
-        staffMemberId: ownerId,
+        quantity: -30,
+        reason: "sold",
+        staffMemberId: "attendant-1",
+        occurredAt: new Date("2026-08-06T18:00:00Z"),
       },
     });
-    const latestCount = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(latestCount.ok).toBe(true);
 
     const chips = await testDb.product.create({
       data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
@@ -867,8 +682,15 @@ describe("getDashboardProfit", () => {
         lines: { create: [{ productId: chips.id, quantity: 50, priceMinor: 5000 }] },
       },
     });
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 2000, mpesaMinor: 1000, occurredAt: new Date("2026-08-06T18:00:00Z") },
+    await testDb.sale.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: "attendant-1",
+        fulfilment: "counter",
+        totalMinor: 3000,
+        occurredAt: new Date("2026-08-06T18:00:00Z"),
+        lines: { create: [{ productId: soda.id, quantity: 30, priceMinor: 100 }] },
+      },
     });
     await testDb.expense.create({
       data: {
@@ -899,11 +721,8 @@ describe("getDashboardProfit", () => {
       result.revenue.total,
     );
 
-    expect(result.byLocation.restaurant.costOfGoodsMinor).not.toBeNull();
-    expect(result.byLocation.canteen.costOfGoodsMinor).not.toBeNull();
-    expect(result.costOfGoods.total).not.toBeNull();
     expect(
-      (result.byLocation.restaurant.costOfGoodsMinor ?? 0) + (result.byLocation.canteen.costOfGoodsMinor ?? 0),
+      result.byLocation.restaurant.costOfGoodsMinor + result.byLocation.canteen.costOfGoodsMinor,
     ).toBe(result.costOfGoods.total);
 
     expect(result.byLocation.restaurant.runningCostsMinor).toBe(800);
@@ -912,101 +731,9 @@ describe("getDashboardProfit", () => {
       result.byLocation.restaurant.runningCostsMinor + result.byLocation.canteen.runningCostsMinor,
     ).toBe(result.runningCostsMinor);
 
-    expect(result.byLocation.restaurant.netProfitMinor).not.toBeNull();
-    expect(result.byLocation.canteen.netProfitMinor).not.toBeNull();
-    expect(result.netProfitMinor).not.toBeNull();
     expect(
-      (result.byLocation.restaurant.netProfitMinor ?? 0) + (result.byLocation.canteen.netProfitMinor ?? 0),
+      result.byLocation.restaurant.netProfitMinor + result.byLocation.canteen.netProfitMinor,
     ).toBe(result.netProfitMinor);
-
-    expect(result.byLocation.canteen.provisional).toBe(true);
-    expect(result.byLocation.restaurant.provisional).toBe(false);
-  });
-
-  // Finding 3 regression: a canteen with takings but no prior count
-  // returns unavailable (not zero) for cost of goods and profit, both
-  // business-wide and for the canteen's own breakdown — while the
-  // restaurant's exact figures remain real numbers throughout.
-  test("canteen with takings but no prior count: cost of goods and profit are unavailable, not zero", async () => {
-    const dayStart = new Date("2026-08-06T00:00:00Z");
-    const dayEnd = new Date("2026-08-06T23:59:59Z");
-
-    await testDb.sale.create({
-      data: {
-        locationId: restaurantId,
-        staffMemberId: ownerId,
-        fulfilment: "counter",
-        totalMinor: 5000,
-        occurredAt: new Date("2026-08-06T09:00:00Z"),
-        lines: {
-          create: [
-            {
-              productId: (
-                await testDb.product.create({
-                  data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
-                })
-              ).id,
-              quantity: 50,
-              priceMinor: 5000,
-            },
-          ],
-        },
-      },
-    });
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 3000, mpesaMinor: 1000, occurredAt: new Date("2026-08-06T18:00:00Z") },
-    });
-
-    const before = await getDashboardProfit(testDb, owner(), { dayStart, dayEnd });
-    expect(before.ok).toBe(true);
-    if (!before.ok) return;
-
-    expect(before.canteenCostRate).toBeNull();
-    expect(before.costOfGoods.canteenEstimated).toBeNull();
-    expect(before.costOfGoods.total).toBeNull();
-    expect(before.grossProfitMinor).toBeNull();
-    expect(before.netProfitMinor).toBeNull();
-    expect(before.byLocation.canteen.costOfGoodsMinor).toBeNull();
-    expect(before.byLocation.canteen.grossProfitMinor).toBeNull();
-    expect(before.byLocation.canteen.netProfitMinor).toBeNull();
-    // The restaurant side is unaffected — still exact numbers.
-    expect(before.byLocation.restaurant.costOfGoodsMinor).not.toBeNull();
-    expect(before.byLocation.restaurant.netProfitMinor).not.toBeNull();
-
-    // A count lands, establishing a real rate — the same figures become
-    // real numbers from that point on.
-    const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
-    });
-    const previousCount = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(previousCount.ok).toBe(true);
-    await testDb.stockMovement.create({
-      data: {
-        productId: soda.id,
-        locationId: canteenId,
-        quantity: 100,
-        reason: "received",
-        staffMemberId: ownerId,
-      },
-    });
-    const latestCount = await recordStockCount(testDb, attendant(canteenId), {
-      locationId: canteenId,
-      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
-    });
-    expect(latestCount.ok).toBe(true);
-
-    const after = await getDashboardProfit(testDb, owner(), { dayStart, dayEnd });
-    expect(after.ok).toBe(true);
-    if (!after.ok) return;
-
-    expect(after.canteenCostRate).not.toBeNull();
-    expect(after.costOfGoods.canteenEstimated).not.toBeNull();
-    expect(after.costOfGoods.total).not.toBeNull();
-    expect(after.grossProfitMinor).not.toBeNull();
-    expect(after.netProfitMinor).not.toBeNull();
   });
 });
 
@@ -1081,16 +808,50 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
       },
     });
 
-    // Canteen takes cash across the two days — its own-goods cost has no
-    // measured rate yet (no count), so canteen cost of goods (and
-    // therefore the whole-business cost of goods sold and gross profit)
-    // is unavailable (Finding 3), not zero. Its takings still count
-    // toward whole-business sales value regardless.
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 1200, mpesaMinor: 300, occurredAt: new Date("2026-08-01T18:00:00Z") },
+    // Canteen sells across the two days — real sales now, valued at
+    // purchase cost, exact.
+    const soda = await testDb.product.create({
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
     });
-    await testDb.takings.create({
-      data: { locationId: canteenId, cashMinor: 900, mpesaMinor: 100, occurredAt: new Date("2026-08-02T18:00:00Z") },
+    await testDb.sale.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: "attendant-1",
+        fulfilment: "counter",
+        totalMinor: 1500,
+        occurredAt: new Date("2026-08-01T18:00:00Z"),
+        lines: { create: [{ productId: soda.id, quantity: 15, priceMinor: 100 }] },
+      },
+    });
+    await testDb.stockMovement.create({
+      data: {
+        productId: soda.id,
+        locationId: canteenId,
+        quantity: -15,
+        reason: "sold",
+        staffMemberId: "attendant-1",
+        occurredAt: new Date("2026-08-01T18:00:00Z"),
+      },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: canteenId,
+        staffMemberId: "attendant-1",
+        fulfilment: "counter",
+        totalMinor: 1000,
+        occurredAt: new Date("2026-08-02T18:00:00Z"),
+        lines: { create: [{ productId: soda.id, quantity: 10, priceMinor: 100 }] },
+      },
+    });
+    await testDb.stockMovement.create({
+      data: {
+        productId: soda.id,
+        locationId: canteenId,
+        quantity: -10,
+        reason: "sold",
+        staffMemberId: "attendant-1",
+        occurredAt: new Date("2026-08-02T18:00:00Z"),
+      },
     });
 
     // A plate wasted at the restaurant — non-sales consumption, already
@@ -1116,11 +877,10 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
     expect(result.openingMinor).toBe(18000);
     expect(result.purchasesMinor).toBe(9000);
     expect(result.closingMinor).toBe(15000);
-    // No canteen count in this test, so the own-goods rate — and
-    // everything downstream — is unavailable (Finding 3), not zero.
-    expect(result.costOfGoodsSoldMinor).toBeNull();
+    // Restaurant COGS 18000+9000-15000=12000, canteen COGS 25 sodas at 72 = 1800.
+    expect(result.costOfGoodsSoldMinor).toBe(12000 + 1800);
     expect(result.salesValueMinor).toBe(5000 + 4000 + 1500 + 1000);
-    expect(result.grossProfitMinor).toBeNull();
+    expect(result.grossProfitMinor).toBe(result.salesValueMinor - result.costOfGoodsSoldMinor);
     expect(result.nonSalesAtCostMinor).toBe(60);
     expect(result.nonSalesAtPriceMinor).toBe(100);
   });
@@ -1143,12 +903,9 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
     expect(result.openingMinor).toBe(0);
     expect(result.purchasesMinor).toBe(0);
     expect(result.closingMinor).toBe(0);
-    // No canteen count exists at all in this test DB state, so cost of
-    // goods sold and gross profit are unavailable (Finding 3), not zero —
-    // an empty period is not the same as a canteen with a measured rate.
-    expect(result.costOfGoodsSoldMinor).toBeNull();
+    expect(result.costOfGoodsSoldMinor).toBe(0);
     expect(result.salesValueMinor).toBe(0);
-    expect(result.grossProfitMinor).toBeNull();
+    expect(result.grossProfitMinor).toBe(0);
     expect(result.nonSalesAtCostMinor).toBe(0);
     expect(result.nonSalesAtPriceMinor).toBe(0);
   });

@@ -32,7 +32,6 @@ async function main() {
   await db.expense.deleteMany({});
   await db.daysWorked.deleteMany({});
   await db.handover.deleteMany({});
-  await db.takings.deleteMany({});
   await db.stockCountLine.deleteMany({});
   await db.stockCount.deleteMany({});
   await db.paymentLine.deleteMany({});
@@ -44,6 +43,7 @@ async function main() {
   await db.recipe.deleteMany({});
   await db.ingredientMovement.deleteMany({});
   await db.ingredient.deleteMany({});
+  await db.transfer.deleteMany({});
   await db.stockMovement.deleteMany({});
   await db.product.deleteMany({});
   await db.category.deleteMany({});

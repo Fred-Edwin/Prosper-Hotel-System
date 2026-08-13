@@ -16,7 +16,6 @@ import { NewSale } from "@/modules/sales/ui/new-sale";
 import { CreditSale } from "@/modules/sales/ui/credit-sale";
 import { TodaysSales } from "@/modules/sales/ui/todays-sales";
 import { Handover } from "@/modules/cash/ui/handover";
-import { Takings } from "@/modules/cash/ui/takings";
 import { NotBuilt } from "@/components/patterns/states";
 
 // Height (px) of a task screen's sticky bottom-anchored primary action bar —
@@ -35,7 +34,6 @@ const helpTopicByActive: Record<
   wastage: { topic: "wastage", bottomOffset: BOTTOM_BAR_HEIGHT },
   stock: { topic: "staff-stock" },
   handover: { topic: "handover", bottomOffset: BOTTOM_BAR_HEIGHT },
-  takings: { topic: "takings", bottomOffset: BOTTOM_BAR_HEIGHT },
   credit: { topic: "credit-sale", bottomOffset: BOTTOM_BAR_HEIGHT },
   receive: { topic: "receiving", bottomOffset: BOTTOM_BAR_HEIGHT },
   count: { topic: "stock-count", bottomOffset: BOTTOM_BAR_HEIGHT },
@@ -91,7 +89,6 @@ export function StaffPageClient({
       {active === "transfer" && <TransferStock />}
       {active === "transfer-history" && <TransferHistoryView />}
       {active === "handover" && <Handover />}
-      {active === "takings" && <Takings />}
       {active !== null &&
         active !== "stock" &&
         active !== "sell" &&
@@ -104,8 +101,7 @@ export function StaffPageClient({
         active !== "count" &&
         active !== "transfer" &&
         active !== "transfer-history" &&
-        active !== "handover" &&
-        active !== "takings" && <NotBuilt destination={activeLink?.label ?? ""} />}
+        active !== "handover" && <NotBuilt destination={activeLink?.label ?? ""} />}
     </StaffShellHome>
   );
 }

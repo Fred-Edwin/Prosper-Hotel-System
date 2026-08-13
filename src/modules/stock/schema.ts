@@ -1,6 +1,32 @@
-import type { StockMovementReason } from "@/generated/prisma/enums";
+import type { StockMovementReason, TransferItemType, TransferStatus } from "@/generated/prisma/enums";
 
-export type { StockMovementReason };
+export type { StockMovementReason, TransferItemType, TransferStatus };
+
+// Added 2026-08-13 — REQ-02 Part A / docs/scope.md's canteen redesign.
+// Pending until the receiving side confirms; see prisma/schema.prisma's
+// Transfer model comment for the full lifecycle.
+export type Transfer = {
+  id: string;
+  fromLocationId: string;
+  toLocationId: string;
+  itemType: TransferItemType;
+  itemId: string;
+  sentQuantity: number;
+  status: TransferStatus;
+  sentByStaffMemberId: string;
+  sentAt: Date;
+  confirmedQuantity: number | null;
+  confirmedByStaffMemberId: string | null;
+  confirmedAt: Date | null;
+  reversedTransferId: string | null;
+  cancelledByStaffMemberId: string | null;
+  cancelledAt: Date | null;
+};
+
+// Reader-facing shape for a pending transfer awaiting confirmation —
+// includes the item's display name, since the receiving screen shows
+// "40 chapatis, sent 09:12" rather than a bare itemId.
+export type PendingTransferForReader = Transfer & { itemName: string };
 
 export type StockMovement = {
   id: string;
@@ -109,14 +135,3 @@ export type LowStockItem = {
   asOf: Date | null;
 };
 
-// Ticket 24: one line of the owner-only "since last count" detail on the
-// review screen — the derived-sold quantity and revenue per item at the
-// canteen. Distinct from StockCountLine because it has no counted/expected
-// pair of its own; it is read from the sold_derived movements the count
-// triggered, not from the count's own recorded lines.
-export type DerivedSaleLine = {
-  productId: string;
-  itemName: string;
-  quantity: number;
-  revenueMinor: number | null;
-};

@@ -1,11 +1,14 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type {
   IngredientMovement,
+  PendingTransferForReader,
   Receipt,
   StockCount,
   StockCountItemType,
-  StockMovement,
   StockMovementReason,
+  StockMovement,
+  Transfer,
+  TransferItemType,
 } from "./schema";
 
 export async function createStockMovement(
@@ -649,26 +652,92 @@ export async function findLatestStockCountAtLocation(
   return count as StockCount | null;
 }
 
-// Ticket 24: the "since last count" detail on the owner's review screen —
-// sold_derived movements are attributed to the count that produced them by
-// occurring at the same instant (createStockMovement is called
-// immediately after createStockCount within recordCountDerivedSales, no
-// other write happens at that location in between), so the read side finds
-// them by product + location + reason in the same narrow window rather
-// than a stored count-id link on the movement.
-export async function findDerivedSalesAtOccurredAt(
+// Added 2026-08-13 — REQ-02 Part A. A transfer starts life here, pending,
+// with no incoming movement written yet — see prisma/schema.prisma's
+// Transfer model comment for why the receiving side's stock must not
+// move until confirmed.
+export async function createPendingTransfer(
   db: PrismaClient,
-  locationId: string,
-  occurredAt: Date,
-): Promise<{ productId: string; quantity: number; sellingValueMinor: number | null }[]> {
-  const movements = await db.stockMovement.findMany({
-    where: { locationId, reason: "sold_derived", occurredAt },
+  data: {
+    fromLocationId: string;
+    toLocationId: string;
+    itemType: TransferItemType;
+    itemId: string;
+    sentQuantity: number;
+    sentByStaffMemberId: string;
+    reversedTransferId?: string;
+  },
+): Promise<Transfer> {
+  return db.transfer.create({ data });
+}
+
+export async function findTransferById(db: PrismaClient, id: string): Promise<Transfer | null> {
+  return db.transfer.findUnique({ where: { id } });
+}
+
+// The receiving screen's queue — every transfer sent to this location
+// that hasn't been confirmed yet, oldest first (the one waiting longest
+// is the one most worth surfacing).
+export async function findPendingTransfersAtLocation(
+  db: PrismaClient,
+  toLocationId: string,
+): Promise<PendingTransferForReader[]> {
+  const transfers = await db.transfer.findMany({
+    where: { toLocationId, status: "pending" },
+    orderBy: { sentAt: "asc" },
   });
-  return movements.map((m) => ({
-    productId: m.productId,
-    quantity: -m.quantity,
-    sellingValueMinor: m.sellingValueMinor,
-  }));
+  if (transfers.length === 0) return [];
+
+  const productIds = transfers.filter((t) => t.itemType === "product").map((t) => t.itemId);
+  const ingredientIds = transfers.filter((t) => t.itemType === "ingredient").map((t) => t.itemId);
+  const [products, ingredients] = await Promise.all([
+    productIds.length > 0
+      ? db.product.findMany({ where: { id: { in: productIds } } })
+      : Promise.resolve([]),
+    ingredientIds.length > 0
+      ? db.ingredient.findMany({ where: { id: { in: ingredientIds } } })
+      : Promise.resolve([]),
+  ]);
+  const nameById = new Map([
+    ...products.map((p) => [p.id, p.name] as const),
+    ...ingredients.map((i) => [i.id, i.name] as const),
+  ]);
+
+  return transfers.map((t) => ({ ...t, itemName: nameById.get(t.itemId) ?? "Unknown item" }));
+}
+
+// Confirmation writes the incoming movement (at the confirmed quantity,
+// which may be less than what was sent) and marks the transfer confirmed,
+// atomically. The caller (stock/logic.ts's confirmTransfer) is
+// responsible for the transfer_shortfall movement on a short receipt —
+// kept as a separate createStockMovement/createIngredientMovement call
+// rather than folded in here, since not every confirmation has a
+// shortfall to write.
+export async function markTransferConfirmed(
+  db: PrismaClient,
+  id: string,
+  data: { confirmedQuantity: number; confirmedByStaffMemberId: string },
+): Promise<Transfer> {
+  return db.transfer.update({
+    where: { id },
+    data: {
+      status: "confirmed",
+      confirmedQuantity: data.confirmedQuantity,
+      confirmedByStaffMemberId: data.confirmedByStaffMemberId,
+      confirmedAt: new Date(),
+    },
+  });
+}
+
+export async function markTransferCancelled(
+  db: PrismaClient,
+  id: string,
+  cancelledByStaffMemberId: string,
+): Promise<Transfer> {
+  return db.transfer.update({
+    where: { id },
+    data: { status: "cancelled", cancelledByStaffMemberId, cancelledAt: new Date() },
+  });
 }
 
 export async function markStockCountLineCorrected(

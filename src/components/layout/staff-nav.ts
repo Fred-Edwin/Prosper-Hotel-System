@@ -8,7 +8,10 @@
  * Cashiers get three, and should barely notice navigation exists: they sell,
  * and at the end of a shift they hand over. Janiffer runs the restaurant store
  * as well as selling, so she gets receiving, issuing and counts. Anne runs the
- * canteen alone, which means she records takings rather than individual sales.
+ * canteen alone — she sells the same way a cashier does (2026-08-13 revision:
+ * real per-sale recording replaced declaring a daily takings total), plus
+ * receiving and counts, since she is effectively cashier and store manager
+ * for one location.
  */
 
 import {
@@ -18,7 +21,6 @@ import {
   ArrowLeftRight,
   ClipboardList,
   Trash2,
-  Receipt,
   Boxes,
   History,
   ChefHat,
@@ -52,12 +54,6 @@ const all: Record<string, StaffLink> = {
     label: "Today's sales",
     icon: History,
     hint: "Sales you've recorded today",
-  },
-  takings: {
-    key: "takings",
-    label: "Takings",
-    icon: Receipt,
-    hint: "Record the day's takings",
   },
   credit: {
     key: "credit",
@@ -128,7 +124,7 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
   ],
   cashier: [all.sell, all.sales, all.wastage, all.stock, all.handover],
   attendant: [
-    all.takings,
+    all.sell,
     all.credit,
     all.sales,
     all.receive,

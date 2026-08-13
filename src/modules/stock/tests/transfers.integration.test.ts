@@ -1,7 +1,16 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { getCurrentStockAtLocation, listTransfersAtLocation, recordTransfer, recordTransfers, reverseTransfer } from "../logic";
+import {
+  cancelPendingTransfer,
+  confirmTransfer,
+  getCurrentStockAtLocation,
+  getPendingTransfersAtLocation,
+  listTransfersAtLocation,
+  recordTransfer,
+  recordTransfers,
+  reverseTransfer,
+} from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -30,6 +39,7 @@ function staffAt(
 }
 
 beforeEach(async () => {
+  await testDb.transfer.deleteMany({});
   await testDb.stockMovement.deleteMany({});
   await testDb.ingredientMovement.deleteMany({});
   await testDb.product.deleteMany({});
@@ -86,6 +96,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  await testDb.transfer.deleteMany({});
   await testDb.stockMovement.deleteMany({});
   await testDb.ingredientMovement.deleteMany({});
   await testDb.product.deleteMany({});
@@ -95,8 +106,11 @@ afterAll(async () => {
   await testDb.$disconnect();
 });
 
-describe("recordTransfer", () => {
-  test("records all draft lines as one linked transfer event", async () => {
+// 2026-08-13 — REQ-02 Part A: a transfer is now two steps. recordTransfer(s)
+// only writes the outgoing side and creates a pending Transfer; the
+// receiver's stock does not move until confirmTransfer.
+describe("recordTransfer(s) — sending, pending", () => {
+  test("records all draft lines as separate pending transfers, sender's stock leaves immediately", async () => {
     const result = await recordTransfers(testDb, staffAt("store_manager", restaurantId), {
       fromLocationId: restaurantId,
       toLocationId: canteenId,
@@ -108,11 +122,18 @@ describe("recordTransfer", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.movements).toHaveLength(4);
-    expect(new Set(result.movements.map((movement) => movement.transferId)).size).toBe(1);
+    expect(result.transfers).toHaveLength(2);
+    expect(result.transfers.every((t) => t.status === "pending")).toBe(true);
+
+    const restaurantStock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("store_manager", restaurantId),
+      restaurantId,
+    );
+    expect(restaurantStock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 8 }] });
   });
 
-  test("records linked outgoing and incoming product movements and updates both locations", async () => {
+  test("sender's stock leaves but receiver's does not increase until confirmed", async () => {
     const result = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
       fromLocationId: restaurantId,
       toLocationId: canteenId,
@@ -123,66 +144,21 @@ describe("recordTransfer", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.movements).toEqual([
-      expect.objectContaining({
-        productId,
-        locationId: restaurantId,
-        quantity: -4,
-        reason: "transferred",
-      }),
-      expect.objectContaining({
-        productId,
-        locationId: canteenId,
-        quantity: 4,
-        reason: "transferred",
-      }),
-    ]);
-    expect(result.movements[0].transferId).toBe(result.movements[1].transferId);
+    expect(result.transfers[0]).toMatchObject({
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      sentQuantity: 4,
+      status: "pending",
+    });
 
     const [restaurantStock, canteenStock] = await Promise.all([
       getCurrentStockAtLocation(testDb, staffAt("store_manager", restaurantId), restaurantId),
       getCurrentStockAtLocation(testDb, staffAt("owner", restaurantId), canteenId),
     ]);
     expect(restaurantStock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 8 }] });
-    expect(canteenStock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 4 }] });
-  });
-
-  test("reverses a recorded transfer with a new linked movement pair", async () => {
-    const transfer = await recordTransfer(testDb, staffAt("store_manager", restaurantId), { fromLocationId: restaurantId, toLocationId: canteenId, itemType: "product", itemId: productId, quantity: 4 });
-    if (!transfer.ok) throw new Error("expected transfer");
-    const reversed = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), transfer.movements[0].transferId as string);
-    expect(reversed.ok).toBe(true);
-    const stock = await getCurrentStockAtLocation(testDb, staffAt("store_manager", restaurantId), restaurantId);
-    expect(stock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 12 }] });
-  });
-
-  test("transfers an ingredient in the opposite direction", async () => {
-    const attendant = await testDb.staffMember.create({
-      data: {
-        name: "Test Attendant",
-        phone: "+254700112003",
-        pinHash: await hashPin("1234"),
-        role: "attendant",
-        locationId: canteenId,
-        dailyRateMinor: 0,
-      },
-    });
-
-    const result = await recordTransfer(testDb, staffAt("attendant", canteenId, attendant.id), {
-      fromLocationId: canteenId,
-      toLocationId: restaurantId,
-      itemType: "ingredient",
-      itemId: ingredientId,
-      quantity: 3,
-    });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.movements).toEqual([
-      expect.objectContaining({ ingredientId, locationId: canteenId, quantity: -3, reason: "transferred" }),
-      expect.objectContaining({ ingredientId, locationId: restaurantId, quantity: 3, reason: "transferred" }),
-    ]);
-    expect(result.movements[0].transferId).toBe(result.movements[1].transferId);
+    expect(canteenStock).toMatchObject({ ok: true, levels: [] });
   });
 
   test.each([
@@ -244,10 +220,286 @@ describe("recordTransfer", () => {
       }),
     ).resolves.toEqual({ ok: false, reason: "forbidden" });
   });
+
+  test("transfers an ingredient in the opposite direction (canteen to restaurant)", async () => {
+    const attendant = await testDb.staffMember.create({
+      data: {
+        name: "Test Attendant",
+        phone: "+254700112003",
+        pinHash: await hashPin("1234"),
+        role: "attendant",
+        locationId: canteenId,
+        dailyRateMinor: 0,
+      },
+    });
+
+    const result = await recordTransfer(testDb, staffAt("attendant", canteenId, attendant.id), {
+      fromLocationId: canteenId,
+      toLocationId: restaurantId,
+      itemType: "ingredient",
+      itemId: ingredientId,
+      quantity: 3,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transfers[0]).toMatchObject({
+      fromLocationId: canteenId,
+      toLocationId: restaurantId,
+      itemType: "ingredient",
+      itemId: ingredientId,
+      sentQuantity: 3,
+      status: "pending",
+    });
+  });
+});
+
+describe("confirmTransfer — receiving", () => {
+  test("confirming the sent quantity moves stock to the receiver", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    const attendant = staffAt("attendant", canteenId);
+    const confirmed = await confirmTransfer(testDb, attendant, {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 4,
+    });
+    expect(confirmed.ok).toBe(true);
+    if (!confirmed.ok) return;
+    expect(confirmed.transfer.status).toBe("confirmed");
+    expect(confirmed.transfer.confirmedQuantity).toBe(4);
+
+    const canteenStock = await getCurrentStockAtLocation(testDb, staffAt("owner", restaurantId), canteenId);
+    expect(canteenStock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 4 }] });
+  });
+
+  test("confirming less than sent writes a transfer_shortfall movement for the gap", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    const attendant = staffAt("attendant", canteenId);
+    const confirmed = await confirmTransfer(testDb, attendant, {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 3,
+    });
+    expect(confirmed.ok).toBe(true);
+
+    // The 1 lost in transit is already reflected by only 3 arriving
+    // (the sender's -4 already happened at send time) — the shortfall
+    // marker below carries quantity 0, so it doesn't double-deduct.
+    const canteenStock = await getCurrentStockAtLocation(testDb, staffAt("owner", restaurantId), canteenId);
+    expect(canteenStock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 3 }] });
+
+    const shortfallMovement = await testDb.stockMovement.findFirst({
+      where: { productId, locationId: canteenId, reason: "transfer_shortfall" },
+    });
+    expect(shortfallMovement).toMatchObject({ quantity: 0 });
+  });
+
+  test("rejects confirming from the sending location, twice, or above what was sent", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    await expect(
+      confirmTransfer(testDb, staffAt("store_manager", restaurantId), {
+        transferId: sent.transfers[0].id,
+        confirmedQuantity: 4,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "forbidden" });
+
+    await expect(
+      confirmTransfer(testDb, staffAt("attendant", canteenId), {
+        transferId: sent.transfers[0].id,
+        confirmedQuantity: 5,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "invalid_quantity" });
+
+    const confirmed = await confirmTransfer(testDb, staffAt("attendant", canteenId), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 4,
+    });
+    expect(confirmed.ok).toBe(true);
+
+    await expect(
+      confirmTransfer(testDb, staffAt("attendant", canteenId), {
+        transferId: sent.transfers[0].id,
+        confirmedQuantity: 4,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "already_confirmed" });
+  });
+});
+
+describe("getPendingTransfersAtLocation", () => {
+  test("shows an unconfirmed transfer at the receiving location only", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    const atCanteen = await getPendingTransfersAtLocation(testDb, staffAt("attendant", canteenId), canteenId);
+    expect(atCanteen).toMatchObject({
+      ok: true,
+      transfers: [{ id: sent.transfers[0].id, itemName: "Sodas (500ml)", sentQuantity: 4 }],
+    });
+
+    const atRestaurant = await getPendingTransfersAtLocation(
+      testDb,
+      staffAt("store_manager", restaurantId),
+      restaurantId,
+    );
+    expect(atRestaurant).toMatchObject({ ok: true, transfers: [] });
+
+    await confirmTransfer(testDb, staffAt("attendant", canteenId), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 4,
+    });
+    const afterConfirm = await getPendingTransfersAtLocation(testDb, staffAt("attendant", canteenId), canteenId);
+    expect(afterConfirm).toMatchObject({ ok: true, transfers: [] });
+  });
+});
+
+describe("cancelPendingTransfer", () => {
+  test("the sender can undo their own still-pending send, restoring their stock", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    const cancelled = await cancelPendingTransfer(
+      testDb,
+      staffAt("store_manager", restaurantId),
+      sent.transfers[0].id,
+    );
+    expect(cancelled.ok).toBe(true);
+    if (!cancelled.ok) return;
+    expect(cancelled.transfer.status).toBe("cancelled");
+
+    const restaurantStock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("store_manager", restaurantId),
+      restaurantId,
+    );
+    expect(restaurantStock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 12 }] });
+  });
+
+  test("rejects cancelling someone else's transfer, or an already-confirmed one", async () => {
+    const attendantStaff = await testDb.staffMember.create({
+      data: {
+        name: "Test Attendant Canceller",
+        phone: "+254700112004",
+        pinHash: await hashPin("1234"),
+        role: "attendant",
+        locationId: canteenId,
+        dailyRateMinor: 0,
+      },
+    });
+
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    // A different person (the receiving attendant, not the sender) may
+    // not cancel someone else's pending send.
+    await expect(
+      cancelPendingTransfer(
+        testDb,
+        staffAt("attendant", canteenId, attendantStaff.id),
+        sent.transfers[0].id,
+      ),
+    ).resolves.toEqual({ ok: false, reason: "forbidden" });
+
+    await confirmTransfer(testDb, staffAt("attendant", canteenId, attendantStaff.id), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 4,
+    });
+
+    await expect(
+      cancelPendingTransfer(testDb, staffAt("store_manager", restaurantId), sent.transfers[0].id),
+    ).resolves.toEqual({ ok: false, reason: "already_confirmed" });
+  });
+});
+
+describe("reverseTransfer — undoing an already-confirmed transfer", () => {
+  test("moves the confirmed quantity back to the sender", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+    await confirmTransfer(testDb, staffAt("attendant", canteenId), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 4,
+    });
+
+    const reversed = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), sent.transfers[0].id);
+    expect(reversed.ok).toBe(true);
+
+    const stock = await getCurrentStockAtLocation(testDb, staffAt("store_manager", restaurantId), restaurantId);
+    expect(stock).toMatchObject({ ok: true, levels: [{ productId, quantityOnHand: 12 }] });
+  });
+
+  test("rejects reversing a still-pending transfer, and reversing twice", async () => {
+    const sent = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: productId,
+      quantity: 4,
+    });
+    if (!sent.ok) throw new Error("expected transfer");
+
+    await expect(
+      reverseTransfer(testDb, staffAt("store_manager", restaurantId), sent.transfers[0].id),
+    ).resolves.toEqual({ ok: false, reason: "not_found" });
+
+    await confirmTransfer(testDb, staffAt("attendant", canteenId), {
+      transferId: sent.transfers[0].id,
+      confirmedQuantity: 4,
+    });
+    const firstReversal = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), sent.transfers[0].id);
+    expect(firstReversal.ok).toBe(true);
+
+    const secondReversal = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), sent.transfers[0].id);
+    expect(secondReversal).toEqual({ ok: false, reason: "already_reversed" });
+  });
 });
 
 describe("listTransfersAtLocation", () => {
-  test("groups a transfer's linked movements into one entry per direction, resolved to item names", async () => {
+  test("shows the sender's outgoing leg once sent, before confirmation", async () => {
     await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
       fromLocationId: restaurantId,
       toLocationId: canteenId,
@@ -260,45 +512,6 @@ describe("listTransfersAtLocation", () => {
     expect(sender.ok).toBe(true);
     if (!sender.ok) return;
     expect(sender.transfers).toHaveLength(1);
-    expect(sender.transfers[0]).toMatchObject({
-      direction: "sent",
-      counterpartLocationName: "Test Canteen",
-      reversed: false,
-      lines: [{ itemType: "product", itemId: productId, name: "Sodas (500ml)", quantity: 4, unit: "units" }],
-    });
-
-    const receiver = await listTransfersAtLocation(testDb, staffAt("attendant", canteenId, storeManagerId));
-    expect(receiver.ok).toBe(true);
-    if (!receiver.ok) return;
-    expect(receiver.transfers).toHaveLength(1);
-    expect(receiver.transfers[0]).toMatchObject({
-      direction: "received",
-      counterpartLocationName: "Test Restaurant",
-      reversed: false,
-    });
-  });
-
-  test("marks a transfer as reversed once undone, and rejects reversing it twice", async () => {
-    const transfer = await recordTransfer(testDb, staffAt("store_manager", restaurantId), {
-      fromLocationId: restaurantId,
-      toLocationId: canteenId,
-      itemType: "product",
-      itemId: productId,
-      quantity: 4,
-    });
-    if (!transfer.ok) throw new Error("expected transfer");
-    const transferId = transfer.movements[0].transferId as string;
-
-    const firstReversal = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), transferId);
-    expect(firstReversal.ok).toBe(true);
-
-    const secondReversal = await reverseTransfer(testDb, staffAt("store_manager", restaurantId), transferId);
-    expect(secondReversal).toEqual({ ok: false, reason: "already_reversed" });
-
-    const sender = await listTransfersAtLocation(testDb, staffAt("store_manager", restaurantId));
-    expect(sender.ok).toBe(true);
-    if (!sender.ok) return;
-    const original = sender.transfers.find((entry) => entry.transferId === transferId);
-    expect(original).toMatchObject({ reversed: true });
+    expect(sender.transfers[0]).toMatchObject({ direction: "sent", reversed: false });
   });
 });

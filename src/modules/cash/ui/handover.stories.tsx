@@ -4,7 +4,7 @@ import { HandoverView } from "./handover";
 /**
  * The handover — a blind count, at both locations. See handover.tsx's doc
  * comment for why: the staff member never sees the expected figure (sales
- * sum at the restaurant, that day's Takings at the canteen), only the
+ * recorded that day, at either location — revised 2026-08-13), only the
  * owner does (ticket 14).
  *
  * Default is interactive: type both amounts, "Check what I've counted" to
@@ -35,7 +35,6 @@ export const Default: Story = {
       status: "ready",
       handover: null,
       locationCode: "restaurant",
-      takingsRecordedToday: true,
     },
     onSubmit: stubSubmitAgreed,
   },
@@ -67,7 +66,6 @@ export const AlreadyRecordedToday: Story = {
       status: "ready",
       handover: { actualCashMinor: 8150, actualMpesaMinor: 6200 },
       locationCode: "restaurant",
-      takingsRecordedToday: true,
     },
     onSubmit: stubSubmitAgreed,
   },
@@ -80,7 +78,6 @@ export const SubmitFails: Story = {
       status: "ready",
       handover: null,
       locationCode: "restaurant",
-      takingsRecordedToday: true,
     },
     onSubmit: stubSubmitFails,
   },
@@ -98,15 +95,16 @@ export const DayClosed: Story = {
       status: "ready",
       handover: { actualCashMinor: 8150, actualMpesaMinor: 6200 },
       locationCode: "restaurant",
-      takingsRecordedToday: true,
     },
     onSubmit: async () => ({ ok: false as const, error: "day_closed" }),
   },
 };
 
 /**
- * Canteen, ticket 27 — same blind count, only the confirm step's copy
- * changes ("today's takings" instead of "what the till recorded").
+ * Canteen, revised 2026-08-13 — same blind count, same single handover
+ * step as the restaurant (no separate takings declaration beforehand).
+ * Only the confirm step's copy changes ("today's recorded sales" instead
+ * of "what the till recorded").
  */
 export const CanteenNotYetRecorded: Story = {
   name: "Canteen — not yet recorded today",
@@ -115,7 +113,6 @@ export const CanteenNotYetRecorded: Story = {
       status: "ready",
       handover: null,
       locationCode: "canteen",
-      takingsRecordedToday: true,
     },
     onSubmit: stubSubmitAgreed,
   },
@@ -128,25 +125,6 @@ export const CanteenAlreadyRecordedToday: Story = {
       status: "ready",
       handover: { actualCashMinor: 4800, actualMpesaMinor: 3200 },
       locationCode: "canteen",
-      takingsRecordedToday: true,
-    },
-    onSubmit: stubSubmitAgreed,
-  },
-};
-
-/**
- * The canteen-only blocked state: nothing to check the handover against
- * yet because today's takings haven't been recorded. No count form is
- * shown — recording is refused rather than compared against a false zero.
- */
-export const CanteenTakingsNotRecordedYet: Story = {
-  name: "Canteen — takings not recorded yet",
-  args: {
-    state: {
-      status: "ready",
-      handover: null,
-      locationCode: "canteen",
-      takingsRecordedToday: false,
     },
     onSubmit: stubSubmitAgreed,
   },
