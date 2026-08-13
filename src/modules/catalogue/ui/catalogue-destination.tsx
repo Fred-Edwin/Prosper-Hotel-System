@@ -142,6 +142,7 @@ function CatalogueTabs({ initial }: { initial: Extract<CatalogueState, { status:
         <ProductsTab
           products={products}
           categories={categories}
+          locations={locations}
           saving={saving}
           error={error}
           onCreate={(input) => withSaving(() => postJson("/api/catalogue/products", "POST", input))}

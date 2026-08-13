@@ -71,7 +71,7 @@ beforeEach(async () => {
   ownerId = owner.id;
 
   const soda = await testDb.product.create({
-    data: { name: "Soda", kind: "goods", priceMinor: 100 },
+    data: { name: "Soda", kind: "goods", priceMinor: 100, locationId: restaurant.id },
   });
   sodaId = soda.id;
 });
@@ -134,7 +134,7 @@ describe("recordStockCount", () => {
 
   test("rejects a line for an inactive product", async () => {
     const inactive = await testDb.product.create({
-      data: { name: "Discontinued snack", kind: "goods", active: false },
+      data: { name: "Discontinued snack", kind: "goods", active: false, locationId: restaurantId },
     });
     const requester = staffAt("store_manager", restaurantId, storeManagerId);
 
@@ -361,6 +361,7 @@ describe("correctStockCount", () => {
       name: "Chips",
       kind: "cooked_food",
       priceMinor: 150,
+      locationId: restaurantId,
     });
     if (!product.ok) throw new Error("expected product create to succeed");
     const potatoes = await createIngredient(testDb, ownerRequester, {
@@ -462,6 +463,7 @@ describe("correctStockCount", () => {
       name: "Unpriced good",
       kind: "goods",
       priceMinor: null,
+      locationId: restaurantId,
     });
     if (!unpriced.ok) throw new Error("expected product create to succeed");
 

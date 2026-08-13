@@ -24,6 +24,11 @@ export type StockLevel = {
   productId: string;
   productName: string;
   quantityOnHand: number;
+  // docs/architecture.md's "Product home location" note: true when this
+  // location is the product's home location, false when it's here only via
+  // a transfer reflected in the ledger — the staff-shell Stock page's "My
+  // stock" / "From another location" split.
+  isOwn: boolean;
 };
 
 export type IngredientMovement = {

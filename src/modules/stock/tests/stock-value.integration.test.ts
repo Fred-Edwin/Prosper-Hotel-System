@@ -87,6 +87,7 @@ describe("getProductStockValueAtLocation", () => {
       name: "Juice (500ml)",
       kind: "goods",
       priceMinor: 120,
+      locationId: restaurantId,
     });
     if (!juice.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, owner, juice.value.id, {
@@ -126,6 +127,7 @@ describe("getProductStockValueAtLocation", () => {
       name: "Chips",
       kind: "cooked_food",
       priceMinor: 150,
+      locationId: restaurantId,
     });
     if (!chips.ok) throw new Error("expected product create to succeed");
     const potatoes = await createIngredient(testDb, owner, {
@@ -172,6 +174,7 @@ describe("getProductStockValueAtLocation", () => {
       name: "Mukimo",
       kind: "cooked_food",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!mukimo.ok) throw new Error("expected product create to succeed");
     await testDb.stockMovement.create({
@@ -206,6 +209,7 @@ describe("getProductStockValueAtLocation", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, owner, soda.value.id, {
@@ -254,6 +258,7 @@ describe("getProductStockValueAtLocation", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
     await testDb.stockMovement.createMany({

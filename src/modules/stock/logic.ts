@@ -9,6 +9,7 @@ import {
 import {
   findIngredientsByIds,
   findProductsByIds,
+  findProductsAtLocation,
   getCurrentRecipe,
   recordIngredientCost,
   recordProductCost,
@@ -150,13 +151,14 @@ export async function getCurrentStockAtLocation(
     db,
     sums.map((s) => s.productId),
   );
-  const nameById = new Map(products.map((p) => [p.id, p.name]));
+  const productById = new Map(products.map((p) => [p.id, p]));
 
   const levels: StockLevel[] = sums
     .map((s) => ({
       productId: s.productId,
-      productName: nameById.get(s.productId) ?? "Unknown product",
+      productName: productById.get(s.productId)?.name ?? "Unknown product",
       quantityOnHand: s.quantityOnHand,
+      isOwn: productById.get(s.productId)?.locationId === locationId,
     }))
     .sort((a, b) => a.productName.localeCompare(b.productName));
 
@@ -344,6 +346,46 @@ export async function getTransferableItems(
       ...products.filter((product) => product.active).map((product) => ({ itemType: "product" as const, itemId: product.id, name: product.name, quantityOnHand: productQuantity.get(product.id) ?? 0, unit: "units" })),
       ...ingredients.filter((ingredient) => ingredient.active).map((ingredient) => ({ itemType: "ingredient" as const, itemId: ingredient.id, name: ingredient.name, quantityOnHand: ingredientQuantity.get(ingredient.id) ?? 0, unit: ingredient.unitOfMeasure })),
     ].sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+export type SellableProductsResult =
+  | { ok: true; products: Product[] }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
+// docs/architecture.md's "Product home location" note: sellable-at-a-location
+// is the union of both sources, not either alone — product.locationId ===
+// here OR positive current stock here per the movement ledger (transferred
+// in and reflected). Mirrors getTransferableItems' shape above, but keyed
+// off Product.locationId instead of a location-agnostic active-item list.
+export async function getSellableProductsAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<SellableProductsResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const location = await findLocationById(db, locationId);
+  if (!location) return { ok: false, reason: "not_found" };
+
+  const sums = await sumMovementsByProductAtLocation(db, locationId);
+  const productIdsWithStock = sums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.productId);
+
+  const [homeProducts, stockedProducts] = await Promise.all([
+    findProductsAtLocation(db, locationId),
+    findProductsByIds(db, productIdsWithStock),
+  ]);
+
+  const byId = new Map<string, Product>();
+  for (const product of [...homeProducts, ...stockedProducts]) {
+    if (product.active) byId.set(product.id, product);
+  }
+
+  return {
+    ok: true,
+    products: [...byId.values()].sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 

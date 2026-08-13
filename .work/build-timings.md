@@ -101,3 +101,21 @@
 - implementation done: 21:43  (implement: <1m — one lookup table + actions prop wiring in staff-page-client.tsx)
 - self-verify done: 22:03  (verify: 20m — lint/tsc clean; Playwright pass across Store Manager's 10 links + Attendant's Takings/Credit sale confirmed correct trigger, correct topic content, staff-stock vs stock distinction holds; found New sale's "Complete sale" bar doesn't reliably sit flush with viewport bottom due to a pre-existing `min-h-full` layout quirk in till.tsx unrelated to this ticket — flagged to user, user verified in browser and confirmed not an issue, proceeded with the same 73px offset used elsewhere)
 - merged: 22:04  (merge: 1m)
+
+## Ticket 53 — Product home location
+- claimed: 12:27
+- context read done: 12:32  (context: 5m — architecture.md, scope.md, bugs.md, catalogue/stock/sales modules, seed.ts, conventions.md)
+- plan proposed: 12:32
+- blocked: 12:32 (badge precedent didn't exist yet — asked whether to build a small badge or the full My-stock/From-restaurant split)
+- blocked: 12:32 (seed data's Delivery box product had no location signal — asked default)
+- plan approved: 12:32  (waiting on user: ~0m — both clarifying questions answered in the same exchange, user chose to fold the full stock-list.tsx split into this ticket)
+- tests written: 12:44  (tests: 12m — 4 failing integration tests for getSellableProductsAtLocation, confirmed failing for the right reason before implementing)
+- blocked: ~12:35 (migration blocked by orphaned DB drift on the dev database — a prior session's abandoned two-sided-transfer schema work was applied via `prisma migrate dev`/`db push` but never committed as migration files; investigated, confirmed 0 rows at risk, reset dev DB with explicit user consent)
+- blocked: ~13:43 (same orphaned-drift class found on the separate test database mid full-suite run — `sold_derived` missing, `transfer_shortfall` present; reset test DB with explicit user consent)
+- blocked: ~13:15 (ticket's cited seed-data precedent — "13 products" — only existed on an unmerged branch, not main; user chose to add 5 new realistic products rather than import the other branch's work)
+- implementation done: 13:58  (implement: ~75m across schema/migration/logic/routes/catalogue-UI/consumer-screens/stock-list, interleaved with the drift investigations above)
+- ui-polish done: 14:08  (ui-polish: 10m — Storybook stories for ProductForm/NewSale/CreditSale/StockList incl. new own-vs-transferred states; UI-rules audit caught two arbitrary text-size values, fixed to match existing token conventions)
+- self-verify done: 14:09  (verify: 1m on top of continuous testing throughout — full suite 406/406 passing, tsc clean, lint clean, Storybook screenshots confirmed all new states render correctly)
+- merged: 14:12  (merge: 3m)
+
+Also fixed as a byproduct, outside this ticket's stated scope but required to unblock it: two instances of orphaned local-database schema drift (dev + test DBs) from a prior session's uncommitted migration work, both resolved via `prisma migrate reset` with explicit per-instance user consent (Prisma's own dangerous-action guard required this).

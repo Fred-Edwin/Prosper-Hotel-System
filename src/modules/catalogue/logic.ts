@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { findExpenseById } from "@/modules/cash";
+import { findLocationById } from "@/modules/people";
 import {
   createAssetRecord,
   createCategoryRecord,
@@ -39,7 +40,10 @@ type WriteResult<T> =
 
 type ProductWriteResult<T> =
   | { ok: true; value: T }
-  | { ok: false; reason: "forbidden" | "duplicate_name" | "not_found" | "invalid_category" };
+  | {
+      ok: false;
+      reason: "forbidden" | "duplicate_name" | "not_found" | "invalid_category" | "invalid_location";
+    };
 
 type RecipeWriteResult<T> =
   | { ok: true; value: T }
@@ -55,7 +59,13 @@ function requireOwner(requester: AuthenticatedStaff): boolean {
 export async function createProduct(
   db: PrismaClient,
   requester: AuthenticatedStaff,
-  input: { name: string; kind: ProductKind; priceMinor?: number | null; categoryId?: string | null },
+  input: {
+    name: string;
+    kind: ProductKind;
+    priceMinor?: number | null;
+    categoryId?: string | null;
+    locationId: string;
+  },
 ): Promise<ProductWriteResult<Product>> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
@@ -67,11 +77,15 @@ export async function createProduct(
     if (!category) return { ok: false, reason: "invalid_category" };
   }
 
+  const location = await findLocationById(db, input.locationId);
+  if (!location) return { ok: false, reason: "invalid_location" };
+
   const product = await createProductRecord(db, {
     name: input.name,
     kind: input.kind,
     priceMinor: input.priceMinor ?? null,
     categoryId: input.categoryId ?? null,
+    locationId: input.locationId,
   });
   return { ok: true, value: product };
 }
@@ -86,6 +100,7 @@ export async function updateProduct(
     priceMinor?: number | null;
     categoryId?: string | null;
     lowStockLevel?: number | null;
+    locationId: string;
   },
 ): Promise<ProductWriteResult<Product>> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
@@ -103,12 +118,16 @@ export async function updateProduct(
     if (!category) return { ok: false, reason: "invalid_category" };
   }
 
+  const location = await findLocationById(db, input.locationId);
+  if (!location) return { ok: false, reason: "invalid_location" };
+
   const product = await updateProductRecord(db, id, {
     name: input.name,
     kind: input.kind,
     priceMinor: input.priceMinor ?? null,
     categoryId: input.categoryId ?? null,
     lowStockLevel: input.lowStockLevel ?? null,
+    locationId: input.locationId,
   });
   return { ok: true, value: product };
 }

@@ -52,10 +52,10 @@ export type LoadState =
   | { status: "error" }
   | { status: "ready"; products: Product[]; ingredients: Ingredient[] };
 
-async function fetchItems(): Promise<LoadState> {
+async function fetchItems(locationId: string): Promise<LoadState> {
   try {
     const [productsRes, ingredientsRes] = await Promise.all([
-      fetch("/api/catalogue/products/active"),
+      fetch(`/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`),
       fetch("/api/catalogue/ingredients/active"),
     ]);
     if (!productsRes.ok || !ingredientsRes.ok) return { status: "error" };
@@ -92,13 +92,20 @@ async function submitWastage(input: {
   }
 }
 
-export function RecordWastage({ onDone }: { onDone?: () => void }) {
+export function RecordWastage({
+  onDone,
+  locationId,
+}: {
+  onDone?: () => void;
+  locationId: string;
+}) {
   const [attempt, setAttempt] = useState(0);
   return (
     <RecordWastageForAttempt
       key={attempt}
       onRetry={() => setAttempt((a) => a + 1)}
       onDone={onDone}
+      locationId={locationId}
     />
   );
 }
@@ -106,21 +113,23 @@ export function RecordWastage({ onDone }: { onDone?: () => void }) {
 function RecordWastageForAttempt({
   onRetry,
   onDone,
+  locationId,
 }: {
   onRetry: () => void;
   onDone?: () => void;
+  locationId: string;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    fetchItems().then((result) => {
+    fetchItems(locationId).then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locationId]);
 
   return <RecordWastageView state={state} onRetry={onRetry} onDone={onDone} />;
 }

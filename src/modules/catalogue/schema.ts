@@ -12,6 +12,9 @@ export type Product = {
   lowStockLevel: number | null;
   active: boolean;
   categoryId: string | null;
+  // docs/architecture.md's "Product home location" note: whose product
+  // this is by default, set by the owner at creation. Required.
+  locationId: string;
 };
 
 export type Category = {

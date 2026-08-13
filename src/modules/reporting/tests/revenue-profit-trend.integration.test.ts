@@ -137,7 +137,7 @@ describe("getRevenueProfitTrend", () => {
     // a number and this test can assert "not a gap" without colliding
     // with Finding 3's separate "no rate yet" unavailable (null) case.
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
     });
     const previousCount = await recordStockCount(testDb, owner(), {
       locationId: canteenId,
@@ -176,7 +176,7 @@ describe("getRevenueProfitTrend", () => {
     const windowEnd = new Date("2026-08-06T12:00:00Z");
 
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     await testDb.sale.create({
       data: {

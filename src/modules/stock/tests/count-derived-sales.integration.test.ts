@@ -61,7 +61,7 @@ beforeEach(async () => {
   attendantId = attendant.id;
 
   const soda = await testDb.product.create({
-    data: { name: "Soda", kind: "goods", priceMinor: 100 },
+    data: { name: "Soda", kind: "goods", priceMinor: 100, locationId: canteenId },
   });
   sodaId = soda.id;
 });
@@ -318,7 +318,7 @@ describe("count-derived sales at the canteen", () => {
   test("only compares items counted in both this count and the previous one", async () => {
     const requester = staffAt("attendant", canteenId);
     const biscuit = await testDb.product.create({
-      data: { name: "Biscuit", kind: "goods", priceMinor: 50 },
+      data: { name: "Biscuit", kind: "goods", priceMinor: 50, locationId: canteenId },
     });
 
     const previous = await recordStockCount(testDb, requester, {

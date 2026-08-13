@@ -107,7 +107,7 @@ afterAll(async () => {
 describe("computeTransferCost — formulas.md §5", () => {
   test("rate = kitchen ingredients consumed ÷ kitchen food's selling value, applied to transferred food's selling value", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
 
     const dayStart = new Date("2026-08-06T00:00:00Z");
@@ -162,7 +162,7 @@ describe("computeTransferCost — formulas.md §5", () => {
 
   test("uses recipe cost instead of the derived rate where the transferred item has a recipe", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     const potatoes = await testDb.ingredient.create({
       data: { name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 9000 },
@@ -275,7 +275,7 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
 
   test("subtracts food sent to canteen from the restaurant total", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     const flour = await testDb.ingredient.create({
       data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 1000 },
@@ -356,7 +356,7 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
 describe("business-total invariant — formulas.md §5", () => {
   test("business cost of goods sold is unaffected by the transfer rate chosen", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     const flour = await testDb.ingredient.create({
       data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 1000 },
@@ -429,7 +429,7 @@ describe("business-total invariant — formulas.md §5", () => {
   // canteen COGS-addition for the same window.
   test("a transfer + reversal round-trip leaves the business total unchanged, and restaurant COGS-reduction equals canteen COGS-addition", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     const flour = await testDb.ingredient.create({
       data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 1000 },
@@ -527,7 +527,7 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     // ingredient at 5/unit, yielding 40 samosas => 50/40 = 1.25/unit,
     // rounds to 1 (Math.round in getCurrentRecipe -> 50/40 = 1.25 -> 1).
     const samosa = await testDb.product.create({
-      data: { name: "Samosa", kind: "cooked_food", priceMinor: 20 },
+      data: { name: "Samosa", kind: "cooked_food", priceMinor: 20, locationId: restaurantId },
     });
     const dough = await testDb.ingredient.create({
       data: { name: "Dough", unitOfMeasure: "kg", lastKnownCostMinor: 5 },
@@ -576,7 +576,7 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
 
   test("own goods: estimated cost = today's takings from those goods × rate measured at the last count", async () => {
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
     });
 
     // Previous count establishes the period the rate is measured over.
@@ -659,7 +659,7 @@ describe("computeCountCorrection — formulas.md §6, 'the count corrects the es
 
   test("computes estimated vs. measured vs. difference once three counts of history exist", async () => {
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
     });
 
     // computeCountCorrection needs the rate in force *before* the period
@@ -771,7 +771,7 @@ describe("getDashboardProfit", () => {
     const weekEnd = new Date("2026-08-10T00:00:00Z"); // following Monday
 
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     await testDb.sale.create({
       data: {
@@ -832,7 +832,7 @@ describe("getDashboardProfit", () => {
     // unavailable (null) — otherwise the reconciliation assertions below
     // would be reconciling null + null against null, which proves nothing.
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
     });
     const previousCount = await recordStockCount(testDb, attendant(canteenId), {
       locationId: canteenId,
@@ -855,7 +855,7 @@ describe("getDashboardProfit", () => {
     expect(latestCount.ok).toBe(true);
 
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     await testDb.sale.create({
       data: {
@@ -943,7 +943,7 @@ describe("getDashboardProfit", () => {
             {
               productId: (
                 await testDb.product.create({
-                  data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+                  data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
                 })
               ).id,
               quantity: 50,
@@ -976,7 +976,7 @@ describe("getDashboardProfit", () => {
     // A count lands, establishing a real rate — the same figures become
     // real numbers from that point on.
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72, locationId: canteenId },
     });
     const previousCount = await recordStockCount(testDb, attendant(canteenId), {
       locationId: canteenId,
@@ -1058,7 +1058,7 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
 
     // Restaurant sells across the two days.
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     await testDb.sale.create({
       data: {

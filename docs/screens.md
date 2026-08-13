@@ -94,6 +94,17 @@ new destinations get added here as tickets that build them land, per
 | Modules/People/CustomersTab | `src/modules/people/ui/customers-tab.stories.tsx` | approved |
 | Modules/People/CustomerDetail | `src/modules/people/ui/customer-detail.stories.tsx` | approved |
 
+## Recent state changes (per-state additions, not new destinations)
+
+Ticket 53 (2026-08-13) added new states to three already-listed stories,
+closing BUG-14: `ProductForm` gained a required home-location `Select`;
+`NewSale` and `CreditSale` gained an "own stock / from another location"
+grouped split with a "Transferred in" badge on the latter
+(`OwnAndTransferredIn` story on both); `StockList` gained the same split
+(`OwnAndTransferredIn` story). Not added as new rows above since the
+underlying screen isn't new — same rule as this file's own note on states
+vs. destinations.
+
 ## Not yet built
 
 Per `docs/roadmap.md`'s stage order — canteen operations (stage 4),

@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { Location } from "@/modules/people";
 import type { Category, Product, ProductKind } from "../schema";
 
 const KIND_LABEL: Record<ProductKind, string> = {
@@ -42,6 +43,7 @@ export function ProductForm({
   onOpenChange,
   product,
   categories,
+  locations,
   saving,
   error,
   onSave,
@@ -54,6 +56,10 @@ export function ProductForm({
    * deactivated since — deactivated categories otherwise drop out of the
    * picker (docs/conventions.md's ingredient-deactivation pattern). */
   categories: Category[];
+  /** docs/architecture.md's "Product home location" note: required at
+   * creation, editable after — same affordance as price/category, no lock
+   * (unlike AssetForm's locked-after-creation location field). */
+  locations: Location[];
   saving?: boolean;
   error?: string;
   onSave: (input: {
@@ -63,6 +69,7 @@ export function ProductForm({
     categoryId: string | null;
     lowStockLevel: number | null;
     active: boolean;
+    locationId: string;
   }) => void;
 }) {
   const [name, setName] = useState(product?.name ?? "");
@@ -71,6 +78,7 @@ export function ProductForm({
     product?.priceMinor != null ? String(product.priceMinor) : "",
   );
   const [categoryId, setCategoryId] = useState<string | null>(product?.categoryId ?? null);
+  const [locationId, setLocationId] = useState(product?.locationId ?? locations[0]?.id ?? "");
   const [lowStockLevel, setLowStockLevel] = useState(
     product?.lowStockLevel != null ? String(product.lowStockLevel) : "",
   );
@@ -106,6 +114,7 @@ export function ProductForm({
             categoryId,
             lowStockLevel: lowStockLevel.trim() === "" ? null : Math.round(Number(lowStockLevel)),
             active,
+            locationId,
           });
         }}
       >
@@ -145,6 +154,24 @@ export function ProductForm({
                 {categoryOptions.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.active ? c.name : `${c.name} (inactive)`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field
+            label="Home location"
+            required
+            hint="Which location this belongs to by default — offered on New Sale there even before any stock has moved"
+          >
+            <Select value={locationId} onValueChange={setLocationId}>
+              <SelectTrigger className="h-9 w-full text-[13px]" data-testid="product-location-select">
+                <SelectValue placeholder="Select a location" />
+              </SelectTrigger>
+              <SelectContent>
+                {locations.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.name}
                   </SelectItem>
                 ))}
               </SelectContent>

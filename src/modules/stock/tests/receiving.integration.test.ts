@@ -59,7 +59,7 @@ beforeEach(async () => {
   flourId = flour.id;
 
   const soda = await testDb.product.create({
-    data: { name: "Soda (500ml)", kind: "goods" },
+    data: { name: "Soda (500ml)", kind: "goods", locationId: restaurant.id },
   });
   sodaId = soda.id;
 });
@@ -309,7 +309,7 @@ describe("recordIngredientReceipt", () => {
 
   test("rejects a line for an inactive product", async () => {
     const inactive = await testDb.product.create({
-      data: { name: "Discontinued snack", kind: "goods", active: false },
+      data: { name: "Discontinued snack", kind: "goods", active: false, locationId: restaurantId },
     });
     const requester = staffAt("store_manager", restaurantId, storeManagerId);
 

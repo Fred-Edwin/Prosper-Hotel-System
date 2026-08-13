@@ -674,7 +674,7 @@ testing moving; route through `/fix` or `/add` when ready.
 ## BUG-14: New Sale offers products with no stock history at the requester's location
 **Severity:** critical
 **Discovered:** manual testing (Edwinfred), full-day walkthrough, 2026-08-13
-**Status:** open
+**Status:** fixed — 2026-08-13, ticket 53
 
 ### Description
 Reported as "the items I see in New Sale don't match what's on the Stock
@@ -737,6 +737,39 @@ Two possible fix shapes, deliberately not decided yet:
 Edwinfred wants this logged and investigation of other stock-page
 issues to continue before deciding which shape to take. Route through
 `/fix` or `/add` when ready to decide/build.
+
+### Fix (2026-08-13, ticket 53)
+Shape 2 (explicit location assignment) chosen — see
+`docs/scope.md`'s 2026-08-13 "Product home location, and an overselling
+guard" entry and `docs/architecture.md`'s "Product home location" note
+for the full reasoning. `Product` gained a required `locationId`, set at
+creation and editable after. A new `getSellableProductsAtLocation`
+(`stock/logic.ts`) unions `product.locationId === here` with positive
+current stock at `here` per the movement ledger, mirroring
+`getTransferableItems`'s shape. `activeProductsRoute` (now
+`sellableProductsAtLocationRoute`, moved to `stock/routes.ts` — see that
+file's comment for why; the URL stays `/api/catalogue/products/active`)
+requires a `locationId` query param and calls this function instead of
+returning the full catalogue.
+
+`new-sale.tsx`, `credit-sale.tsx`, `receive-delivery.tsx`, and
+`record-wastage.tsx` all pass the requester's own `locationId`. New Sale
+and Credit Sale visually group tiles into "My stock" / "From another
+location" sections, the latter badged "Transferred in". The staff Stock
+page (`stock-list.tsx`) gained the same split (`StockLevel.isOwn`),
+addressing the client's original "the items I see in New Sale don't
+match what's on the Stock page" report from both sides at once.
+
+Seed data's 12 products (13 named in the ticket's context section
+described a different, unmerged branch's seed state — not `main`'s;
+noted rather than silently reconciled) each carry a real `locationId`
+matching their seeded movement history. Regression: 4 new integration
+tests in `stock/tests/sellable-products.integration.test.ts` — own
+product with no movements (included), transferred-in-and-reflected
+product (included), product with neither (excluded — the literal repro
+above), and a product excluded at a *different* location than its home
+despite having stock there under a different rule (home-location match
+alone is sufficient regardless of stock).
 
 ## BUG-15: Nothing prevents overselling — no on-hand visibility on New Sale, no backend check
 **Severity:** critical

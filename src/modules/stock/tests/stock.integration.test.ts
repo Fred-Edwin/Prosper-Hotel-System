@@ -49,7 +49,7 @@ beforeAll(async () => {
   });
 
   const product = await testDb.product.create({
-    data: { name: "Sodas (500ml)", kind: "goods" },
+    data: { name: "Sodas (500ml)", kind: "goods", locationId: restaurant.id },
   });
   productId = product.id;
 
@@ -92,7 +92,7 @@ describe("getCurrentStockAtLocation", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.levels).toEqual([
-      { productId, productName: "Sodas (500ml)", quantityOnHand: 42 },
+      { productId, productName: "Sodas (500ml)", quantityOnHand: 42, isOwn: true },
     ]);
   });
 

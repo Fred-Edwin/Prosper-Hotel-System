@@ -56,7 +56,7 @@ beforeEach(async () => {
   cashierId = cashier.id;
 
   const soda = await testDb.product.create({
-    data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 100 },
+    data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 100, locationId: restaurant.id },
   });
   sodaId = soda.id;
 });
@@ -118,6 +118,7 @@ describe("recordNonSalesConsumption", () => {
       name: "Chips",
       kind: "cooked_food",
       priceMinor: 150,
+      locationId: restaurantId,
     });
     if (!product.ok) throw new Error("expected product create to succeed");
     const flour = await createIngredient(testDb, owner, {
@@ -175,6 +176,7 @@ describe("recordNonSalesConsumption", () => {
       name: "Juice (500ml)",
       kind: "goods",
       priceMinor: 120,
+      locationId: restaurantId,
     });
     if (!juice.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, owner, juice.value.id, {
@@ -281,7 +283,7 @@ describe("recordNonSalesConsumption", () => {
 
   test("rejects an inactive product", async () => {
     const inactive = await testDb.product.create({
-      data: { name: "Discontinued soda", kind: "goods", priceMinor: 100, active: false },
+      data: { name: "Discontinued soda", kind: "goods", priceMinor: 100, active: false, locationId: restaurantId },
     });
     const requester = staffAt("cashier", restaurantId);
 

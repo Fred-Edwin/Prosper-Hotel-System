@@ -80,13 +80,21 @@ export function StaffPageClient({
         <StaffHome role={role} handedOverToday={handedOverToday} onOpen={setActive} />
       )}
       {active === "stock" && <StockList locationId={locationId} />}
-      {active === "sell" && <NewSale onDone={() => setActive(null)} role={role} />}
-      {active === "credit" && <CreditSale onDone={() => setActive(null)} />}
+      {active === "sell" && (
+        <NewSale onDone={() => setActive(null)} role={role} locationId={locationId} />
+      )}
+      {active === "credit" && (
+        <CreditSale onDone={() => setActive(null)} locationId={locationId} />
+      )}
       {active === "sales" && <TodaysSales />}
-      {active === "receive" && <ReceiveDelivery onDone={() => setActive(null)} />}
+      {active === "receive" && (
+        <ReceiveDelivery onDone={() => setActive(null)} locationId={locationId} />
+      )}
       {active === "issue" && <IssueToKitchen onDone={() => setActive(null)} />}
       {active === "production" && <RecordProduction onDone={() => setActive(null)} />}
-      {active === "wastage" && <RecordWastage onDone={() => setActive(null)} />}
+      {active === "wastage" && (
+        <RecordWastage onDone={() => setActive(null)} locationId={locationId} />
+      )}
       {active === "count" && <StockCount />}
       {active === "transfer" && <TransferStock />}
       {active === "transfer-history" && <TransferHistoryView />}

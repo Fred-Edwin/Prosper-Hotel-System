@@ -6,6 +6,7 @@ import {
   getIngredientStockValuesAtLocation,
   getLowStockItems,
   getProductStockValueAtLocation,
+  getSellableProductsAtLocation,
   getTransferableItems,
   getLatestStockCount,
   getStockCount,
@@ -35,6 +36,30 @@ export async function stockAtLocationRoute(
   }
 
   return Response.json({ levels: result.levels });
+}
+
+// Backs GET /api/catalogue/products/active?locationId=<id> — every staff
+// member needs to pick a product when recording a sale, receipt, or
+// wastage entry. Lives here rather than in catalogue/routes.ts because it
+// depends on stock's movement ledger (docs/architecture.md's "Product home
+// location" note), and catalogue must not import from stock (stock already
+// imports catalogue — see docs/conventions.md's cross-module rule). The
+// route's URL stays catalogue-namespaced; only the thin Next.js file at
+// that path re-exports this instead.
+export async function sellableProductsAtLocationRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const locationId = new URL(request.url).searchParams.get("locationId");
+  if (!locationId) return Response.json({ error: "location_required" }, { status: 400 });
+
+  const result = await getSellableProductsAtLocation(db, session, locationId);
+  if (!result.ok) {
+    const status = result.reason === "not_found" ? 404 : 403;
+    return Response.json({ error: result.reason }, { status });
+  }
+
+  return Response.json({ products: result.products });
 }
 
 export async function stockValueAtLocationRoute(

@@ -57,7 +57,7 @@ beforeEach(async () => {
   storeManagerId = manager.id;
 
   const [product, ingredient] = await Promise.all([
-    testDb.product.create({ data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 100 } }),
+    testDb.product.create({ data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 100, locationId: restaurantId } }),
     testDb.ingredient.create({ data: { name: "Flour", unitOfMeasure: "kg" } }),
   ]);
   productId = product.id;

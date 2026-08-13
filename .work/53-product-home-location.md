@@ -2,7 +2,7 @@
 
 **Type:** logic (test-first)
 **Blocked by:** None (extends `catalogue`'s existing `Product` model and CRUD)
-**Status:** in-progress (claimed 2026-08-13 12:27, session: /build)
+**Status:** done (2026-08-13, session: /build)
 
 ## Goal
 
@@ -99,26 +99,34 @@ and 56), not because they're deferred without reason.
 
 ## Acceptance criteria
 
-- [ ] Creating or editing a product requires selecting a home location;
+- [x] Creating or editing a product requires selecting a home location;
       the form will not submit without one.
-- [ ] `GET /api/catalogue/products/active?locationId=<id>` returns only
+- [x] `GET /api/catalogue/products/active?locationId=<id>` returns only
       that location's own products plus products with positive current
       stock there — never the full global catalogue.
-- [ ] A product transferred to a location and confirmed received
+- [x] A product transferred to a location and confirmed received
       appears in that location's New Sale list even though its home
       location differs, visually marked as not native to that location.
-- [ ] A product with no home-location match and no stock history at a
+- [x] A product with no home-location match and no stock history at a
       location never appears in that location's New Sale list (the
       literal BUG-14 repro — Mukimo must not appear at the canteen
       before any transfer).
-- [ ] Seed data's 13 products each carry a real `locationId` matching
-      their seeded movement history.
-- [ ] `credit-sale.tsx`, `receive-delivery.tsx`, and `record-wastage.tsx`
+- [x] Seed data's products each carry a real `locationId` matching
+      their seeded movement history. (12 products, not 13 — the ticket's
+      "13" described a different, unmerged branch's seed state; noted in
+      `docs/bugs.md`'s BUG-14 fix rather than silently reconciled. 5
+      additional realistic products added, per Edwinfred's direction, so
+      the count is still a realistic catalogue size rather than the bare
+      minimum.)
+- [x] `credit-sale.tsx`, `receive-delivery.tsx`, and `record-wastage.tsx`
       all still function end-to-end after `locationId` becomes a
       required param on `activeProductsRoute` — none silently break.
-- [ ] Storybook: `ProductForm` gains a location-select state;
+- [x] Storybook: `ProductForm` gains a location-select state;
       `new-sale.tsx`'s story gains a state showing a mix of own and
-      transferred-in tiles, visually distinguished.
+      transferred-in tiles, visually distinguished. Also extended to
+      `credit-sale.tsx` and the staff-shell `stock-list.tsx` (own-vs-
+      transferred split, folded into this ticket per Edwinfred's
+      direction rather than left as BUG-13's separate scope).
 
 ## Verification
 
