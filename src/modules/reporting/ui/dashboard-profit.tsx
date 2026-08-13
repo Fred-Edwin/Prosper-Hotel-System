@@ -34,10 +34,10 @@ import { money } from "@/shared/money";
 
 export type DashboardProfitLocationBreakdown = {
   revenueMinor: number;
-  costOfGoodsMinor: number;
-  grossProfitMinor: number;
+  costOfGoodsMinor: number | null;
+  grossProfitMinor: number | null;
   runningCostsMinor: number;
-  netProfitMinor: number;
+  netProfitMinor: number | null;
   provisional: boolean;
 };
 
@@ -46,12 +46,12 @@ export type DashboardProfitData = {
   costOfGoods: {
     restaurant: number;
     canteenExact: number;
-    canteenEstimated: number;
-    total: number;
+    canteenEstimated: number | null;
+    total: number | null;
   };
   runningCostsMinor: number;
-  grossProfitMinor: number;
-  netProfitMinor: number;
+  grossProfitMinor: number | null;
+  netProfitMinor: number | null;
   canteenCostRate: number | null;
   lastCanteenCount: string | null;
   correction:
@@ -245,12 +245,12 @@ function DashboardProfitViewForPeriod({
 
   const { data } = state;
   const max = data.revenue.total;
-  const pct = (n: number) => Math.max(0, max > 0 ? (n / max) * 100 : 0);
+  const pct = (n: number | null) => Math.max(0, n != null && max > 0 ? (n / max) * 100 : 0);
 
   const terms: {
     key: TermKey;
     label: string;
-    value: number;
+    value: number | null;
     width: number;
     colour: string;
     provisional?: boolean;
@@ -333,9 +333,15 @@ function DashboardProfitViewForPeriod({
                   {t.operator && <span className="text-sm text-muted-foreground/60">{t.operator}</span>}
                   {t.label}
                 </div>
-                <div className="tabular mt-1 text-2xl font-semibold">{money(t.value)}</div>
+                <div className="tabular mt-1 text-2xl font-semibold">
+                  {t.value != null ? money(t.value) : "—"}
+                </div>
                 <div className="tabular mt-0.5 mb-3 text-[11px] text-muted-foreground">
-                  {t.key === "revenue" ? "of takings" : max > 0 ? `${((t.value / max) * 100).toFixed(0)}% of revenue` : "—"}
+                  {t.key === "revenue"
+                    ? "of takings"
+                    : t.value != null && max > 0
+                      ? `${((t.value / max) * 100).toFixed(0)}% of revenue`
+                      : "—"}
                 </div>
               </div>
 
@@ -371,7 +377,16 @@ function DashboardProfitViewForPeriod({
                   muted
                   note="estimated"
                 />
-                <Term label="Canteen cost" value={data.costOfGoods.canteenExact + data.costOfGoods.canteenEstimated} rule strong />
+                <Term
+                  label="Canteen cost"
+                  value={
+                    data.costOfGoods.canteenEstimated != null
+                      ? data.costOfGoods.canteenExact + data.costOfGoods.canteenEstimated
+                      : null
+                  }
+                  rule
+                  strong
+                />
               </div>
               <div className="mt-3 border-t pt-2">
                 <Term label="Cost of goods sold" value={data.costOfGoods.total} strong />
@@ -411,6 +426,14 @@ function DashboardProfitViewForPeriod({
               <Term label="Gross profit" value={data.grossProfitMinor} rule strong />
               <Term label="Running costs" value={data.runningCostsMinor} sign="−" muted />
               <Term label="Net profit" value={data.netProfitMinor} rule strong />
+              {data.netProfitMinor == null && (
+                <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+                  <Info className="mt-0.5 size-3 shrink-0" />
+                  Business-wide profit isn&apos;t available until the canteen has a rate to cost
+                  its own goods against — see the restaurant&apos;s figures under &ldquo;By
+                  location&rdquo; below.
+                </p>
+              )}
             </Detail>
           )}
           <LedgerLink />
@@ -452,7 +475,7 @@ function ByLocation({ byLocation }: { byLocation: DashboardProfitData["byLocatio
                 <LocationCell
                   label="Net profit"
                   value={l.netProfitMinor}
-                  tone={l.netProfitMinor < 0 ? "danger" : undefined}
+                  tone={l.netProfitMinor != null && l.netProfitMinor < 0 ? "danger" : undefined}
                 />
               </div>
             </div>
@@ -469,14 +492,14 @@ function LocationCell({
   tone,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   tone?: "danger";
 }) {
   return (
     <div>
       <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className={`tabular font-medium ${tone === "danger" ? "text-danger" : ""}`}>
-        {value < 0 ? `−${money(Math.abs(value))}` : money(value)}
+        {value == null ? "—" : value < 0 ? `−${money(Math.abs(value))}` : money(value)}
       </div>
     </div>
   );
@@ -501,7 +524,7 @@ function Term({
   note,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   sign?: "+" | "−";
   rule?: boolean;
   strong?: boolean;
@@ -521,8 +544,7 @@ function Term({
         )}
       </span>
       <span className="tabular whitespace-nowrap">
-        {sign === "−" ? "−" : ""}
-        {money(Math.abs(value))}
+        {value == null ? "—" : (sign === "−" ? "−" : "") + money(Math.abs(value))}
       </span>
     </div>
   );

@@ -52,9 +52,9 @@ export type LedgerSummaryData = {
   openingMinor: number;
   purchasesMinor: number;
   closingMinor: number;
-  costOfGoodsSoldMinor: number;
+  costOfGoodsSoldMinor: number | null;
   salesValueMinor: number;
-  grossProfitMinor: number;
+  grossProfitMinor: number | null;
   nonSalesAtCostMinor: number;
   nonSalesAtPriceMinor: number;
   canteenCostRate: number | null;
@@ -417,7 +417,7 @@ function LedgerWaterfall({
   const terms: {
     key: StatTerm;
     label: string;
-    value: number;
+    value: number | null;
     operator?: string;
     colour: string;
     provisional?: boolean;
@@ -446,7 +446,7 @@ function LedgerWaterfall({
       provisional: true,
     },
   ];
-  const max = Math.max(...terms.map((t) => t.value), 1);
+  const max = Math.max(...terms.map((t) => t.value ?? 0), 1);
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm" data-testid="ledger-waterfall">
@@ -487,13 +487,15 @@ function LedgerWaterfall({
                     </span>
                   )}
                 </div>
-                <div className="tabular mt-1 text-2xl font-semibold">{money(t.value)}</div>
+                <div className="tabular mt-1 text-2xl font-semibold">
+                  {t.value != null ? money(t.value) : "—"}
+                </div>
                 <div className="tabular mt-0.5 mb-3 text-[11px] text-muted-foreground">&nbsp;</div>
               </div>
               <div className="h-1.5 w-full bg-muted">
                 <div
                   className="h-full transition-[width] duration-200"
-                  style={{ width: `${(t.value / max) * 100}%`, background: t.colour }}
+                  style={{ width: `${((t.value ?? 0) / max) * 100}%`, background: t.colour }}
                 />
               </div>
             </button>
@@ -527,7 +529,7 @@ function Piece({
   note,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   strong?: boolean;
   tone?: "danger";
   note?: string;
@@ -538,7 +540,7 @@ function Piece({
       <span
         className={`tabular text-[13px] ${strong ? "font-semibold" : ""} ${tone === "danger" ? "text-danger" : ""}`}
       >
-        {money(value)}
+        {value != null ? money(value) : "—"}
       </span>
       {note && <span className="tabular ml-1 text-[11px] text-muted-foreground">· {note}</span>}
     </span>

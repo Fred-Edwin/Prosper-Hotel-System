@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { recordStockCount } from "@/modules/stock";
+import { recordStockCount, recordTransfer, reverseTransfer } from "@/modules/stock";
 import {
   computeTransferCost,
   computeRestaurantCostOfGoods,
@@ -419,6 +419,105 @@ describe("business-total invariant — formulas.md §5", () => {
     expect(restaurantCogs.transferCostMinor).toBe(transfer.transferCostMinor);
     expect(canteenCogs.exactMinor).toBe(transfer.transferCostMinor);
   });
+
+  // Finding 5 regression: computeTransferCost recomputes fresh on every
+  // call rather than being computed once and read twice — the invariant
+  // that cost out of the restaurant equals cost into the canteen holds
+  // today only because every caller happens to pass the same date window.
+  // This asserts a transfer + reversal round-trip leaves the business
+  // total unchanged, and that restaurant COGS-reduction exactly equals
+  // canteen COGS-addition for the same window.
+  test("a transfer + reversal round-trip leaves the business total unchanged, and restaurant COGS-reduction equals canteen COGS-addition", async () => {
+    const chips = await testDb.product.create({
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+    });
+    const flour = await testDb.ingredient.create({
+      data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 1000 },
+    });
+
+    const dayStart = new Date("2026-08-06T00:00:00Z");
+    const dayEnd = new Date("2026-08-06T23:59:59Z");
+
+    await testDb.ingredientMovement.create({
+      data: {
+        ingredientId: flour.id,
+        locationId: restaurantId,
+        quantity: 18,
+        reason: "received",
+        unitCostMinor: 1000,
+        staffMemberId: ownerId,
+        occurredAt: new Date("2026-08-05T12:00:00Z"),
+      },
+    });
+    await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        fulfilment: "counter",
+        totalMinor: 100000,
+        occurredAt: new Date("2026-08-06T09:30:00Z"),
+        lines: { create: [{ productId: chips.id, quantity: 1, priceMinor: 100000 }] },
+      },
+    });
+    // Stock to transfer — recordTransfer (unlike the raw stockMovement
+    // rows this file's other tests write directly) enforces sufficient
+    // stock at the source location.
+    await testDb.stockMovement.create({
+      data: {
+        productId: chips.id,
+        locationId: restaurantId,
+        quantity: 60,
+        reason: "produced",
+        staffMemberId: ownerId,
+        occurredAt: new Date("2026-08-06T08:00:00Z"),
+      },
+    });
+
+    // Baseline, before any transfer.
+    const restaurantBefore = await computeRestaurantCostOfGoods(testDb, owner(), { dayStart, dayEnd });
+    const canteenBefore = await computeCanteenCostOfGoods(testDb, owner(), { dayStart, dayEnd });
+    expect(restaurantBefore.ok && canteenBefore.ok).toBe(true);
+    if (!restaurantBefore.ok || !canteenBefore.ok) return;
+
+    const transferResult = await recordTransfer(testDb, owner(), {
+      fromLocationId: restaurantId,
+      toLocationId: canteenId,
+      itemType: "product",
+      itemId: chips.id,
+      quantity: 60,
+    });
+    expect(transferResult.ok).toBe(true);
+    if (!transferResult.ok) return;
+
+    const restaurantAfterTransfer = await computeRestaurantCostOfGoods(testDb, owner(), { dayStart, dayEnd });
+    const canteenAfterTransfer = await computeCanteenCostOfGoods(testDb, owner(), { dayStart, dayEnd });
+    expect(restaurantAfterTransfer.ok && canteenAfterTransfer.ok).toBe(true);
+    if (!restaurantAfterTransfer.ok || !canteenAfterTransfer.ok) return;
+
+    const restaurantReduction = restaurantBefore.totalMinor - restaurantAfterTransfer.totalMinor;
+    const canteenAddition = canteenAfterTransfer.exactMinor - canteenBefore.exactMinor;
+    expect(restaurantReduction).toBe(canteenAddition);
+    // Business total (restaurant + canteen exact/own-goods-free) is
+    // unaffected by the transfer.
+    expect(restaurantAfterTransfer.totalMinor + canteenAfterTransfer.exactMinor).toBe(
+      restaurantBefore.totalMinor + canteenBefore.exactMinor,
+    );
+
+    const transferId = transferResult.movements[0].transferId;
+    if (!transferId) throw new Error("expected a transferId on the recorded movement");
+    const reversal = await reverseTransfer(testDb, owner(), transferId);
+    expect(reversal.ok).toBe(true);
+
+    const restaurantAfterReversal = await computeRestaurantCostOfGoods(testDb, owner(), { dayStart, dayEnd });
+    const canteenAfterReversal = await computeCanteenCostOfGoods(testDb, owner(), { dayStart, dayEnd });
+    expect(restaurantAfterReversal.ok && canteenAfterReversal.ok).toBe(true);
+    if (!restaurantAfterReversal.ok || !canteenAfterReversal.ok) return;
+
+    // The round-trip returns the business total to its pre-transfer value.
+    expect(restaurantAfterReversal.totalMinor + canteenAfterReversal.exactMinor).toBe(
+      restaurantBefore.totalMinor + canteenBefore.exactMinor,
+    );
+  });
 });
 
 describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
@@ -525,6 +624,8 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     expect(result.estimatedMinor).toBe(Math.round(4000 * 0.72));
   });
 
+  // Finding 3 regression: a missing rate must surface as unavailable
+  // (null), not silently cost the goods at zero.
   test("no previous count: own-goods estimate is unavailable rather than guessed", async () => {
     const dayStart = new Date("2026-08-06T00:00:00Z");
     const dayEnd = new Date("2026-08-06T23:59:59Z");
@@ -534,7 +635,8 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     if (!result.ok) return;
 
     expect(result.canteenCostRate).toBeNull();
-    expect(result.estimatedMinor).toBe(0);
+    expect(result.estimatedMinor).toBeNull();
+    expect(result.totalMinor).toBeNull();
     expect(result.lastCanteenCount).toBeNull();
   });
 
@@ -649,8 +751,11 @@ describe("getDashboardProfit", () => {
 
     expect(result.revenue.canteen).toBe(3000);
     expect(result.runningCostsMinor).toBe(2300);
-    expect(result.grossProfitMinor).toBe(result.revenue.total - result.costOfGoods.total);
-    expect(result.netProfitMinor).toBe(result.grossProfitMinor - result.runningCostsMinor);
+    // No canteen count exists in this test, so the own-goods rate — and
+    // everything downstream of it — is unavailable, not zero (Finding 3).
+    expect(result.costOfGoods.total).toBeNull();
+    expect(result.grossProfitMinor).toBeNull();
+    expect(result.netProfitMinor).toBeNull();
   });
 
   test("rejects a non-owner", async () => {
@@ -722,6 +827,33 @@ describe("getDashboardProfit", () => {
     const dayStart = new Date("2026-08-06T00:00:00Z");
     const dayEnd = new Date("2026-08-06T23:59:59Z");
 
+    // A prior count establishes a real own-goods rate, so this test's
+    // canteen cost/profit figures are numbers, not Finding 3's
+    // unavailable (null) — otherwise the reconciliation assertions below
+    // would be reconciling null + null against null, which proves nothing.
+    const soda = await testDb.product.create({
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+    });
+    const previousCount = await recordStockCount(testDb, attendant(canteenId), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
+    });
+    expect(previousCount.ok).toBe(true);
+    await testDb.stockMovement.create({
+      data: {
+        productId: soda.id,
+        locationId: canteenId,
+        quantity: 100,
+        reason: "received",
+        staffMemberId: ownerId,
+      },
+    });
+    const latestCount = await recordStockCount(testDb, attendant(canteenId), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
+    });
+    expect(latestCount.ok).toBe(true);
+
     const chips = await testDb.product.create({
       data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
     });
@@ -767,8 +899,11 @@ describe("getDashboardProfit", () => {
       result.revenue.total,
     );
 
+    expect(result.byLocation.restaurant.costOfGoodsMinor).not.toBeNull();
+    expect(result.byLocation.canteen.costOfGoodsMinor).not.toBeNull();
+    expect(result.costOfGoods.total).not.toBeNull();
     expect(
-      result.byLocation.restaurant.costOfGoodsMinor + result.byLocation.canteen.costOfGoodsMinor,
+      (result.byLocation.restaurant.costOfGoodsMinor ?? 0) + (result.byLocation.canteen.costOfGoodsMinor ?? 0),
     ).toBe(result.costOfGoods.total);
 
     expect(result.byLocation.restaurant.runningCostsMinor).toBe(800);
@@ -777,12 +912,101 @@ describe("getDashboardProfit", () => {
       result.byLocation.restaurant.runningCostsMinor + result.byLocation.canteen.runningCostsMinor,
     ).toBe(result.runningCostsMinor);
 
+    expect(result.byLocation.restaurant.netProfitMinor).not.toBeNull();
+    expect(result.byLocation.canteen.netProfitMinor).not.toBeNull();
+    expect(result.netProfitMinor).not.toBeNull();
     expect(
-      result.byLocation.restaurant.netProfitMinor + result.byLocation.canteen.netProfitMinor,
+      (result.byLocation.restaurant.netProfitMinor ?? 0) + (result.byLocation.canteen.netProfitMinor ?? 0),
     ).toBe(result.netProfitMinor);
 
     expect(result.byLocation.canteen.provisional).toBe(true);
     expect(result.byLocation.restaurant.provisional).toBe(false);
+  });
+
+  // Finding 3 regression: a canteen with takings but no prior count
+  // returns unavailable (not zero) for cost of goods and profit, both
+  // business-wide and for the canteen's own breakdown — while the
+  // restaurant's exact figures remain real numbers throughout.
+  test("canteen with takings but no prior count: cost of goods and profit are unavailable, not zero", async () => {
+    const dayStart = new Date("2026-08-06T00:00:00Z");
+    const dayEnd = new Date("2026-08-06T23:59:59Z");
+
+    await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+        fulfilment: "counter",
+        totalMinor: 5000,
+        occurredAt: new Date("2026-08-06T09:00:00Z"),
+        lines: {
+          create: [
+            {
+              productId: (
+                await testDb.product.create({
+                  data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+                })
+              ).id,
+              quantity: 50,
+              priceMinor: 5000,
+            },
+          ],
+        },
+      },
+    });
+    await testDb.takings.create({
+      data: { locationId: canteenId, cashMinor: 3000, mpesaMinor: 1000, occurredAt: new Date("2026-08-06T18:00:00Z") },
+    });
+
+    const before = await getDashboardProfit(testDb, owner(), { dayStart, dayEnd });
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+
+    expect(before.canteenCostRate).toBeNull();
+    expect(before.costOfGoods.canteenEstimated).toBeNull();
+    expect(before.costOfGoods.total).toBeNull();
+    expect(before.grossProfitMinor).toBeNull();
+    expect(before.netProfitMinor).toBeNull();
+    expect(before.byLocation.canteen.costOfGoodsMinor).toBeNull();
+    expect(before.byLocation.canteen.grossProfitMinor).toBeNull();
+    expect(before.byLocation.canteen.netProfitMinor).toBeNull();
+    // The restaurant side is unaffected — still exact numbers.
+    expect(before.byLocation.restaurant.costOfGoodsMinor).not.toBeNull();
+    expect(before.byLocation.restaurant.netProfitMinor).not.toBeNull();
+
+    // A count lands, establishing a real rate — the same figures become
+    // real numbers from that point on.
+    const soda = await testDb.product.create({
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+    });
+    const previousCount = await recordStockCount(testDb, attendant(canteenId), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
+    });
+    expect(previousCount.ok).toBe(true);
+    await testDb.stockMovement.create({
+      data: {
+        productId: soda.id,
+        locationId: canteenId,
+        quantity: 100,
+        reason: "received",
+        staffMemberId: ownerId,
+      },
+    });
+    const latestCount = await recordStockCount(testDb, attendant(canteenId), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
+    });
+    expect(latestCount.ok).toBe(true);
+
+    const after = await getDashboardProfit(testDb, owner(), { dayStart, dayEnd });
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+
+    expect(after.canteenCostRate).not.toBeNull();
+    expect(after.costOfGoods.canteenEstimated).not.toBeNull();
+    expect(after.costOfGoods.total).not.toBeNull();
+    expect(after.grossProfitMinor).not.toBeNull();
+    expect(after.netProfitMinor).not.toBeNull();
   });
 });
 
@@ -858,8 +1082,10 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
     });
 
     // Canteen takes cash across the two days — its own-goods cost has no
-    // measured rate yet (no count), so canteen cost of goods is 0 and its
-    // takings still count toward whole-business sales value.
+    // measured rate yet (no count), so canteen cost of goods (and
+    // therefore the whole-business cost of goods sold and gross profit)
+    // is unavailable (Finding 3), not zero. Its takings still count
+    // toward whole-business sales value regardless.
     await testDb.takings.create({
       data: { locationId: canteenId, cashMinor: 1200, mpesaMinor: 300, occurredAt: new Date("2026-08-01T18:00:00Z") },
     });
@@ -890,11 +1116,11 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
     expect(result.openingMinor).toBe(18000);
     expect(result.purchasesMinor).toBe(9000);
     expect(result.closingMinor).toBe(15000);
-    expect(result.costOfGoodsSoldMinor).toBe(
-      result.openingMinor + result.purchasesMinor - result.closingMinor,
-    );
+    // No canteen count in this test, so the own-goods rate — and
+    // everything downstream — is unavailable (Finding 3), not zero.
+    expect(result.costOfGoodsSoldMinor).toBeNull();
     expect(result.salesValueMinor).toBe(5000 + 4000 + 1500 + 1000);
-    expect(result.grossProfitMinor).toBe(result.salesValueMinor - result.costOfGoodsSoldMinor);
+    expect(result.grossProfitMinor).toBeNull();
     expect(result.nonSalesAtCostMinor).toBe(60);
     expect(result.nonSalesAtPriceMinor).toBe(100);
   });
@@ -917,9 +1143,12 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
     expect(result.openingMinor).toBe(0);
     expect(result.purchasesMinor).toBe(0);
     expect(result.closingMinor).toBe(0);
-    expect(result.costOfGoodsSoldMinor).toBe(0);
+    // No canteen count exists at all in this test DB state, so cost of
+    // goods sold and gross profit are unavailable (Finding 3), not zero —
+    // an empty period is not the same as a canteen with a measured rate.
+    expect(result.costOfGoodsSoldMinor).toBeNull();
     expect(result.salesValueMinor).toBe(0);
-    expect(result.grossProfitMinor).toBe(0);
+    expect(result.grossProfitMinor).toBeNull();
     expect(result.nonSalesAtCostMinor).toBe(0);
     expect(result.nonSalesAtPriceMinor).toBe(0);
   });

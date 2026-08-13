@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
+import { recordStockCount } from "@/modules/stock";
 import { getRevenueProfitTrend } from "../logic";
 import { testDb } from "@/shared/test-db";
 
@@ -131,6 +132,32 @@ describe("getRevenueProfitTrend", () => {
 
   test("a day with a recorded Takings row that nets to zero is real data, not a gap", async () => {
     const windowEnd = new Date("2026-08-06T12:00:00Z");
+
+    // A canteen count establishes a real own-goods rate, so net profit is
+    // a number and this test can assert "not a gap" without colliding
+    // with Finding 3's separate "no rate yet" unavailable (null) case.
+    const soda = await testDb.product.create({
+      data: { name: "Soda", kind: "goods", priceMinor: 100, lastKnownCostMinor: 72 },
+    });
+    const previousCount = await recordStockCount(testDb, owner(), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
+    });
+    expect(previousCount.ok).toBe(true);
+    await testDb.stockMovement.create({
+      data: {
+        productId: soda.id,
+        locationId: canteenId,
+        quantity: 100,
+        reason: "received",
+        staffMemberId: ownerId,
+      },
+    });
+    const latestCount = await recordStockCount(testDb, owner(), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: soda.id, countedQuantity: 0 }],
+    });
+    expect(latestCount.ok).toBe(true);
 
     await testDb.takings.create({
       data: { locationId: canteenId, cashMinor: 0, mpesaMinor: 0, occurredAt: new Date("2026-08-05T18:00:00Z") },

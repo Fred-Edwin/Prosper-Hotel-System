@@ -143,10 +143,17 @@ export type RestaurantCostOfGoodsResult =
 // boundaries, valued at each ingredient's current running-average cost —
 // same simplification correctStockCount already makes, since no
 // historical per-batch cost is kept (§3).
+// Finding 5: `precomputedTransfer` lets a caller that also needs the
+// canteen's own COGS (getDashboardProfit, getLedgerSummary) compute
+// computeTransferCost once and pass the same result to both, making the
+// "same figure subtracted from one side, added to the other" invariant
+// structural rather than conventional. Falls back to computing it locally
+// so this function stays independently callable (and testable) on its own.
 export async function computeRestaurantCostOfGoods(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   input: { dayStart: Date; dayEnd: Date },
+  precomputedTransfer?: TransferCostResult,
 ): Promise<RestaurantCostOfGoodsResult> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
@@ -157,7 +164,9 @@ export async function computeRestaurantCostOfGoods(
     getIngredientStockValueAtLocation(db, requester, restaurant.id, input.dayStart),
     getIngredientStockValueAtLocation(db, requester, restaurant.id, input.dayEnd),
     getIngredientsBoughtMinor(db, requester, restaurant.id, input.dayStart, input.dayEnd),
-    computeTransferCost(db, requester, { periodStart: input.dayStart, periodEnd: input.dayEnd }),
+    precomputedTransfer
+      ? Promise.resolve(precomputedTransfer)
+      : computeTransferCost(db, requester, { periodStart: input.dayStart, periodEnd: input.dayEnd }),
   ]);
   if (!opening.ok) return opening;
   if (!closing.ok) return closing;
@@ -181,8 +190,12 @@ export type CanteenCostOfGoodsResult =
   | {
       ok: true;
       exactMinor: number;
-      estimatedMinor: number;
-      totalMinor: number;
+      // Finding 3: null (not 0) when there is no measured own-goods rate
+      // yet — a genuinely unavailable estimate is not the same as "own
+      // goods cost nothing this period." canteenCostRate == null is the
+      // same signal; kept in sync rather than adding a parallel flag.
+      estimatedMinor: number | null;
+      totalMinor: number | null;
       canteenCostRate: number | null;
       lastCanteenCount: Date | null;
     }
@@ -208,10 +221,14 @@ export type CanteenCostOfGoodsResult =
 // applied to today's declared takings. Where there is no previous count
 // (first count, or no count at all), the estimate is unavailable rather
 // than guessed — formulas.md's "the first period has no measured rate."
+// Finding 5: accepts the same optional `precomputedTransfer` as
+// computeRestaurantCostOfGoods, for the same reason — see that function's
+// comment.
 export async function computeCanteenCostOfGoods(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   input: { dayStart: Date; dayEnd: Date },
+  precomputedTransfer?: TransferCostResult,
 ): Promise<CanteenCostOfGoodsResult> {
   if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
 
@@ -231,10 +248,12 @@ export async function computeCanteenCostOfGoods(
   // The transfer itself, and its per-line cost basis (§5) — the figure
   // the restaurant subtracted is exactly what the canteen's restaurant-
   // food cost must add, so this reuses it rather than re-deriving one.
-  const transfer = await computeTransferCost(db, requester, {
-    periodStart: input.dayStart,
-    periodEnd: input.dayEnd,
-  });
+  const transfer =
+    precomputedTransfer ??
+    (await computeTransferCost(db, requester, {
+      periodStart: input.dayStart,
+      periodEnd: input.dayEnd,
+    }));
   if (!transfer.ok) return transfer;
 
   // formulas.md §6's canteen restaurant-food cost: opening + transferred
@@ -273,13 +292,13 @@ export async function computeCanteenCostOfGoods(
   if (!takings.ok) return takings;
   const takingsTotalMinor = takings.cashMinor + takings.mpesaMinor;
 
-  const estimatedMinor = rate != null ? Math.round(takingsTotalMinor * rate) : 0;
+  const estimatedMinor = rate != null ? Math.round(takingsTotalMinor * rate) : null;
 
   return {
     ok: true,
     exactMinor,
     estimatedMinor,
-    totalMinor: exactMinor + estimatedMinor,
+    totalMinor: estimatedMinor != null ? exactMinor + estimatedMinor : null,
     canteenCostRate: rate,
     lastCanteenCount: latestCount.count?.occurredAt ?? null,
   };
@@ -450,10 +469,13 @@ export async function computeCountCorrection(
 
 export type DashboardProfitLocationBreakdown = {
   revenueMinor: number;
-  costOfGoodsMinor: number;
-  grossProfitMinor: number;
+  // Finding 3: null when the canteen has no own-goods rate yet — the
+  // location's cost/profit figures can't be computed, not "computed as
+  // zero cost."
+  costOfGoodsMinor: number | null;
+  grossProfitMinor: number | null;
   runningCostsMinor: number;
-  netProfitMinor: number;
+  netProfitMinor: number | null;
   provisional: boolean;
 };
 
@@ -465,12 +487,19 @@ export type DashboardProfitResult =
       costOfGoods: {
         restaurant: number;
         canteenExact: number;
-        canteenEstimated: number;
-        total: number;
+        canteenEstimated: number | null;
+        // Finding 3: null whenever the canteen portion is unavailable —
+        // a business total can't silently drop the uncomputed canteen
+        // share. Callers show the restaurant-only figure, labelled
+        // partial, per Edwinfred's decision (2026-08-13).
+        total: number | null;
       };
       runningCostsMinor: number;
-      grossProfitMinor: number;
-      netProfitMinor: number;
+      // Business-wide gross/net profit: null when cost of goods is
+      // partial (see costOfGoods.total). See byLocation for the
+      // restaurant-only figures that remain exact in that case.
+      grossProfitMinor: number | null;
+      netProfitMinor: number | null;
       canteenCostRate: number | null;
       lastCanteenCount: Date | null;
       correction: CountCorrectionResult;
@@ -487,9 +516,11 @@ export type DashboardProfitResult =
 // profit; gross profit − running costs = net profit. Business total is
 // unaffected by the transfer rate chosen (formulas.md §5) since the
 // same figure is subtracted from the restaurant and added to the
-// canteen — computeRestaurantCostOfGoods and computeCanteenCostOfGoods
-// each call computeTransferCost independently but with identical
-// inputs, so both sides always agree on the same figure.
+// canteen — computeTransferCost is computed once here (Finding 5) and
+// passed to both computeRestaurantCostOfGoods and
+// computeCanteenCostOfGoods, so both sides are structurally guaranteed
+// to agree on the same figure rather than by both happening to be
+// called with the same window.
 export async function getDashboardProfit(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -499,6 +530,12 @@ export async function getDashboardProfit(
 
   const { restaurant, canteen } = await locations(db);
   if (!restaurant || !canteen) return { ok: false, reason: "not_found" };
+
+  const transfer = await computeTransferCost(db, requester, {
+    periodStart: input.dayStart,
+    periodEnd: input.dayEnd,
+  });
+  if (!transfer.ok) return transfer;
 
   const [
     restaurantRevenue,
@@ -512,8 +549,8 @@ export async function getDashboardProfit(
   ] = await Promise.all([
     getSalesRevenueAtLocation(db, requester, restaurant.id, input.dayStart, input.dayEnd),
     getTakingsAtLocation(db, requester, canteen.id, input.dayStart, input.dayEnd),
-    computeRestaurantCostOfGoods(db, requester, input),
-    computeCanteenCostOfGoods(db, requester, input),
+    computeRestaurantCostOfGoods(db, requester, input, transfer),
+    computeCanteenCostOfGoods(db, requester, input, transfer),
     getRunningCosts(db, requester, input.dayStart, input.dayEnd),
     getRunningCosts(db, requester, input.dayStart, input.dayEnd, restaurant.id),
     getRunningCosts(db, requester, input.dayStart, input.dayEnd, canteen.id),
@@ -537,14 +574,21 @@ export async function getDashboardProfit(
     restaurant: restaurantCogs.totalMinor,
     canteenExact: canteenCogs.exactMinor,
     canteenEstimated: canteenCogs.estimatedMinor,
-    total: restaurantCogs.totalMinor + canteenCogs.totalMinor,
+    total: canteenCogs.totalMinor != null ? restaurantCogs.totalMinor + canteenCogs.totalMinor : null,
   };
-  const grossProfitMinor = revenue.total - costOfGoods.total;
-  const netProfitMinor = grossProfitMinor - runningCosts.totalMinor;
+  // Business-wide profit can't be computed while the canteen's own-goods
+  // cost is unavailable — a partial sum would silently understate cost of
+  // goods sold and overstate profit, the exact failure Finding 3 flagged.
+  // byLocation.restaurant below still carries the exact restaurant-only
+  // figures for that case.
+  const grossProfitMinor = costOfGoods.total != null ? revenue.total - costOfGoods.total : null;
+  const netProfitMinor = grossProfitMinor != null ? grossProfitMinor - runningCosts.totalMinor : null;
 
-  const canteenCostOfGoodsMinor = canteenCogs.exactMinor + canteenCogs.estimatedMinor;
+  const canteenCostOfGoodsMinor =
+    canteenCogs.estimatedMinor != null ? canteenCogs.exactMinor + canteenCogs.estimatedMinor : null;
   const restaurantGrossProfitMinor = revenue.restaurant - costOfGoods.restaurant;
-  const canteenGrossProfitMinor = revenue.canteen - canteenCostOfGoodsMinor;
+  const canteenGrossProfitMinor =
+    canteenCostOfGoodsMinor != null ? revenue.canteen - canteenCostOfGoodsMinor : null;
 
   return {
     ok: true,
@@ -571,7 +615,10 @@ export async function getDashboardProfit(
         costOfGoodsMinor: canteenCostOfGoodsMinor,
         grossProfitMinor: canteenGrossProfitMinor,
         runningCostsMinor: canteenRunningCosts.totalMinor,
-        netProfitMinor: canteenGrossProfitMinor - canteenRunningCosts.totalMinor,
+        netProfitMinor:
+          canteenGrossProfitMinor != null
+            ? canteenGrossProfitMinor - canteenRunningCosts.totalMinor
+            : null,
         // The canteen's own-goods cost is always an estimate between counts
         // (formulas.md §6) — provisional whenever there's any estimated
         // portion, same framing the combined "partly provisional" badge uses.
@@ -763,9 +810,12 @@ export type LedgerSummaryResult =
       openingMinor: number;
       purchasesMinor: number;
       closingMinor: number;
-      costOfGoodsSoldMinor: number;
+      // Finding 3: null while the canteen's own-goods rate is
+      // unavailable — a business-wide total can't silently drop the
+      // uncomputed canteen cost.
+      costOfGoodsSoldMinor: number | null;
       salesValueMinor: number;
-      grossProfitMinor: number;
+      grossProfitMinor: number | null;
       nonSalesAtCostMinor: number;
       nonSalesAtPriceMinor: number;
       canteenCostRate: number | null;
@@ -797,6 +847,14 @@ export async function getLedgerSummary(
 
   const dayShapedInput = { dayStart: input.periodStart, dayEnd: input.periodEnd };
 
+  // Finding 5: computed once and passed to both COGS calls below — see
+  // getDashboardProfit's comment on the same pattern.
+  const transfer = await computeTransferCost(db, requester, {
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
+  });
+  if (!transfer.ok) return transfer;
+
   const [
     opening,
     closing,
@@ -811,8 +869,8 @@ export async function getLedgerSummary(
     getIngredientStockValueAtLocation(db, requester, restaurant.id, input.periodStart),
     getIngredientStockValueAtLocation(db, requester, restaurant.id, input.periodEnd),
     getIngredientsBoughtMinor(db, requester, restaurant.id, input.periodStart, input.periodEnd),
-    computeRestaurantCostOfGoods(db, requester, dayShapedInput),
-    computeCanteenCostOfGoods(db, requester, dayShapedInput),
+    computeRestaurantCostOfGoods(db, requester, dayShapedInput, transfer),
+    computeCanteenCostOfGoods(db, requester, dayShapedInput, transfer),
     getSalesRevenueAtLocation(db, requester, restaurant.id, input.periodStart, input.periodEnd),
     getTakingsAtLocation(db, requester, canteen.id, input.periodStart, input.periodEnd),
     getNonSalesConsumptionValue(db, requester, restaurant.id, input.periodStart, input.periodEnd),
@@ -828,7 +886,8 @@ export async function getLedgerSummary(
   if (!restaurantNonSales.ok) return restaurantNonSales;
   if (!canteenNonSales.ok) return canteenNonSales;
 
-  const costOfGoodsSoldMinor = restaurantCogs.totalMinor + canteenCogs.totalMinor;
+  const costOfGoodsSoldMinor =
+    canteenCogs.totalMinor != null ? restaurantCogs.totalMinor + canteenCogs.totalMinor : null;
   const salesValueMinor =
     restaurantRevenue.totalMinor + canteenTakings.cashMinor + canteenTakings.mpesaMinor;
 
@@ -840,7 +899,7 @@ export async function getLedgerSummary(
     closingMinor: closing.totalMinor,
     costOfGoodsSoldMinor,
     salesValueMinor,
-    grossProfitMinor: salesValueMinor - costOfGoodsSoldMinor,
+    grossProfitMinor: costOfGoodsSoldMinor != null ? salesValueMinor - costOfGoodsSoldMinor : null,
     nonSalesAtCostMinor: restaurantNonSales.atCostMinor + canteenNonSales.atCostMinor,
     nonSalesAtPriceMinor: restaurantNonSales.atPriceMinor + canteenNonSales.atPriceMinor,
     canteenCostRate: canteenCogs.canteenCostRate,

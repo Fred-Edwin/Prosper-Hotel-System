@@ -491,7 +491,7 @@ flagging critical.
 ## BUG-11: Customer repayment always rejected as "more than they owe"
 **Severity:** critical
 **Discovered:** manual testing (Edwinfred), 2026-08-13
-**Status:** open
+**Status:** fixed
 
 ### Description
 Recording a customer repayment from the admin People page always fails
@@ -535,10 +535,25 @@ it isn't the cause of this bug, but may be worth its own bug entry if a
 voided credit sale should stop counting toward what a customer owes.
 See BUG-12 below — confirmed during the Phase 2 financial review.
 
+### Fix (2026-08-13)
+Removed the `* 100` in `customer-detail.tsx:57` — the typed shilling
+amount is now sent to `recordRepayment` unscaled. Added a short comment
+to `src/shared/money.ts` stating the unit convention explicitly (every
+`*Minor` field is whole shillings, nothing should scale by 100) so the
+next person confused about units finds the answer there. Regression
+test: `sales/tests/sales.integration.test.ts` — "a repayment of exactly
+the balance owed succeeds and zeroes the balance," alongside the
+existing "rejects an amount larger than the current balance" test, so
+both halves of the guard are covered. Verified live: repaid a seeded
+customer's full KSh 300 balance from the People → Customers page;
+balance dropped to KSh 0 and status flipped to "Settled." The `*Minor`
+rename recommended by the financial review is deliberately deferred
+past handover — see `docs/handover-phase3a-financial-fixes.md`.
+
 ## BUG-12: Voiding a credit sale doesn't reduce the customer's balance owed
 **Severity:** critical
 **Discovered:** Phase 2 financial code review (docs/financial-code-review.md), 2026-08-13
-**Status:** open
+**Status:** fixed
 
 ### Description
 `sumCreditForCustomer` and `sumCreditAcrossAllCustomers`
@@ -583,3 +598,12 @@ sale: { voided: false } }`), matching the pattern already used by
 `sumCreditSaleQuantityByProductAtLocation` in the same file. Contained,
 no schema change — `PaymentLine` already has a `sale` relation to filter
 through. See `docs/financial-code-review.md` Finding 2 for full tracing.
+
+### Fix (2026-08-13)
+Applied exactly the fix described above to both `sumCreditForCustomer`
+and `sumCreditAcrossAllCustomers` (`sales/queries.ts`). Checked both
+callers (`getCustomerBalance`, `getTotalCustomerBalance`) — neither
+relied on the old (buggy) inclusive behaviour. Regression test:
+`sales/tests/sales.integration.test.ts` — records a credit sale, asserts
+the balance rises, voids it, asserts both the per-customer balance and
+`getTotalCustomerBalance` return to zero.

@@ -1,4 +1,6 @@
 // Kenyan Shillings throughout. See docs/architecture.md non-functionals.
+// Every `*Minor` field is plain whole shillings — there is no minor unit.
+// Nothing should ever scale a shilling amount by 100 (see BUG-11).
 export const money = (n: number) =>
   `KSh ${n.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
 

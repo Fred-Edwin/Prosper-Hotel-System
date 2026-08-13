@@ -196,7 +196,9 @@ function RevenueProfitBars({ points }: { points: RevenueProfitTrendPoint[] }) {
                 aria-label={
                   closed
                     ? `${dayLabel(p.date)}: closed`
-                    : `${dayLabel(p.date)}: Revenue ${money(p.revenue!)}, Net profit ${money(p.netProfit!)}`
+                    : `${dayLabel(p.date)}: Revenue ${money(p.revenue!)}, Net profit ${
+                        p.netProfit != null ? money(p.netProfit) : "not yet available"
+                      }`
                 }
               >
                 {closed ? (
@@ -242,7 +244,11 @@ function RevenueProfitBars({ points }: { points: RevenueProfitTrendPoint[] }) {
             ) : (
               <>
                 <Tip color={PALETTE.revenue} label="Revenue" value={money(active.revenue)} />
-                <Tip color={PALETTE.profit} label="Net profit" value={money(active.netProfit!)} />
+                <Tip
+                  color={PALETTE.profit}
+                  label="Net profit"
+                  value={active.netProfit != null ? money(active.netProfit) : "—"}
+                />
               </>
             )}
           </div>
