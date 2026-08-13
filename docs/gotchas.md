@@ -376,3 +376,30 @@ report reads from directly. Before assuming every `StockMovement`
 quantity must be non-zero, check whether the row's job is "change stock"
 or "attribute an event that already happened elsewhere."
 **Added:** 2026-08-13
+
+## All quantities are `Int` — decimal/fractional amounts cannot be stored
+
+**Symptom:** A recipe input rejects `0.25` (e.g. 0.25 kg of potatoes per
+plate of chips). Not a form validation bug — every quantity column in
+the schema (`RecipeLine.quantity`, `Recipe.yieldQuantity`,
+`StockMovement.quantity`, `IngredientMovement.quantity`,
+`SaleLine.quantity`, `Asset.quantity`, etc.) is `Int` in
+`prisma/schema.prisma`. `Ingredient.unitOfMeasure` is free text ("kg,
+litre, packet, whatever the owner enters"), so the schema allows a unit
+that implies fractional amounts while the quantity column can't hold
+one.
+
+**Cause:** an early modeling decision to track stock in whole units,
+which holds for countable goods (plates, bottles, pieces) but not for
+anything measured by weight/volume where a recipe or delivery
+legitimately needs a fraction of a unit (0.25 kg, 1.5 litre).
+
+**Not fixed yet — needs a decision, not a patch.** `Int → Decimal` is a
+schema-wide migration touching cost math everywhere quantity is
+multiplied by a per-unit cost (recipe costing, stock valuation, COGS,
+movement ledgers) — flagged during 2026-08-13 manual admin-reporting
+reconciliation testing, deliberately not fixed inline. Until decided,
+work around it by defining fractional-prone ingredients in a smaller
+whole unit (e.g. "Potatoes" in units of 100g rather than kg, so 0.25 kg
+becomes `25`) rather than trying to force a decimal into these fields.
+**Added:** 2026-08-13

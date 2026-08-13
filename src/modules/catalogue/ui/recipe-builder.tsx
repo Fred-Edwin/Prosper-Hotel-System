@@ -34,6 +34,7 @@ export function RecipeBuilder({
   initialYield = "",
   unit = "unit",
   saving,
+  error,
   onSave,
   /** Rendered under the cost panel, in the same column — version history. */
   aside,
@@ -43,6 +44,7 @@ export function RecipeBuilder({
   initialYield?: string;
   unit?: string;
   saving?: boolean;
+  error?: string;
   onSave: (input: { lines: RecipeLine[]; yieldQuantity: number }) => void;
   aside?: React.ReactNode;
 }) {
@@ -232,6 +234,8 @@ export function RecipeBuilder({
               </Button>
             </div>
           </div>
+
+          {error && <p className="mt-2 px-1 text-[11px] text-destructive">{error}</p>}
 
           <p className="mt-2 px-1 text-[11px] text-muted-foreground">
             {anyZeroQuantity

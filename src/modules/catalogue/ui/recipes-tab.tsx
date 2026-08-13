@@ -26,6 +26,7 @@ export function RecipesTab({
   versionsLoading,
   onLoadVersions,
   saving,
+  error,
   onSaveRecipe,
 }: {
   cookedFoodProducts: Product[];
@@ -37,6 +38,7 @@ export function RecipesTab({
   versionsLoading?: boolean;
   onLoadVersions: (productId: string) => void;
   saving?: boolean;
+  error?: string;
   onSaveRecipe: (productId: string, input: { lines: RecipeLine[]; yieldQuantity: number }) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -98,6 +100,7 @@ export function RecipesTab({
         initialLines={current?.lines ?? []}
         initialYield={current ? String(current.yieldQuantity) : ""}
         saving={saving}
+        error={error}
         onSave={(input) => onSaveRecipe(product.id, input)}
         aside={
           versionsLoading ? (

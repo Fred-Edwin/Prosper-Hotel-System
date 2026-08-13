@@ -130,6 +130,7 @@ export function IngredientsTab({
         onSave={(input) => onCreate(input)}
       />
       <IngredientForm
+        key={editing?.id ?? "editing"}
         open={editing !== null}
         onOpenChange={(v) => !v && setEditing(null)}
         ingredient={editing ?? undefined}

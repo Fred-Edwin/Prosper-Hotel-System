@@ -55,9 +55,11 @@ async function fetchStaffAndLocations(): Promise<{ staff: StaffMember[]; locatio
   }
 }
 
-async function fetchProducts(): Promise<Product[]> {
+async function fetchProducts(locationId: string): Promise<Product[]> {
   try {
-    const response = await fetch("/api/catalogue/products/active");
+    const response = await fetch(
+      `/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`,
+    );
     if (!response.ok) return [];
     const body = await response.json();
     return Array.isArray(body?.products) ? body.products : [];
@@ -102,7 +104,6 @@ export function RecordCorrectionDialog({ onRecorded }: { onRecorded: () => void 
   const [open, setOpen] = useState(false);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -112,7 +113,6 @@ export function RecordCorrectionDialog({ onRecorded }: { onRecorded: () => void 
         setLocations(result.locations);
       }
     });
-    fetchProducts().then(setProducts);
   }, [open]);
 
   return (
@@ -121,7 +121,7 @@ export function RecordCorrectionDialog({ onRecorded }: { onRecorded: () => void 
       onOpenChange={setOpen}
       staff={staff}
       locations={locations}
-      products={products}
+      fetchProducts={fetchProducts}
       onSubmit={submitCorrection}
       onRecorded={() => {
         setOpen(false);
@@ -136,7 +136,7 @@ export function RecordCorrectionDialogView({
   onOpenChange,
   staff,
   locations,
-  products,
+  fetchProducts,
   onSubmit,
   onRecorded,
   initialReason,
@@ -145,7 +145,7 @@ export function RecordCorrectionDialogView({
   onOpenChange: (open: boolean) => void;
   staff: StaffMember[];
   locations: Location[];
-  products: Product[];
+  fetchProducts: (locationId: string) => Promise<Product[]>;
   onSubmit: (input: {
     staffMemberId: string;
     locationId: string;
@@ -168,8 +168,27 @@ export function RecordCorrectionDialogView({
   const [reason, setReason] = useState(initialReason ?? "");
   const [reasonBlurred, setReasonBlurred] = useState(initialReason !== undefined);
 
+  const [products, setProducts] = useState<Product[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!locationId) return;
+    let cancelled = false;
+    fetchProducts(locationId).then((result) => {
+      if (!cancelled) setProducts(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [locationId, fetchProducts]);
+
+  function handleLocationChange(next: string) {
+    setLocationId(next);
+    setProductId("");
+    setProducts([]);
+  }
 
   const reasonTouched = reasonBlurred && reason.trim() === "";
   const canSubmit =
@@ -207,6 +226,7 @@ export function RecordCorrectionDialogView({
     setStaffMemberId("");
     setLocationId("");
     setProductId("");
+    setProducts([]);
     setQuantity("1");
     setEffectiveDate("");
     setReason("");
@@ -232,7 +252,7 @@ export function RecordCorrectionDialogView({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="correction-location">Location</Label>
-            <Select value={locationId} onValueChange={setLocationId}>
+            <Select value={locationId} onValueChange={handleLocationChange}>
               <SelectTrigger id="correction-location" className="w-full" data-testid="correction-location">
                 <SelectValue placeholder="Choose a location" />
               </SelectTrigger>

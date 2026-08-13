@@ -105,11 +105,13 @@ export function StaffPageClient({
         <ReceiveDelivery onDone={() => setActive(null)} locationId={locationId} />
       )}
       {active === "issue" && <IssueToKitchen onDone={() => setActive(null)} />}
-      {active === "production" && <RecordProduction onDone={() => setActive(null)} />}
+      {active === "production" && (
+        <RecordProduction onDone={() => setActive(null)} locationId={locationId} />
+      )}
       {active === "wastage" && (
         <RecordWastage onDone={() => setActive(null)} locationId={locationId} />
       )}
-      {active === "count" && <StockCount />}
+      {active === "count" && <StockCount locationId={locationId} />}
       {active === "transfer" && <TransferStock />}
       {active === "transfer-history" && <TransferHistoryView />}
       {active === "confirm-transfer" && <ConfirmTransfer />}

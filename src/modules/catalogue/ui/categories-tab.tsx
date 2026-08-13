@@ -118,6 +118,7 @@ export function CategoriesTab({
         onSave={(input) => onCreate(input)}
       />
       <CategoryForm
+        key={editing?.id ?? "editing"}
         open={editing !== null}
         onOpenChange={(v) => !v && setEditing(null)}
         category={editing ?? undefined}

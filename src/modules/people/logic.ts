@@ -9,6 +9,7 @@ import {
   findCustomerById as findCustomerByIdQuery,
   findSessionByToken,
   findStaffMemberByName,
+  findStaffMemberByPhone,
   findStaffMemberById as findStaffMemberByIdQuery,
   listAllStaff,
   listCustomers as listCustomersQuery,
@@ -135,6 +136,9 @@ export async function createStaffMember(
   const existingName = await findStaffMemberByName(db, name);
   if (existingName) return { ok: false, reason: "duplicate_name" };
 
+  const existingPhone = await findStaffMemberByPhone(db, phone);
+  if (existingPhone) return { ok: false, reason: "duplicate_phone" };
+
   const pinHash = await hashPin(input.pin);
   const staffMember = await createStaffMemberRecord(db, {
     name,
@@ -178,6 +182,11 @@ export async function updateStaffMember(
   if (name !== current.name) {
     const existingName = await findStaffMemberByName(db, name);
     if (existingName) return { ok: false, reason: "duplicate_name" };
+  }
+
+  if (phone !== current.phone) {
+    const existingPhone = await findStaffMemberByPhone(db, phone);
+    if (existingPhone) return { ok: false, reason: "duplicate_phone" };
   }
 
   let pinHash: string | undefined;

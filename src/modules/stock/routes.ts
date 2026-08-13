@@ -285,7 +285,7 @@ export async function recordStockCountRoute(request: Request): Promise<Response>
 
   const body = await request.json();
   const result = await recordStockCount(db, session, {
-    locationId: session.staff.locationId,
+    locationId: body.locationId ?? session.staff.locationId,
     lines: body.lines,
   });
   if (!result.ok) {

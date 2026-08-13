@@ -151,6 +151,7 @@ export function ProductsTab({
         onSave={(input) => onCreate(input)}
       />
       <ProductForm
+        key={editing?.id ?? "editing"}
         open={editing !== null}
         onOpenChange={(v) => !v && setEditing(null)}
         product={editing ?? undefined}

@@ -25,8 +25,8 @@ async function postJson(url: string, method: string, body: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await response.json();
-  if (!response.ok) return { ok: false as const, reason: data.error as string };
+  const data = await response.json().catch(() => null);
+  if (!response.ok) return { ok: false as const, reason: data?.error as string | undefined };
   return { ok: true as const, data };
 }
 
@@ -105,19 +105,26 @@ function StaffDestinationReady({
   async function withSaving(fn: () => Promise<{ ok: boolean; reason?: string }>) {
     setSaving(true);
     setError(undefined);
-    const result = await fn();
-    setSaving(false);
-    if (!result.ok) {
-      setError(
-        result.reason === "duplicate_name"
-          ? "That name is already in use."
-          : result.reason === "invalid_pin"
-            ? "PIN must be exactly four digits."
-            : "Couldn't save — try again.",
-      );
-      return;
+    try {
+      const result = await fn();
+      if (!result.ok) {
+        setError(
+          result.reason === "duplicate_name"
+            ? "That name is already in use."
+            : result.reason === "duplicate_phone"
+              ? "That phone number is already in use."
+              : result.reason === "invalid_pin"
+              ? "PIN must be exactly four digits."
+              : "Couldn't save — try again.",
+        );
+        return;
+      }
+      await refresh();
+    } catch {
+      setError("Couldn't save — try again.");
+    } finally {
+      setSaving(false);
     }
-    await refresh();
   }
 
   return (

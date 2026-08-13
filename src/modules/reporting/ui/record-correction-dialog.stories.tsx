@@ -29,7 +29,7 @@ const meta = {
   args: {
     staff,
     locations,
-    products,
+    fetchProducts: async () => products,
     onOpenChange: () => {},
     onSubmit: async () => ({ ok: true }) as const,
     onRecorded: () => {},

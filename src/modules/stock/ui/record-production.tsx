@@ -32,14 +32,33 @@ type Product = {
 
 type Line = { product: Product; quantity: string };
 
+function productionErrorMessage(reason: string): string {
+  switch (reason) {
+    case "no_recipe":
+      return "One of these products has no recipe with a known cost yet — add a recipe in Catalogue before producing it.";
+    case "inactive_product":
+      return "One of these products is no longer active.";
+    case "invalid_quantity":
+      return "Every line needs a quantity above zero.";
+    case "forbidden":
+      return "You don't have permission to record production here.";
+    case "not_found":
+      return "One of these products could not be found.";
+    default:
+      return "Couldn't record the production. Nothing was lost — check the details and try again.";
+  }
+}
+
 export type LoadState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; products: Product[] };
 
-async function fetchProducibleProducts(): Promise<LoadState> {
+async function fetchProducibleProducts(locationId: string): Promise<LoadState> {
   try {
-    const response = await fetch("/api/catalogue/products/active");
+    const response = await fetch(
+      `/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`,
+    );
     if (!response.ok) return { status: "error" };
     const body = await response.json();
     if (!Array.isArray(body?.products)) return { status: "error" };
@@ -69,13 +88,20 @@ async function submitProduction(input: {
   }
 }
 
-export function RecordProduction({ onDone }: { onDone?: () => void }) {
+export function RecordProduction({
+  onDone,
+  locationId,
+}: {
+  onDone?: () => void;
+  locationId: string;
+}) {
   const [attempt, setAttempt] = useState(0);
   return (
     <RecordProductionForAttempt
       key={attempt}
       onRetry={() => setAttempt((a) => a + 1)}
       onDone={onDone}
+      locationId={locationId}
     />
   );
 }
@@ -83,21 +109,23 @@ export function RecordProduction({ onDone }: { onDone?: () => void }) {
 function RecordProductionForAttempt({
   onRetry,
   onDone,
+  locationId,
 }: {
   onRetry: () => void;
   onDone?: () => void;
+  locationId: string;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    fetchProducibleProducts().then((result) => {
+    fetchProducibleProducts(locationId).then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locationId]);
 
   return <RecordProductionView state={state} onRetry={onRetry} onDone={onDone} />;
 }
@@ -290,10 +318,7 @@ function Production({
 
         <div className="space-y-2.5 border-t px-4 py-3">
           {submitError && (
-            <p className="text-[11px] text-destructive">
-              Couldn&apos;t record the production. Nothing was lost — check the details and try
-              again.
-            </p>
+            <p className="text-[11px] text-destructive">{productionErrorMessage(submitError)}</p>
           )}
 
           <Button

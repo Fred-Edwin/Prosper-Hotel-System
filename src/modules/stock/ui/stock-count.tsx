@@ -16,12 +16,12 @@ import { useState } from "react";
 import { RecordStockCount } from "./record-stock-count";
 import { StockCountDetail } from "./stock-count-detail";
 
-export function StockCount() {
+export function StockCount({ locationId }: { locationId: string }) {
   const [countId, setCountId] = useState<string | null>(null);
 
   if (countId) {
     return <StockCountDetail countId={countId} />;
   }
 
-  return <RecordStockCount onRecorded={setCountId} />;
+  return <RecordStockCount onRecorded={setCountId} locationId={locationId} />;
 }

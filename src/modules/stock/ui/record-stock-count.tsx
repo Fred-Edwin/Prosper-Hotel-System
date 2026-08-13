@@ -28,15 +28,17 @@ type Item = {
 
 type Line = { item: Item; quantity: string };
 
+type Location = { id: string; code: string; name: string };
+
 export type LoadState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; items: Item[] };
 
-async function fetchCountableItems(): Promise<LoadState> {
+async function fetchCountableItems(locationId: string): Promise<LoadState> {
   try {
     const [productsRes, ingredientsRes] = await Promise.all([
-      fetch("/api/catalogue/products/active"),
+      fetch(`/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`),
       fetch("/api/catalogue/ingredients/active"),
     ]);
     if (!productsRes.ok || !ingredientsRes.ok) return { status: "error" };
@@ -70,6 +72,7 @@ async function fetchCountableItems(): Promise<LoadState> {
 }
 
 async function submitCount(input: {
+  locationId: string;
   lines: { itemType: "product" | "ingredient"; itemId: string; countedQuantity: number }[];
 }): Promise<{ ok: true; countId: string } | { ok: false; error: string }> {
   try {
@@ -89,10 +92,39 @@ async function submitCount(input: {
   }
 }
 
-export function RecordStockCount({ onRecorded }: { onRecorded?: (countId: string) => void }) {
+async function fetchLocations(): Promise<Location[]> {
+  try {
+    const response = await fetch("/api/catalogue");
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body?.locations) ? body.locations : [];
+  } catch {
+    return [];
+  }
+}
+
+export function RecordStockCount({
+  onRecorded,
+  locationId,
+}: {
+  onRecorded?: (countId: string) => void;
+  /** Staff shell always knows its own logged-in staff member's location —
+   * pass it to skip the locations fetch and picker entirely, since only
+   * the owner (the admin /stock/count page, no fixed location) needs to
+   * choose between locations. */
+  locationId?: string;
+}) {
   const [attempt, setAttempt] = useState(0);
-  return (
-    <RecordStockCountForAttempt
+  return locationId ? (
+    <RecordStockCountForLocation
+      key={attempt}
+      locations={[{ id: locationId, code: "", name: "" }]}
+      initialLocationId={locationId}
+      onRetry={() => setAttempt((a) => a + 1)}
+      onRecorded={onRecorded}
+    />
+  ) : (
+    <RecordStockCountForOwner
       key={attempt}
       onRetry={() => setAttempt((a) => a + 1)}
       onRecorded={onRecorded}
@@ -100,10 +132,89 @@ export function RecordStockCount({ onRecorded }: { onRecorded?: (countId: string
   );
 }
 
-function RecordStockCountForAttempt({
+type LocationsState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; locations: Location[] };
+
+/** Owner-only path (admin /stock/count) — no single fixed location, so
+ * fetch every location and let the picker in RecordStockCountView choose. */
+function RecordStockCountForOwner({
   onRetry,
   onRecorded,
 }: {
+  onRetry: () => void;
+  onRecorded?: (countId: string) => void;
+}) {
+  const [locationsState, setLocationsState] = useState<LocationsState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLocations().then((locations) => {
+      if (cancelled) return;
+      setLocationsState(
+        locations.length === 0 ? { status: "error" } : { status: "ready", locations },
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (locationsState.status === "loading") return <CountingSkeleton />;
+  if (locationsState.status === "error") {
+    return (
+      <div className="p-3">
+        <ErrorState what="locations" onRetry={onRetry} />
+      </div>
+    );
+  }
+
+  return (
+    <RecordStockCountForLocation
+      locations={locationsState.locations}
+      initialLocationId={locationsState.locations[0].id}
+      onRetry={onRetry}
+      onRecorded={onRecorded}
+    />
+  );
+}
+
+function RecordStockCountForLocation({
+  locations,
+  initialLocationId,
+  onRetry,
+  onRecorded,
+}: {
+  locations: Location[];
+  initialLocationId: string;
+  onRetry: () => void;
+  onRecorded?: (countId: string) => void;
+}) {
+  const [locationId, setLocationId] = useState(initialLocationId);
+
+  return (
+    <RecordStockCountForLocationAttempt
+      key={locationId}
+      locations={locations}
+      locationId={locationId}
+      onLocationChange={setLocationId}
+      onRetry={onRetry}
+      onRecorded={onRecorded}
+    />
+  );
+}
+
+function RecordStockCountForLocationAttempt({
+  locations,
+  locationId,
+  onLocationChange,
+  onRetry,
+  onRecorded,
+}: {
+  locations: Location[];
+  locationId: string;
+  onLocationChange: (locationId: string) => void;
   onRetry: () => void;
   onRecorded?: (countId: string) => void;
 }) {
@@ -111,30 +222,49 @@ function RecordStockCountForAttempt({
 
   useEffect(() => {
     let cancelled = false;
-    fetchCountableItems().then((result) => {
+    fetchCountableItems(locationId).then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locationId]);
 
-  return <RecordStockCountView state={state} onRetry={onRetry} onRecorded={onRecorded} />;
+  return (
+    <RecordStockCountView
+      state={state}
+      locations={locations}
+      locationId={locationId}
+      onLocationChange={onLocationChange}
+      onRetry={onRetry}
+      onRecorded={onRecorded}
+    />
+  );
 }
 
 /** The presentational half — what Storybook mounts to show every state
  * without a network. */
 export function RecordStockCountView({
   state,
+  locations,
+  locationId,
+  onLocationChange = () => {},
   onRetry = () => {},
   onRecorded = () => {},
   onSubmit = submitCount,
 }: {
   state: LoadState;
+  locations: Location[];
+  locationId: string;
+  onLocationChange?: (locationId: string) => void;
   onRetry?: () => void;
   onRecorded?: (countId: string) => void;
   onSubmit?: typeof submitCount;
 }) {
+  const picker = locations.length > 1 && (
+    <LocationPicker locations={locations} value={locationId} onChange={onLocationChange} />
+  );
+
   if (state.status === "loading") return <CountingSkeleton />;
   if (state.status === "error") {
     return (
@@ -146,6 +276,7 @@ export function RecordStockCountView({
   if (state.items.length === 0) {
     return (
       <div className="p-3">
+        {picker}
         <EmptyFirstUse
           icon={<ClipboardList className="size-4" />}
           title="Nothing to count yet"
@@ -155,15 +286,59 @@ export function RecordStockCountView({
     );
   }
 
-  return <Counting items={state.items} onRecorded={onRecorded} onSubmit={onSubmit} />;
+  return (
+    <Counting
+      items={state.items}
+      locationId={locationId}
+      picker={picker}
+      onRecorded={onRecorded}
+      onSubmit={onSubmit}
+    />
+  );
+}
+
+function LocationPicker({
+  locations,
+  value,
+  onChange,
+}: {
+  locations: Location[];
+  value: string;
+  onChange: (locationId: string) => void;
+}) {
+  return (
+    <div className="border-b bg-card px-3 pt-2 pb-2">
+      <div className="flex gap-1.5" data-testid="count-location-picker">
+        {locations.map((l) => (
+          <button
+            key={l.id}
+            type="button"
+            onClick={() => onChange(l.id)}
+            data-testid={`count-location-${l.code}`}
+            className={`rounded-full border px-3 py-1 text-[12px] font-medium transition-colors duration-100 ${
+              l.id === value
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-border bg-transparent text-muted-foreground"
+            }`}
+          >
+            {l.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Counting({
   items,
+  locationId,
+  picker,
   onRecorded,
   onSubmit,
 }: {
   items: Item[];
+  locationId: string;
+  picker?: React.ReactNode;
   onRecorded: (countId: string) => void;
   onSubmit: typeof submitCount;
 }) {
@@ -194,6 +369,7 @@ function Counting({
     setSubmitting(true);
     setSubmitError(null);
     const result = await onSubmit({
+      locationId,
       lines: lines.map((l) => ({
         itemType: l.item.itemType,
         itemId: l.item.id,
@@ -210,6 +386,7 @@ function Counting({
 
   return (
     <div className="flex min-h-full flex-col">
+      {picker}
       <div className="border-b bg-card px-3 pt-2 pb-2">
         <div className="relative">
           <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />

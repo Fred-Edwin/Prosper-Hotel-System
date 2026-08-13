@@ -28,22 +28,29 @@ const items = [
 
 const stubSubmit = async () => ({ ok: true as const, countId: "count-1" });
 
+const locations = [
+  { id: "loc-restaurant", code: "restaurant", name: "Prosper Restaurant" },
+  { id: "loc-canteen", code: "canteen", name: "Prosper Canteen" },
+];
+
 export const Default: Story = {
   args: {
     state: { status: "ready", items },
+    locations,
+    locationId: "loc-restaurant",
     onSubmit: stubSubmit,
   },
 };
 
 export const Loading: Story = {
-  args: { state: { status: "loading" } },
+  args: { state: { status: "loading" }, locations, locationId: "loc-restaurant" },
 };
 
 export const Empty: Story = {
   name: "Empty — first use",
-  args: { state: { status: "ready", items: [] } },
+  args: { state: { status: "ready", items: [] }, locations, locationId: "loc-restaurant" },
 };
 
 export const Error: Story = {
-  args: { state: { status: "error" } },
+  args: { state: { status: "error" }, locations, locationId: "loc-restaurant" },
 };

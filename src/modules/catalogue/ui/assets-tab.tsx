@@ -119,6 +119,7 @@ export function AssetsTab({
         onSave={(input) => onCreate(input)}
       />
       <AssetForm
+        key={editing?.id ?? "editing"}
         open={editing !== null}
         onOpenChange={(v) => !v && setEditing(null)}
         asset={editing ?? undefined}
