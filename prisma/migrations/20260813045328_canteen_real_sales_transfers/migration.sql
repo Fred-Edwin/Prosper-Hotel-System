@@ -6,6 +6,11 @@ CREATE TYPE "TransferStatus" AS ENUM ('pending', 'confirmed');
 
 -- AlterEnum
 BEGIN;
+-- sold_derived is retired by this migration (canteen sales are now recorded
+-- directly, not inferred from stock counts); backfill historical rows to
+-- the closest surviving reason before narrowing the enum.
+UPDATE "stock_movements" SET "reason" = 'sold' WHERE "reason" = 'sold_derived';
+UPDATE "ingredient_movements" SET "reason" = 'sold' WHERE "reason" = 'sold_derived';
 CREATE TYPE "StockMovementReason_new" AS ENUM ('received', 'transferred', 'sold', 'transfer_shortfall', 'wasted', 'consumed', 'given_away', 'issued', 'produced', 'corrected');
 ALTER TABLE "stock_movements" ALTER COLUMN "reason" TYPE "StockMovementReason_new" USING ("reason"::text::"StockMovementReason_new");
 ALTER TABLE "ingredient_movements" ALTER COLUMN "reason" TYPE "StockMovementReason_new" USING ("reason"::text::"StockMovementReason_new");
