@@ -159,9 +159,10 @@ exception to that rule, not an extension of it.*
   catalogue create/edit form, editable afterward the same as price or category.
 - New Sale, Production, and the stock-correction dialog, at each location, offer only: that
   location's own products, plus products currently held there via a confirmed transfer in.
-  Transferred-in items are visually distinguished from the location's own products (badge or
-  grouped section), matching the existing canteen Stock page's "My stock / From restaurant"
-  split.
+  Transferred-in items are visually distinguished from the location's own products via a
+  "My stock" / "From restaurant" tab pair (2026-08-13: switched from a stacked grouped-section
+  layout to match the canteen Stock page's tab pattern exactly, including labels), each tab
+  showing that source's product grid; a "Transferred in" badge still marks transferred tiles.
 - **Production is hard-gated to home location** — a location can only produce a product whose
   home location it is (the canteen can never "produce" a restaurant-owned cooked-food item).
 - **A real overselling guard, in two parts, both required:**

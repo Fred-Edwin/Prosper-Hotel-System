@@ -250,10 +250,9 @@ function CreditProductTile({
   );
 }
 
-/** Own-stock / transferred-in grouped section — same split new-sale.tsx's
- * Till uses. */
+/** Own-stock / transferred-in product grid for one tab — same split
+ * new-sale.tsx's Till uses. */
 function CreditProductTileGroup({
-  title,
   products,
   lines,
   onAdd,
@@ -261,7 +260,6 @@ function CreditProductTileGroup({
   badge,
   className,
 }: {
-  title: string;
   products: Product[];
   lines: Line[];
   onAdd: (p: Product) => void;
@@ -271,9 +269,6 @@ function CreditProductTileGroup({
 }) {
   return (
     <div className={className}>
-      <h3 className="mb-1.5 px-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {title}
-      </h3>
       <div className="grid grid-cols-3 gap-2" data-testid={`credit-sale-product-grid-${testIdPrefix}`}>
         {products.map((p) => (
           <CreditProductTile
@@ -305,6 +300,7 @@ function CreditTill({
   locationId?: string;
 }) {
   const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "own" | "transferred">("all");
   const [lines, setLines] = useState<Line[]>([]);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -330,9 +326,9 @@ function CreditTill({
     ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
     : products;
 
-  // docs/architecture.md's "Product home location" note: same own/
-  // transferred-in split as new-sale.tsx's Till — credit sales share the
-  // same picker concerns.
+  // docs/scope.md's "Product home location" note: same own/transferred-in
+  // split as new-sale.tsx's Till — credit sales share the same picker
+  // concerns.
   const ownProducts = shown.filter((p) => p.locationId === locationId);
   const transferredProducts = shown.filter((p) => p.locationId !== locationId);
 
@@ -409,28 +405,60 @@ function CreditTill({
             </Button>
           </div>
         ) : locationId ? (
-          <>
-            {ownProducts.length > 0 && (
-              <CreditProductTileGroup
-                title="My stock"
-                products={ownProducts}
-                lines={lines}
-                onAdd={add}
-                testIdPrefix="own"
-              />
-            )}
-            {transferredProducts.length > 0 && (
-              <CreditProductTileGroup
-                title="From another location"
-                products={transferredProducts}
-                lines={lines}
-                onAdd={add}
-                testIdPrefix="transferred"
-                badge="Transferred in"
-                className={ownProducts.length > 0 ? "mt-4" : undefined}
-              />
-            )}
-          </>
+          transferredProducts.length === 0 ? (
+            <CreditProductTileGroup
+              products={ownProducts}
+              lines={lines}
+              onAdd={add}
+              testIdPrefix="own"
+            />
+          ) : (
+            <>
+              <div
+                className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+                role="tablist"
+                aria-label="Stock source"
+              >
+                {(
+                  [
+                    { key: "own" as const, label: "My stock" },
+                    { key: "transferred" as const, label: "From restaurant" },
+                  ]
+                ).map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={sourceFilter === tab.key || (sourceFilter === "all" && tab.key === "own")}
+                    onClick={() => setSourceFilter(tab.key)}
+                    data-testid={`credit-sale-source-tab-${tab.key}`}
+                    className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+                      sourceFilter === tab.key || (sourceFilter === "all" && tab.key === "own")
+                        ? "bg-card shadow-sm"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              {sourceFilter === "transferred" ? (
+                <CreditProductTileGroup
+                  products={transferredProducts}
+                  lines={lines}
+                  onAdd={add}
+                  testIdPrefix="transferred"
+                  badge="Transferred in"
+                />
+              ) : (
+                <CreditProductTileGroup
+                  products={ownProducts}
+                  lines={lines}
+                  onAdd={add}
+                  testIdPrefix="own"
+                />
+              )}
+            </>
+          )
         ) : (
           <div className="grid grid-cols-3 gap-2" data-testid="credit-sale-product-grid">
             {shown.map((p) => {

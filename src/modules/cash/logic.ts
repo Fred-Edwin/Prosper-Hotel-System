@@ -2,6 +2,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import {
   canAccessLocation,
   getPayForStaff,
+  listLocations,
   markDaysWorkedPaid,
   type AuthenticatedStaff,
 } from "@/modules/people";
@@ -16,7 +17,7 @@ import {
   findDrawingRepaymentById,
   findExpenseById,
   findTodaysHandover,
-  findTodaysHandoversAtLocation,
+  findTodaysHandoversAtLocations,
   listDrawingRepayments,
   listDrawingRepaymentsInPeriod,
   listExpensesAtLocation,
@@ -439,24 +440,31 @@ export async function listExpenses(
   return { ok: true, expenses };
 }
 
-export type GetTodaysHandoversAtLocationResult =
+export type GetTodaysHandoversResult =
   | { ok: true; handovers: HandoverWithStaffName[] }
   | { ok: false; reason: "forbidden" };
 
-// Dashboard's own-staff-only Handover section (ticket 14). Owner-only,
-// restaurant-scoped: the canteen has no handover concept yet, and this
-// screen must not imply canteen coverage that doesn't exist.
-export async function getTodaysHandoversAtLocation(
+// Dashboard's Handover section (ticket 14, extended by the 2026-08-13
+// canteen redesign): owner-only, both locations — the canteen now records
+// real handovers too (docs/proposal.md §5's combined cash+M-Pesa check),
+// so restricting this to the restaurant left every canteen handover
+// silently absent from the dashboard.
+export async function getTodaysHandovers(
   db: PrismaClient,
   requester: AuthenticatedStaff,
-  locationId: string,
-): Promise<GetTodaysHandoversAtLocationResult> {
+): Promise<GetTodaysHandoversResult> {
   if (requester.staff.role !== "owner") {
     return { ok: false, reason: "forbidden" };
   }
 
   const { dayStart, dayEnd } = dayBounds();
-  const handovers = await findTodaysHandoversAtLocation(db, locationId, dayStart, dayEnd);
+  const locations = await listLocations(db);
+  const handovers = await findTodaysHandoversAtLocations(
+    db,
+    locations.map((l) => l.id),
+    dayStart,
+    dayEnd,
+  );
   return { ok: true, handovers };
 }
 

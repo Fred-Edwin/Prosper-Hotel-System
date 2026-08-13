@@ -296,11 +296,11 @@ function ProductTile({
   );
 }
 
-/** A titled section of product tiles — "My stock" / "From another
- * location", the docs/architecture.md-required visual split between a
- * location's own products and items sellable there only via transfer. */
+/** A grid of product tiles for one stock source ("My stock" / "From
+ * restaurant"), shown one tab at a time — the docs/scope.md-required
+ * visual split between a location's own products and items sellable there
+ * only via transfer. */
 function ProductTileGroup({
-  title,
   products,
   lines,
   onAdd,
@@ -308,7 +308,6 @@ function ProductTileGroup({
   badge,
   className,
 }: {
-  title: string;
   products: Product[];
   lines: Line[];
   onAdd: (p: Product) => void;
@@ -318,9 +317,6 @@ function ProductTileGroup({
 }) {
   return (
     <div className={className}>
-      <h3 className="mb-1.5 px-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {title}
-      </h3>
       <div className="grid grid-cols-3 gap-2" data-testid={`till-product-grid-${testIdPrefix}`}>
         {products.map((p) => (
           <ProductTile
@@ -365,6 +361,7 @@ function Till({
   // recordCounterSale now tolerates paymentLines: [] for this role.
   const paymentOptionalForRole = role === "attendant";
   const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "own" | "transferred">("all");
   const [lines, setLines] = useState<Line[]>([]);
   const [fulfilment, setFulfilment] = useState<Fulfilment>(
     counterDisabledForRole ? "delivery" : "counter",
@@ -409,9 +406,11 @@ function Till({
     ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
     : products;
 
-  // docs/architecture.md's "Product home location" note: transferred-in
-  // items (home location elsewhere, sellable here only via positive ledger
-  // stock) are visually distinguished from this location's own products.
+  // docs/scope.md's "Product home location" note: transferred-in items
+  // (home location elsewhere, sellable here only via positive ledger
+  // stock) are visually distinguished from this location's own products —
+  // same tab pattern and labels as the Stock page's My stock/From
+  // restaurant split, rather than a distinct grouped-section layout.
   const ownProducts = shown.filter((p) => p.locationId === locationId);
   const transferredProducts = shown.filter((p) => p.locationId !== locationId);
 
@@ -608,28 +607,60 @@ function Till({
             </Button>
           </div>
         ) : locationId ? (
-          <>
-            {ownProducts.length > 0 && (
-              <ProductTileGroup
-                title="My stock"
-                products={ownProducts}
-                lines={lines}
-                onAdd={add}
-                testIdPrefix="own"
-              />
-            )}
-            {transferredProducts.length > 0 && (
-              <ProductTileGroup
-                title="From another location"
-                products={transferredProducts}
-                lines={lines}
-                onAdd={add}
-                testIdPrefix="transferred"
-                badge="Transferred in"
-                className={ownProducts.length > 0 ? "mt-4" : undefined}
-              />
-            )}
-          </>
+          transferredProducts.length === 0 ? (
+            <ProductTileGroup
+              products={ownProducts}
+              lines={lines}
+              onAdd={add}
+              testIdPrefix="own"
+            />
+          ) : (
+            <>
+              <div
+                className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+                role="tablist"
+                aria-label="Stock source"
+              >
+                {(
+                  [
+                    { key: "own" as const, label: "My stock" },
+                    { key: "transferred" as const, label: "From restaurant" },
+                  ]
+                ).map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={sourceFilter === tab.key || (sourceFilter === "all" && tab.key === "own")}
+                    onClick={() => setSourceFilter(tab.key)}
+                    data-testid={`till-source-tab-${tab.key}`}
+                    className={`h-8 rounded-md text-[13px] font-medium transition-colors duration-100 ${
+                      sourceFilter === tab.key || (sourceFilter === "all" && tab.key === "own")
+                        ? "bg-card shadow-sm"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              {sourceFilter === "transferred" ? (
+                <ProductTileGroup
+                  products={transferredProducts}
+                  lines={lines}
+                  onAdd={add}
+                  testIdPrefix="transferred"
+                  badge="Transferred in"
+                />
+              ) : (
+                <ProductTileGroup
+                  products={ownProducts}
+                  lines={lines}
+                  onAdd={add}
+                  testIdPrefix="own"
+                />
+              )}
+            </>
+          )
         ) : (
           <div className="grid grid-cols-3 gap-2" data-testid="till-product-grid">
             {shown.map((p) => {

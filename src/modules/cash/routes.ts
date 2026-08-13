@@ -1,9 +1,9 @@
 import { db } from "@/shared/db";
-import { getSession, findStaffMembersByIds, findLocationByCode } from "@/modules/people";
+import { getSession, findStaffMembersByIds } from "@/modules/people";
 import { listReceiptsAtLocation } from "@/modules/stock";
 import {
   getTodaysHandoverForStaff,
-  getTodaysHandoversAtLocation,
+  getTodaysHandovers,
   getRunningCashBalance,
   recordHandover,
   listExpenses,
@@ -78,17 +78,16 @@ export async function todaysHandoverRoute(): Promise<Response> {
   });
 }
 
-// Dashboard's Handover section (ticket 14): today's restaurant handovers,
-// all staff, expected vs. actual — the owner's comparison, never sent to
-// the staff member who recorded it (see recordHandoverRoute's note above).
-export async function todaysHandoversAtRestaurantRoute(): Promise<Response> {
+// Dashboard's Handover section (ticket 14, extended by the 2026-08-13
+// canteen redesign to include the canteen too): today's handovers across
+// both locations, all staff, expected vs. actual — the owner's comparison,
+// never sent to the staff member who recorded it (see recordHandoverRoute's
+// note above).
+export async function todaysHandoversRoute(): Promise<Response> {
   const session = await getSession();
   if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
 
-  const restaurant = await findLocationByCode(db, "restaurant");
-  if (!restaurant) return Response.json({ error: "not_found" }, { status: 404 });
-
-  const result = await getTodaysHandoversAtLocation(db, session, restaurant.id);
+  const result = await getTodaysHandovers(db, session);
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
@@ -96,6 +95,7 @@ export async function todaysHandoversAtRestaurantRoute(): Promise<Response> {
   return Response.json({
     handovers: result.handovers.map((h) => ({
       id: h.id,
+      locationId: h.locationId,
       staffName: h.staffName,
       expectedCashMinor: h.expectedCashMinor,
       expectedMpesaMinor: h.expectedMpesaMinor,

@@ -3,8 +3,10 @@ import { DashboardHandoversView } from "./dashboard-handovers";
 
 /**
  * Dashboard's Handover section — the owner's comparison view. Real seed
- * data shaped like a plausible restaurant day: two staff agreed, one is
- * short on both cash and M-Pesa.
+ * data shaped like a plausible trading day: restaurant staff (two agreed,
+ * one short on both cash and M-Pesa) plus the canteen's single
+ * combined-figure check (docs/proposal.md §5), shown as a separate table
+ * since the two aren't the same shape.
  */
 const meta = {
   title: "Modules/Cash/DashboardHandovers",
@@ -44,6 +46,33 @@ export const AgreedAndFlagged: Story = {
           expectedMpesaMinor: 275000,
           actualCashMinor: 500000,
           actualMpesaMinor: 275000,
+        },
+      ],
+    },
+  },
+};
+
+export const RestaurantAndCanteen: Story = {
+  name: "Restaurant and canteen — different shapes",
+  args: {
+    state: {
+      status: "ready",
+      handovers: [
+        {
+          id: "h1",
+          staffName: "Amina Hassan",
+          expectedCashMinor: 815000,
+          expectedMpesaMinor: 620000,
+          actualCashMinor: 815000,
+          actualMpesaMinor: 620000,
+        },
+        {
+          id: "h2",
+          staffName: "Canteen Attendant",
+          expectedCashMinor: 540000,
+          expectedMpesaMinor: null,
+          actualCashMinor: 300000,
+          actualMpesaMinor: 215000,
         },
       ],
     },

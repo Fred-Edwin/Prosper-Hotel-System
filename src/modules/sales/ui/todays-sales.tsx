@@ -459,13 +459,24 @@ export function TodaysSalesView({
 }
 
 /** Cash + M-Pesa combined, excluding credit — the till figure a cashier or
- * attendant cares about, not the invoiced total. Voided sales excluded. */
+ * attendant cares about, not the invoiced total. Voided sales excluded.
+ *
+ * docs/proposal.md §4 (2026-08-13 canteen redesign): a canteen cash/M-Pesa
+ * sale carries no payment line at entry (reconciled against the day's
+ * handover total instead) — only a credit sale still gets one, to record
+ * who owes what. Falling back to totalMinor for the no-payment-line case
+ * is what makes this figure include those sales at all; filtering only on
+ * paymentLines left every canteen cash sale silently uncounted here. */
 function soldTotalMinor(sales: SaleView[]): number {
   return sales
     .filter((sale) => !sale.voided)
-    .flatMap((sale) => sale.paymentLines)
-    .filter((line) => line.method === "cash" || line.method === "mpesa")
-    .reduce((sum, line) => sum + line.amountMinor, 0);
+    .reduce((sum, sale) => {
+      if (sale.paymentLines.length === 0) return sum + sale.totalMinor;
+      const cashAndMpesa = sale.paymentLines
+        .filter((line) => line.method === "cash" || line.method === "mpesa")
+        .reduce((lineSum, line) => lineSum + line.amountMinor, 0);
+      return sum + cashAndMpesa;
+    }, 0);
 }
 
 function isToday(occurredAt: Date): boolean {

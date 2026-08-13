@@ -2,16 +2,16 @@
 
 export {
   getTodaysHandoverForStaff,
-  getTodaysHandoversAtLocation,
+  getTodaysHandovers,
   recordHandover,
   isDayClosedFor,
 } from "./logic";
 export type {
   GetTodaysHandoverResult,
-  GetTodaysHandoversAtLocationResult,
+  GetTodaysHandoversResult,
   RecordHandoverResult,
 } from "./logic";
-export { recordHandoverRoute, todaysHandoverRoute, todaysHandoversAtRestaurantRoute } from "./routes";
+export { recordHandoverRoute, todaysHandoverRoute, todaysHandoversRoute } from "./routes";
 export type { Handover } from "./schema";
 export type { HandoverWithStaffName } from "./queries";
 

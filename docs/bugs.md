@@ -840,3 +840,147 @@ Likely shares plumbing with BUG-14's fix (both need New Sale to become
 stock-aware for the requester's location) — worth deciding together
 whether one ticket covers both or they're sequenced. Not fixed inline;
 route through `/fix` or `/add` when ready.
+
+## BUG-16: Canteen attendant's "Sales today" tile always showed KSh 0
+**Severity:** high
+**Discovered:** manual testing (Edwinfred), full-day walkthrough, 2026-08-13
+**Status:** fixed
+
+### Description
+On the attendant's "Today's summary" screen, the "Sales today" stat tile
+stayed at KSh 0 even after recording several sales, while those same
+sales appeared correctly, with the right totals, in the list below.
+
+### Repro steps
+1. Log in as Canteen Attendant.
+2. Record a walk-in cash/M-Pesa sale (e.g. 2x Biscuits, KSh 100).
+3. Return to Today's summary.
+4. "Sales today" reads KSh 0; the sale itself is listed below with the
+   correct amount.
+
+### Expected vs actual
+Expected: "Sales today" reflects the total of today's non-voided
+cash/M-Pesa sales.
+Actual: always 0 for the canteen attendant specifically.
+
+### Root cause and fix
+`soldTotalMinor()` in `src/modules/sales/ui/todays-sales.tsx` summed
+each sale's `paymentLines` filtered to `cash`/`mpesa`. Per the
+2026-08-13 canteen redesign (`docs/proposal.md` §4), a canteen
+cash/M-Pesa sale is recorded with **zero** payment lines at entry —
+reconciled later against the day's combined handover total instead of
+per sale (see `logic.ts`'s `priceAndCreateSale`). So the tile's sum was
+always 0 for every canteen sale, even though `Sale.totalMinor` was
+correctly persisted and shown in the list. The restaurant/cashier till
+was unaffected, since those sales always carry payment lines. The
+summary tile's stat logic was never updated when the sales list's query
+was, during the redesign.
+
+Fixed by falling back to `sale.totalMinor` when a sale has no payment
+lines at all; credit sales are unaffected since they always carry one
+`credit` payment line, already excluded by the existing method filter.
+
+Initially misread as sales being conflated with transfers (a "See
+transfers" link sits directly under the tiles) — confirmed via code
+trace that `Sale` and `Transfer` are separate models and the list below
+queries `Sale` correctly; the link is just adjacent UI, not related.
+
+## BUG-17: Credit sale is a separate screen, not folded into New Sale
+**Severity:** normal
+**Discovered:** manual testing (Edwinfred), full-day walkthrough, 2026-08-13
+**Status:** open
+
+### Description
+`docs/qa-handoff-checklist.md` (step 2) expects a credit sale to use
+"the same entry flow" as an ordinary sale — "one flow, not a separate
+screen." In the running app, `CreditSale`
+(`src/modules/sales/ui/credit-sale.tsx`) is instead a distinct nav
+destination from `New Sale` (wired separately in
+`src/app/staff/staff-page-client.tsx`), with its own product picker,
+basket, and submit path duplicated from `new-sale.tsx` (the file's own
+header comment calls this deliberate — "trimmed from new-sale.tsx's
+Till, not a reuse of it (ticket 26)").
+
+The file's header comment also describes the pre-2026-08-13-redesign
+model ("individual sales aren't recorded at the point of sale at the
+canteen — only credit sales are"), which is stale: per the current
+`recordCounterSale`/`priceAndCreateSale` logic, the canteen now records
+every sale individually, cash/M-Pesa included, via the same path as the
+restaurant till; credit is just one payment-line option within that
+flow, not the sole recording mechanism.
+
+### Expected vs actual
+Expected (per proposal.md §4 and the QA checklist): recording a credit
+sale is the same New Sale flow, with a customer named inline, not a
+separate screen.
+Actual: a whole separate `CreditSale` component/nav entry exists,
+duplicating New Sale's picker and basket rather than being an option
+within it.
+
+### Notes
+Found while fixing the "My stock / From restaurant" tabs UX (this
+session) — `credit-sale.tsx` had the identical stacked-section picker
+as `new-sale.tsx`'s, both now converted to tabs for consistency, but
+that's a surface fix; the deeper duplication (and the screen split
+itself) is unresolved. Not fixed inline — likely a `/fix` or `/add`
+scoping question: fold credit into New Sale's existing payment-method
+step, or confirm the checklist's wording is the part that's stale
+instead. Worth deciding before ticket 26's separate-screen decision is
+revisited any further.
+
+## BUG-18: Admin Dashboard's Handover section excluded the canteen entirely
+**Severity:** high
+**Discovered:** manual testing (Edwinfred), full-day walkthrough, 2026-08-13
+**Status:** fixed
+
+### Description
+Handovers recorded by Store Manager, Restaurant Cashier, and Canteen
+Attendant did not appear on the Admin Owner's Dashboard — the Handover
+section stayed empty or incomplete despite handovers being recorded
+today.
+
+### Repro steps
+1. Record a handover as Store Manager (restaurant) and/or Restaurant
+   Cashier.
+2. Record a handover as Canteen Attendant.
+3. Log in as Admin Owner, view Dashboard's Handover section.
+4. Canteen Attendant's handover never appears, regardless of what else
+   was recorded.
+
+### Root cause and fix
+`todaysHandoversAtRestaurantRoute` (`src/modules/cash/routes.ts`) hard-
+coded `findLocationByCode(db, "restaurant")` before fetching handovers —
+a leftover from ticket 14, when this comment was accurate: "the canteen
+has no handover concept yet, and this screen must not imply canteen
+coverage that doesn't exist." The 2026-08-13 canteen redesign
+(`docs/proposal.md` §5) gave the canteen a real handover, checked as a
+single combined cash+M-Pesa figure rather than the restaurant's
+cash/M-Pesa split (a canteen sale carries no payment method at entry, so
+the split isn't knowable — see `Handover.expectedMpesaMinor`'s schema
+comment, `null` there means "combined total, see expectedCashMinor," not
+"expected zero"). The write path (`recordHandover`) was updated for
+this; the dashboard's read path never was, so canteen `Handover` rows
+were written correctly but never queried.
+
+Fixed:
+- `findTodaysHandoversAtLocation` → `findTodaysHandoversAtLocations`
+  (`queries.ts`), taking a list of location ids instead of one.
+- `getTodaysHandoversAtLocation` → `getTodaysHandovers` (`logic.ts`),
+  fetching all locations via `listLocations` rather than being handed
+  one.
+- Route renamed `todaysHandoversAtRestaurantRoute` →
+  `todaysHandoversRoute`, endpoint moved `/api/handovers/today-at-
+  restaurant` → `/api/handovers/today-all`.
+- `dashboard-handovers.tsx` now renders two tables instead of one —
+  restaurant rows (4-column cash/M-Pesa split, unchanged) and canteen
+  rows (3-column combined check: Sales recorded / Cash + M-Pesa in /
+  Difference, matching proposal.md §5's own worked example) — driven by
+  `expectedMpesaMinor === null` as the documented signal for a canteen
+  row. The two checks aren't the same shape, so a single unified table
+  would either misrender the canteen's combined figure or hide the
+  restaurant's per-currency detail.
+
+Per the QA checklist's step 9 ("today's restaurant handovers... and the
+canteen's combined-figure handover... all show, correctly
+distinguished") — the two-table split satisfies "distinguished" more
+directly than one table with a location column would.

@@ -4,7 +4,7 @@ import type { AuthenticatedStaff } from "@/modules/people";
 import { recordCounterSale, voidSale } from "@/modules/sales";
 import {
   getTodaysHandoverForStaff,
-  getTodaysHandoversAtLocation,
+  getTodaysHandovers,
   isDayClosedFor,
   recordHandover,
 } from "../logic";
@@ -403,13 +403,9 @@ describe("getTodaysHandoverForStaff", () => {
   });
 });
 
-describe("getTodaysHandoversAtLocation", () => {
-  test("a non-owner cannot view the location's handover roster", async () => {
-    const result = await getTodaysHandoversAtLocation(
-      testDb,
-      staffAt("cashier", restaurantId),
-      restaurantId,
-    );
+describe("getTodaysHandovers", () => {
+  test("a non-owner cannot view the handover roster", async () => {
+    const result = await getTodaysHandovers(testDb, staffAt("cashier", restaurantId));
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
   });
@@ -425,11 +421,7 @@ describe("getTodaysHandoversAtLocation", () => {
       { cashMinor: 50, mpesaMinor: 20 },
     );
 
-    const result = await getTodaysHandoversAtLocation(
-      testDb,
-      staffAt("owner", restaurantId),
-      restaurantId,
-    );
+    const result = await getTodaysHandovers(testDb, staffAt("owner", restaurantId));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -444,33 +436,34 @@ describe("getTodaysHandoversAtLocation", () => {
       mpesaMinor: 0,
     });
 
-    const result = await getTodaysHandoversAtLocation(
-      testDb,
-      staffAt("owner", restaurantId),
-      restaurantId,
-    );
+    const result = await getTodaysHandovers(testDb, staffAt("owner", restaurantId));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.handovers).toHaveLength(1);
   });
 
-  test("does not include handovers from a different location", async () => {
+  // 2026-08-13 canteen redesign: the canteen now records real handovers
+  // too (docs/proposal.md §5), so the dashboard's roster spans both
+  // locations rather than being restaurant-only.
+  test("includes handovers from both locations", async () => {
+    await recordHandover(testDb, staffAt("cashier", restaurantId), {
+      cashMinor: 100,
+      mpesaMinor: 0,
+    });
     await recordHandover(
       testDb,
-      staffMemberAt("staff-2", "Other Cashier", "cashier", canteenId, "canteen"),
+      staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen"),
       { cashMinor: 50, mpesaMinor: 0 },
     );
 
-    const result = await getTodaysHandoversAtLocation(
-      testDb,
-      staffAt("owner", restaurantId),
-      restaurantId,
-    );
+    const result = await getTodaysHandovers(testDb, staffAt("owner", restaurantId));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.handovers).toHaveLength(0);
+    expect(result.handovers).toHaveLength(2);
+    const names = result.handovers.map((h) => h.staffName).sort();
+    expect(names).toEqual(["Test Attendant", "Test Cashier"]);
   });
 });
 

@@ -284,14 +284,14 @@ export async function sumExpensesMinorByMethod(
 
 export type HandoverWithStaffName = Handover & { staffName: string };
 
-export async function findTodaysHandoversAtLocation(
+export async function findTodaysHandoversAtLocations(
   db: PrismaClient,
-  locationId: string,
+  locationIds: string[],
   dayStart: Date,
   dayEnd: Date,
 ): Promise<HandoverWithStaffName[]> {
   const handovers = await db.handover.findMany({
-    where: { locationId, occurredAt: { gte: dayStart, lt: dayEnd } },
+    where: { locationId: { in: locationIds }, occurredAt: { gte: dayStart, lt: dayEnd } },
     include: { staffMember: true },
     orderBy: { staffMember: { name: "asc" } },
   });
@@ -302,9 +302,10 @@ export async function findTodaysHandoversAtLocation(
 }
 
 // Ticket 40 — the cash ledger's day-expansion needs individual handover
-// rows across an arbitrary period, business-wide (both locations, unlike
-// findTodaysHandoversAtLocation). No void/reversal concept, so every row
-// counts, same as sumHandoversMinor.
+// rows across an arbitrary period, business-wide (both locations), unlike
+// findTodaysHandoversAtLocations which still takes explicit location ids
+// for its own caller's use. No void/reversal concept, so every row counts,
+// same as sumHandoversMinor.
 export async function listHandoversInPeriod(
   db: PrismaClient,
   periodStart: Date,
