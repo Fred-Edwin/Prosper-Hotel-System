@@ -24,43 +24,56 @@ Three consequences, settled deliberately because retrofitting any of them is exp
   the canteen sends printing stock back. Two stocking points supplying each other, not a
   hub and spoke. A transfer is one movement out and one movement in.
 
-### The two locations record trade differently
+### The two locations record trade the same way
 
-This is not a preference to be configured away. It follows from how each location physically
-trades, and the system accommodates both rather than forcing one shape on the other.
+*Revised 2026-08-13 — superseding the original design below the line.* Both locations record
+sales individually. The difference between them is now narrower than it was:
 
 | | Restaurant | Canteen |
 |---|---|---|
-| Sales | Recorded individually, as they happen | Not recorded individually |
-| Money | Sum of the day's sales | **Takings** — cash and M-Pesa totals, entered at close |
-| Stock count | Daily | Cooked food daily; own goods weekly |
-| Item detail | From the sales themselves | **Derived** at the weekly count |
+| Sales | Recorded individually, as they happen, with payment method | Recorded individually, as they happen, **without** payment method |
+| Money | Sum of the day's sales, per payment line | **Takings** — cash and M-Pesa totals declared at close, checked against the day's recorded sales as a whole |
+| Stock count | Daily | Cooked food daily; own goods weekly — both now a shrinkage check only |
+| Item detail | From the sales themselves | From the sales themselves |
 
-**Why the canteen cannot record sales as they happen.** Students arrive in a rush. The
-attendant is serving and handling money, not operating a phone. She reads M-Pesa messages as
-she distributes items. Requiring per-sale entry would produce invented data, which is worse
-than honestly coarse data.
+**Why the canteen still skips payment method per sale.** Students arrive in a rush. The
+attendant is serving and handling money, not keying in a payment method between customers. She
+records what sold — product and quantity — and reads her M-Pesa messages and counts her
+drawer at close, the same as before. What changed is that *what sold* is now a real record,
+not inferred from a stock count.
 
-**Why the canteen counts weekly.** Its stock is packaged goods in quantity — a box of
-biscuits, a carton of sweets. Counting them daily is a chore with no daily payoff. Weekly is
-normal for retail of this kind.
+**Why the canteen still counts weekly.** Its stock is packaged goods in quantity — a box of
+biscuits, a carton of sweets. Counting them daily is a chore with no daily payoff, and the
+count is no longer needed to establish revenue — only to catch shrinkage.
 
-**What the canteen gives up, accepted deliberately:**
+**What holds now, unchanged from before:**
 
-- **Daily canteen profit is provisional** — the cost of restaurant-supplied food is exact, the
-  cost of canteen-only goods is estimated between counts and corrected at each one. Revenue
-  and cash position remain daily and exact.
-- **Low-stock warnings are stale** — accurate on count day, drifting afterwards.
-- **A weekly variance has several possible causes** — theft, breakage, miscounting — and the
-  single number cannot separate them.
+- Two controls, at two frequencies: money checked daily, stock checked at its own cycle.
+- M-Pesa is independently verifiable at both locations, since the messages are evidence the
+  attendant does not author.
+- **Credit sales are always recorded individually, at both locations**, with a named customer
+  — folded into the same sale-entry flow as any other sale, not a separate screen.
 
-**What still holds.** Two controls at two frequencies: money checked daily, stock checked
-weekly. M-Pesa is independently verifiable at both locations because the messages are
-evidence the attendant does not author. Sustained cash shortfall surfaces at the weekly count
-even though a single day's cash cannot be verified.
+**What no longer holds, and why the change was made:** BUG-10 (2026-08-13) found that the
+canteen attendant could already record a real sale (`recordCounterSale` had no role
+restriction preventing it), which the original design below did not anticipate — so a real
+sale and an inferred one were being counted as the same shrinkage twice. Rather than patch the
+inference formula, the inference itself is retired: the count-derived-sales mechanism
+(`recordCountDerivedSales`, the `sold_derived` movement reason) is removed, canteen profit is
+no longer provisional on waiting for a count (a transferred item with no recipe still uses the
+existing 60%-of-selling-price estimate, same as at the restaurant — not new, not count-related),
+and low-stock warnings are current rather than stale between counts.
+See `docs/proposal.md` §4 and `docs/formulas.md` §6 for the resulting figures.
 
-**Credit sales are always recorded individually, at both locations.** A debt needs a named
-customer and cannot wait a week for a count.
+---
+
+**Original design, retained for record.** The canteen recorded no individual sales; instead it
+declared daily cash/M-Pesa totals ("Takings"), and item-level sales were inferred by comparing
+stock counts, at a cost rate measured at the last count. The stated reasons were that
+requiring per-sale entry mid-rush would produce invented data, and that packaged goods are
+impractical to count daily. The rejection of per-sale entry turned out to be solvable by
+dropping payment method from the sale record rather than dropping the sale record itself —
+see the revision above.
 
 ---
 

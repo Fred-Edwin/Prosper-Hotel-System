@@ -72,28 +72,24 @@ from suppliers directly.
 A location has a **count cycle** — how often its stock is physically counted. The
 restaurant counts **daily**. The canteen counts its **cooked food daily** (a short
 count of a few items) and its **own packaged goods periodically**, weekly by habit,
-their bulk making a daily count impractical. This is not a preference but a fact of
-how each trades, and it changes how sales are recorded at each. See [[Sale]] and
-[[Takings]].
+their bulk making a daily count impractical.
 
-A count is an **event, not a schedule**. It may be taken on any day, and the period
-for any figure derived from it is simply the interval since the previous count.
-Counting more often shortens the estimated period and sharpens every figure that
-depends on it.
+*Revised 2026-08-13.* The count cycle no longer changes how sales are recorded — both
+locations record every [[Sale]] individually, see [[Sale]]. A count is now purely a
+**shrinkage check**: counted quantity against what the movements say should be on the
+shelf, at whatever cycle suits each location's stock. It is an **event, not a schedule** —
+it may be taken on any day — but it no longer determines the period for any revenue or cost
+figure, since those now come from sales as recorded.
 
 ## Takings
 
-The money a [[Location]] took on one day, recorded as two totals — cash and M-Pesa
-— without a line-by-line record of what was sold.
+*Revised 2026-08-13 — the canteen now records individual [[Sale]]s, so this is no longer a
+separate record of what sold. See [[Sale]] and [[Handover]].*
 
-Takings exist because the canteen cannot record sales as they happen. Students
-arrive in a rush and the attendant is serving, not operating a phone. What she can
-do at close is read her M-Pesa messages and count her drawer.
-
-Takings are recorded daily at the canteen. The restaurant records individual
-[[Sale]]s instead and its takings are the sum of them.
-
-Takings are what a [[Handover]] is checked against.
+The cash and M-Pesa totals a [[Staff Member]] declares and hands over at the close of a day,
+at either [[Location]]. What she is handing over — not, as before, the system's only record of
+what sold at the canteen. What sold is now the sum of that day's recorded [[Sale]]s at both
+locations, and takings are checked against that sum the same way at both.
 
 ## Sale
 
@@ -110,10 +106,13 @@ Two independent facts sit on a sale, and neither creates a different kind of sal
 
 Credit is a payment line like any other, settled later. See [[Customer]].
 
-**Sales are recorded per sale at the restaurant only.** The canteen records
-[[Takings]] daily and has its item detail derived at the weekly count instead — see
-[[Stock Movement]]. A credit sale at the canteen is still recorded individually,
-because a debt needs a named [[Customer]] and cannot wait for a count.
+**Sales are recorded per sale at both locations.** *Revised 2026-08-13.* A canteen sale
+records product and quantity, the same as a restaurant sale, but carries **no payment line at
+the point of entry** — trade is too fast, mid-rush, for payment method to be captured per
+sale. Instead the attendant declares cash and M-Pesa [[Takings]] totals at close, checked
+against the day's recorded sales as a whole rather than reconciled line by line. A credit sale
+is the one exception: it is still recorded individually with a named [[Customer]] attached, at
+either location, because a debt needs a name and cannot be inferred from a total.
 
 ## Stock Movement
 
@@ -141,12 +140,7 @@ lumped together:
 - **Issued** — raw ingredients given to the kitchen.
 - **Produced** — the kitchen's output, made from issued ingredients.
 - **Transferred** — sent from one location to the other. Runs in both directions.
-- **Sold** — left through a [[Sale]].
-- **Sold, derived** — established at a count rather than recorded at the moment of
-  sale. The difference between what a count found and what the records expected,
-  where individual sales are not captured. Used at the canteen. Attributed to the
-  count, not to a person's moment-by-moment entry, and always distinguishable from
-  `Sold` so no report mistakes an inference for an observation.
+- **Sold** — left through a [[Sale]], at either location.
 - **Wasted** — spoiled or ruined.
 - **Consumed** — used by the business rather than sold.
 - **Given away** — complimentary.
@@ -189,13 +183,16 @@ A handover holds an **expected** amount and an **actual** amount, being what was
 really handed over. The difference between them is the control the client asked for,
 and it is checked per person and per day.
 
-Where the expected amount comes from depends on the location:
+*Revised 2026-08-13 — expected is now built the same way at both locations.*
 
-- **Restaurant** — the sum of that person's recorded [[Sale]]s for the day. An
-  independent expectation, because it was built from individually recorded sales.
-- **Canteen** — the [[Takings]] the attendant recorded. For M-Pesa this is still a
-  real check, because the M-Pesa messages are evidence she does not control. For
-  cash it is weaker, and the weekly count is what tests it — see `docs/formulas.md`.
+The expected amount is the sum of that person's recorded [[Sale]]s for the day, at either
+location. An independent expectation, because it was built from individually recorded sales
+rather than from what the same person later declares.
+
+M-Pesa is additionally verifiable against the payment messages received, evidence the person
+handing over does not control. Cash cannot be independently verified the same way at either
+location; the periodic count is a secondary shrinkage check, not the primary basis for the
+expected figure — see `docs/formulas.md`.
 
 Cash and M-Pesa are handed over and checked separately.
 

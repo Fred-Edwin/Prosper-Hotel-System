@@ -442,7 +442,12 @@ formatting change doesn't break this check going forward either.
 ## BUG-10: Product Ledger double-counts canteen sales as "sold" (102 vs actual 2)
 **Severity:** critical
 **Discovered:** manual testing (Edwinfred), 2026-08-13
-**Status:** open
+**Status:** closed — superseded, 2026-08-13. Not patched; the design it exposed was
+replaced instead. See `docs/scope.md`'s 2026-08-13 "Canteen: real sales,
+two-sided transfers, retiring count-derived sales" entry. The count-derived-sales
+mechanism this bug lives in (`recordCountDerivedSales`, the `sold_derived`
+movement reason) is being removed entirely, not fixed — there is no formula patch
+to verify once that code is gone.
 
 ### Description
 The canteen ledger showed 102 biscuit packets "sold" on 2026-08-13, but

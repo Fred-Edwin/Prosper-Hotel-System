@@ -51,6 +51,35 @@ nothing is built or tested for it.
 
 ---
 
+## Added post-v1
+
+### 2026-08-12 — In-app contextual help panel
+
+A "?" trigger on every screen's page header (top-right, both shells)
+opens a help panel with static, pre-written text explaining that
+screen's purpose and its actions. One new `components/patterns/` entry,
+rendered in two presentations from one component: a slide-over above
+the mobile breakpoint, a bottom sheet below it — switching by screen
+width, not by role, so the owner sees whichever matches the device
+she's actually using. Content is a central map keyed by nav destination
+(sectioned by tab where that destination has tabs — Catalogue, Ledger,
+People — so the panel opens once per page and covers every tab in one
+scroll), populated from copy already drafted and approved by the client:
+`docs/help-copy-owner-draft.md`, `docs/help-copy-cashier-draft.md`,
+`docs/help-copy-attendant-storemanager-draft.md`. No new data, no new
+permissions, no new module — presentation-layer only, req'd by REQ-01
+in `docs/feature-requests.md`.
+
+**Definition of done:** every nav destination in both shells has a
+working "?" trigger; the panel renders the approved copy for that
+destination (all tabs in one scroll, where applicable); presentation
+switches correctly at the mobile breakpoint regardless of role; a
+Storybook story exists per state (open/closed, both presentations); the
+pattern is documented in `docs/conventions.md`'s UI section alongside
+the other `components/patterns/` entries.
+
+---
+
 ## Still to establish
 
 Carried forward from discovery. None blocks v1, but each will need an answer before the part
@@ -62,3 +91,57 @@ of the system it touches is built.
 - Whether cashiers hold a float overnight, or hand over everything.
 - How printing is priced — per page, per job, or per document type.
 - How far back the audit trail needs to be readable.
+
+---
+
+## Added post-v1
+
+### 2026-08-13 — Canteen: real sales, two-sided transfers, retiring count-derived sales
+
+*Supersedes the original canteen design in `docs/proposal.md` §4/§5/§10 and
+`docs/architecture.md`'s canteen comparison table — a rework, not an addition. See those
+documents' inline revision notes for what changed and why (BUG-10 was the trigger: the
+attendant could already record a real sale, which the original design did not anticipate,
+causing the same shrinkage to be counted once as a real sale and once as an inferred one).*
+
+**What changes:**
+
+- The canteen attendant records real per-sale rows — product and quantity, the same motion a
+  restaurant cashier uses — for both the canteen's own stock and food transferred in from the
+  restaurant. No payment method per line; too slow for rush trade with students.
+- Credit sales fold into the same entry flow, with a customer named, matching the restaurant's
+  till.
+- She still declares cash and M-Pesa totals at close for handover, now checked against the
+  day's recorded sales as a whole rather than being the sales record itself.
+- Stock transfers become two-sided in both directions (restaurant↔canteen): the sender records
+  quantity sent, the receiver separately confirms quantity received. An unconfirmed transfer
+  triggers an unmissable notification on the receiving side. A confirmed-short quantity is
+  recorded as its own discrepancy movement, distinct from wastage. This is REQ-02 Part A,
+  generalised — not canteen-special-cased.
+- The canteen stock page shows canteen-owned and restaurant-supplied stock as separate,
+  filterable views, updating live as sales and confirmed receipts are recorded. The store
+  manager's restaurant-side stock page gains the mirror: on-hand versus sent-to-canteen, and
+  whether the canteen's receipt confirmation matched with no discrepancy.
+- The periodic canteen stock count (and the restaurant's existing daily count) becomes a pure
+  shrinkage/theft check: counted quantity against what the movements say should be there. It no
+  longer infers sales, sets a cost rate, or makes any profit figure provisional.
+- "Today's sales" is renamed "Today's summary" with per-role content (REQ-02 Part B), and
+  `transfer-history.tsx` (already built, currently unreachable from any nav) gets a real entry
+  point.
+
+**What this retires:** `recordCountDerivedSales` (`stock/logic.ts`), the `sold_derived`
+movement reason and its handling in `foldReasonLines` (`reporting/logic.ts`), and the
+provisional/estimated canteen profit model in `docs/formulas.md` §6-§7.
+
+**Definition of done:** canteen attendant can record a sale (with or without a named customer
+for credit) in the same number of taps as a restaurant cashier's counter sale, minus the
+payment-method step; a restaurant→canteen transfer is not reflected in the receiver's stock
+until confirmed, and an unconfirmed transfer is visible on the attendant's home screen without
+her navigating to find it; a confirmed-short receipt produces its own discrepancy movement;
+canteen daily profit and cost of goods sold report as final, not provisional, in the Profit
+panel and the ledger; the canteen stock page filters between canteen-owned and
+restaurant-supplied stock; the store manager sees on-hand versus sent-to-canteen and a
+receipt-confirmation status; a periodic canteen count still runs and reports a variance, but no
+report describes it as correcting an earlier estimate; `docs/proposal.md`,
+`docs/architecture.md`, `docs/formulas.md` and `CONTEXT.md` read consistently with the new
+design (done as part of this scoping pass, ahead of tickets).

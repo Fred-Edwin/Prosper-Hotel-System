@@ -50,31 +50,11 @@ counted and shows the gap. Only the owner may correct.
 
 **Example.** 33 expected, 31 counted. Short by 2.
 
-### Where sales are not recorded one by one
-
-The canteen records daily takings rather than individual sales, so what sold is worked out at
-each count:
-
-```
-sold = previous count + received + transferred in
-     − recorded credit sales − wasted − consumed − given away − transferred out
-     − this count
-```
-
-Everything known is subtracted first. What remains is what sold.
-
-**This is worked out, not observed.** It absorbs genuine sales, breakage, miscounting and
-theft together, and cannot separate them. It is stored under its own label so no report
-mistakes it for a recorded sale.
-
-**Checking it against the money:**
-
-```
-what it should have earned = quantities worked out × selling prices
-difference = takings actually recorded − what it should have earned
-```
-
-One period's difference means little. The same gap period after period means something.
+*Revised 2026-08-13 — the canteen now records individual sales, the same as the restaurant.
+The count is a shrinkage check at both locations: the formula above (`difference = counted −
+expected`) is the whole of it. What sold is no longer worked out from a count — it is the sum
+of the day's recorded sales, same as §1's "sold" term. A consistent shortfall at a count still
+means something worth investigating; it is no longer how the system learns what sold.*
 
 ---
 
@@ -143,38 +123,47 @@ business total. Recording a recipe replaces it with a real figure.
 
 **What it answers:** the canteen sells the restaurant's food — whose cost is it?
 
-The cost travels with the food. Sending it removes cost from the restaurant and adds the same
-cost to the canteen.
+*Revised 2026-08-13.* The cost travels with the food, at the item's own unit cost — the same
+recipe cost the restaurant already uses for that item, if one exists. Sending it removes that
+cost from the restaurant and adds the same cost to the canteen.
 
 ```
-rate = ingredients the kitchen consumed ÷ what its food sold for
-
-cost of the transfer = what the transferred food sells for × rate
+cost of the transfer = quantity transferred × the item's recipe cost
 ```
 
-Where the item has a recipe, its recipe cost is used instead.
-
-**Example.** The kitchen consumed KSh 40,000 of ingredients producing KSh 100,000 of food, so
-food costs 40% of its selling price. Food worth KSh 6,000 goes to the canteen.
+**Example.** A recipe prices a samosa at KSh 15. 40 samosas go to the canteen.
 
 ```
-6,000 × 40%  =  KSh 2,400
+40 × 15  =  KSh 600
 ```
 
-The restaurant's cost drops by 2,400. The canteen's rises by 2,400.
+The restaurant's cost drops by 600. The canteen's rises by 600.
 
 **Why the business total is unaffected.** The same figure is subtracted from one side and added
 to the other, so it cancels:
 
 ```
-Restaurant:  ... − 2,400
-Canteen:     ... + 2,400
+Restaurant:  ... − 600
+Canteen:     ... + 600
 Business:            0
 ```
 
-Whatever number is used, the business total is identical. The rate decides only how the cost is
-split between the two locations, never how much cost exists. **Both sides must always use the
-same figure.**
+**Where the item has no recipe**, its exact unit cost is unavailable — the same limitation §4
+describes for any cooked food without a recorded yield. Rather than contribute zero to cost of
+goods sold, the same estimate §8 already uses for unsold cooked food without a recipe applies
+here: **60% of selling price**. The transfer is recorded at quantity and this estimated cost;
+the figure is labelled as estimated wherever it appears (ledger, profit panel), and is
+replaced automatically once a recipe is recorded for that item.
+
+```
+estimated cost of the transfer = quantity transferred × selling price × 60%
+```
+
+**Example.** Chapatis sell at KSh 20, no recipe recorded. 30 go to the canteen.
+
+```
+30 × 20 × 60%  =  KSh 360 (estimated)
+```
 
 ---
 
@@ -200,90 +189,55 @@ sent KSh 2,400 to the canteen.
 
 The kitchen already records what it consumed daily, so this needs no recipes and no estimates.
 
-### The canteen — two parts
+### The canteen — same formula as the restaurant
 
-Its stock is of two kinds, and only one needs counting.
-
-**Food from the restaurant — exact, counted daily.** The ordinary stock formula applies:
-
-```
-cost = opening + transferred in − closing − wasted
-```
-
-Most days everything sent is sold, so closing is zero and the cost is simply that day's
-transfers. Where food is left over it carries forward as the next day's opening, exactly as
-stock does anywhere else.
-
-**Example.** Monday: 40 samosas arrive, none carried in, 8 left at close.
+*Revised 2026-08-13.* Previously split into an exact part and a part estimated from a rate
+measured at the last count, because the canteen's own goods sold without an individual record.
+Now every canteen sale is recorded — see §1's `sold` term and `docs/proposal.md` §4 — so the
+same stock formula applies to both kinds of canteen stock, exactly as it does at the
+restaurant:
 
 ```
-0 + 40 − 8 = 32 consumed Monday
+cost = opening + received/transferred in − closing − wasted
 ```
 
-Tuesday those 8 are the opening. 30 more arrive, 5 left at close.
+**Food from the restaurant.** Valued at the item's recipe cost, per §5. Leftover food carries
+forward as the next day's opening, exactly as stock does anywhere else.
+
+**Example.** Monday: 40 samosas arrive at KSh 15 recipe cost each, none carried in, 8 left at
+close.
 
 ```
-8 + 30 − 5 = 33 consumed Tuesday
+(0 + 40 − 8) × 15 = KSh 480 consumed Monday
 ```
 
-This is a short count — a few items in small numbers — and is done daily. It is not the
-boxes-of-packaged-goods problem that makes the canteen's own stock impractical to count daily.
+**The canteen's own goods.** Valued at purchase cost — the running average from §3 — the same
+as any bought-in stock. No rate, no estimate: the quantity sold is known directly from recorded
+sales, and its cost follows from the purchase price already on record.
 
-**The canteen's own goods — estimated between counts.** These are not counted daily, so what
-sold is unknown. What *is* known is the money taken. Cost is estimated from it, using the rate
-measured at the last count:
+**Example.** Sodas cost KSh 45 each on average. 60 opening, 24 received, 70 recorded as sold,
+14 counted at close.
+
+```
+(60 + 24 − 14) × 45 = KSh 3,150
+```
+
+So the canteen's cost for the day is the sum of both parts.
 
 **Which goods are "own goods."** Nothing on a product record says so directly — it is read from
 how the item arrived: a product that reached the canteen via a transfer from the restaurant is
-restaurant-supplied (the exact half above); a product received directly from a supplier is the
-canteen's own goods. A product can be either at different times depending on how a given batch
-arrived, so this is worked out per period (since the last count), not stored as a fixed label.
+restaurant-supplied; a product received directly from a supplier is the canteen's own goods. A
+product can be either at different times depending on how a given batch arrived.
 
-```
-rate = cost of these goods at the last count ÷ what they sold for over that period
+### The count is now a shrinkage check only
 
-estimated cost = the day's takings from these goods × rate
-```
+A count no longer corrects an estimate — there is no estimate to correct. It compares counted
+stock against what the movements say should be there, exactly as §2 describes, and any
+difference is reported as a variance to look into, not applied to a past figure.
 
-**Example.** The last count showed these goods cost 72% of what they sell for. Today they took
-KSh 4,000.
-
-```
-4,000 × 72%  =  KSh 2,880 estimated
-```
-
-So the canteen's cost for the day is `2,400 + 2,880 = KSh 5,280`.
-
-**"Cost of these goods at the last count" is the cost of what sold, not what's left.** It reads
-the quantity the count worked out had been sold since the previous count (§2's derived-sales
-formula), valued at cost — not the quantity still counted on the shelf. The parallel revenue term
-is the selling value of that same sold quantity, so the ratio is a margin on goods that actually
-moved, not a snapshot of unsold stock.
-
-### The count corrects the estimate
-
-At each count the real figure replaces the estimates for that period, and the correction is
-shown rather than applied quietly:
-
-```
-Estimated since last count    KSh 61,200
-Measured at the count         KSh 63,800
-Correction                  − KSh  2,600
-```
-
-A correction that always leans the same way means either the rate needs adjusting or stock is
-leaving unaccounted for. Both are worth seeing.
-
-**"Estimated since last count" uses the rate from the count *before* that** — the rate actually in
-force during the period being corrected, not the rate the latest count just measured (using the
-latest count's own rate would compare a period against itself and never show a correction). This
-needs three counts of history to compute at all; with only two, there is no earlier rate yet to
-apply, and the correction is unavailable rather than guessed — same "first period has no measured
-rate" reasoning as everywhere else in this document.
-
-**Counting is an event, not a timetable.** It can happen any day; the period is simply the gap
-since the last one. Weekly is the habit. Counting more often shortens the estimated stretch and
-sharpens every figure that depends on it.
+**Counting is an event, not a timetable.** It can happen any day. Weekly is the habit for the
+canteen's own goods; the restaurant's daily count and the canteen's daily cooked-food count
+continue as before.
 
 ### For the business
 
@@ -304,7 +258,7 @@ sales revenue  −  cost of goods sold  =  gross profit
 gross profit   −  running costs       =  net profit
 ```
 
-**Sales revenue** is recorded sales at the restaurant, and declared takings at the canteen.
+**Sales revenue** is recorded sales at both locations — see `docs/proposal.md` §4.
 
 **Running costs** are gas, charcoal, electricity, rent and wages.
 
@@ -316,10 +270,10 @@ is earning.
 ```
 Sales revenue                    KSh 24,000
 Cost of goods sold             − KSh  9,600   (restaurant)
-                               − KSh  5,280   (canteen)
-Gross profit                     KSh  9,120
+                               − KSh  3,630   (canteen)
+Gross profit                    KSh 10,770
 Running costs                  − KSh  2,300
-Net profit                       KSh  6,820
+Net profit                       KSh  8,470
 ```
 
 ### Not subtracted here
@@ -329,18 +283,13 @@ Net profit                       KSh  6,820
 - **Stock not sold** (wastage, staff meals, complimentary, corrections) — already inside cost
   of goods sold. See §8.
 
-### What is provisional
+### Nothing here waits on a count
 
-| | Basis | Status |
-|---|---|---|
-| Restaurant | Measured consumption | Final |
-| Canteen — restaurant food | That day's transfers | Final |
-| Canteen — its own goods | Estimated from the rate | **Provisional** |
-
-Provisional figures are labelled wherever they appear and are replaced at each count.
-
-The estimated part covers most of the canteen's trade, since packaged goods dominate its sales.
-**The count is the authority; the daily figure is a sound indication.**
+*Revised 2026-08-13.* Profit at both locations, and for the business as a whole, no longer has
+a portion awaiting correction at a count. One estimate remains, but it is not count-related:
+transferred food without a recorded recipe still uses the §5/§8 60% estimate, same as any
+cooked food without a recipe — labelled as such and replaced the moment a recipe is recorded.
+The count remains as a shrinkage check (§6), separate from profit.
 
 ---
 
@@ -486,14 +435,10 @@ consumption, so gross and net profit are real figures. What needs a recipe is co
 dish against another — "is mukimo better than chips" cannot be answered until yields are
 recorded.
 
-**Daily canteen profit is provisional**, and so is daily business-wide profit. Revenue and cash
-are exact daily; the estimated portion is corrected at each count.
+**Canteen profit is final daily, the same as the restaurant's**, since this revision — see §7.
 
-**The estimate moves profit between locations, never in or out of the business.** An error in
-the transfer rate changes which location carries a cost, not how much cost exists.
-
-**Item detail at the canteen is only current as at the last count.** Stock on hand, stock value
-and low-stock warnings reflect that count plus movements recorded since.
+**Item detail at the canteen is current as at the last recorded movement**, the same as the
+restaurant — no longer only as current as the last count.
 
 **The first period has no measured rate.** Until the canteen's first count, either an opening
 estimate is supplied or its cost figures wait for that count.

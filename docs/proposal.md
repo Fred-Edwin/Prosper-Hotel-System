@@ -119,50 +119,83 @@ in section 5.
 
 ## 4. Canteen operations
 
+*Revised 2026-08-13. The canteen no longer trades by declared daily totals with sales inferred
+at a count — see the note at the end of this section for why.*
+
 The canteen trades principally as a retail shop. The majority of its sales are goods bought
 and resold without alteration — soft drinks, confectionery, snacks, stationery,
-over-the-counter remedies and airtime — each with a known purchase price and margin.
+over-the-counter remedies and airtime — each with a known purchase price and margin. It also
+sells prepared food transferred in from the restaurant each day.
 
 The attendant receives transfers from the restaurant, records deliveries made directly to the
 canteen by suppliers, and transfers printing and stationery stock to the restaurant as
 required.
 
+### Receiving stock
+
+Stock reaching the canteen — whether transferred from the restaurant or delivered by a
+supplier direct to the canteen — is **received, not merely credited**. The sending or
+supplying side records what was sent; the attendant separately confirms, at the canteen, what
+she actually received. Until she confirms, the stock is in transit and counts at neither
+location. Where the confirmed quantity is less than what was sent, the gap is recorded as its
+own discrepancy, distinct from wastage.
+
+An unconfirmed transfer from the restaurant is surfaced to the attendant immediately and
+prominently — she cannot reach her ordinary screens without seeing it. This applies to a
+transfer in either direction: the restaurant confirms what it receives back from the canteen
+the same way.
+
 ### Recording of sales
 
-Individual sales are not recorded at the point of sale at the canteen. Trade occurs in
-concentrated periods during which the attendant is serving customers and handling payment.
+The attendant records each sale as it happens: the product and the quantity sold — the same
+motion a restaurant cashier uses. No payment method is recorded against the individual sale.
+Trade at the canteen happens in a rush, most of it students paying small amounts in cash or
+M-Pesa in quick succession; asking her to key in a payment method per sale mid-rush would slow
+her down for no benefit, so that detail is deliberately not captured line by line.
 
-Instead, at the close of each day the attendant records two figures: the day's **cash total**
-and the day's **M-Pesa total**. Both are available to her from the payment messages received
-and the cash held.
+This applies equally to the canteen's own goods and to food transferred in from the
+restaurant — one recording action, one stock ledger, regardless of which stock the item came
+from. Her stock screen distinguishes the two only for her own reference (what's hers to
+reorder versus what the restaurant supplies), not because they are recorded differently.
+
+**Credit sales are recorded the same way, with a customer attached.** Where a sale is on
+credit, she additionally names the customer at the point of entry — one flow, not a separate
+screen, matching how a restaurant cashier already records credit within the till.
+
+At the close of each day the attendant still declares two figures — the day's **cash total**
+and the day's **M-Pesa total** — read from the cash she holds and the M-Pesa messages
+received. These are no longer the basis for what sold; they are what she is handing over,
+checked against the day's recorded sales exactly as a restaurant cashier's handover is
+checked. See section 5.
 
 Stock is counted **periodically**, weekly by expectation, though a count may be taken on any
-day.
-
-At each count, the system determines what was sold by comparing the expected stock position
-against the counted position. This produces the canteen's item-by-item trading record —
-quantities sold, revenue and cost — for the period since the previous count.
-
-**Credit sales are recorded individually** at the point of sale, as a debt requires a named
-customer and cannot be deferred to a count.
+day. With sales now recorded directly, the count is no longer how the system learns what
+sold — it exists purely as a **shrinkage check**: does the counted quantity match what the
+records say should be on the shelf, the same question the restaurant's daily count already
+answers. A consistent shortfall is the signal, whatever its cause — theft, breakage,
+miscounting.
 
 ### Reporting implications
 
-- The canteen's **revenue and cash position are daily and exact**: takings recorded, amounts
-  handed over, and any difference.
-- The canteen's **daily profit is provisional.** The cost of food supplied by the restaurant is
-  exact; the cost of the canteen's own goods is estimated between counts and corrected at each
-  count. See section 10.
-- **Stock levels** reflect the most recent count together with movements recorded since.
-- The **count serves as the canteen's stock control.** Where stock has left without
-  corresponding takings, the difference appears at the count. Individual periods will vary; a
-  consistent pattern is the meaningful indicator.
-- **Counts may be taken on any day.** Weekly is the expected pattern rather than a fixed
-  requirement. More frequent counting shortens the estimated period and improves the daily
-  figures.
+- The canteen's **revenue, cost of goods sold, cash position and profit are daily and exact**,
+  on the same basis as the restaurant — recorded sales, not declared totals. See section 10.
+- **Stock levels** reflect actual movements — sales, receipts, transfers, corrections — as they
+  happen, the same as the restaurant. They are current, not stale between counts.
+- **The count is a shrinkage check, not a revenue source.** It no longer produces an
+  item-by-item trading record; that record now comes from the sales themselves.
 
 The canteen maintains its own paybill, stock and figures. These are reported separately from
 the restaurant's except where figures for the business as a whole are requested.
+
+### Why this changed
+
+The original design (declared daily totals, sales inferred at a weekly count) assumed the
+attendant could not record a sale mid-service. In practice this produced double-counting —
+where a sale was recorded and the same stock movement was separately inferred at the next
+count — and the underlying assumption did not hold once payment method was dropped from the
+per-sale entry: recording *what* sold, without *how it was paid*, is fast enough for a rush of
+small cash and M-Pesa sales, and produces a real, attributable record instead of an estimate
+corrected after the fact.
 
 ---
 
@@ -192,14 +225,25 @@ of the person handing over.
 
 ### Canteen
 
-The expected amount is the takings recorded by the attendant at close.
+*Revised 2026-08-13, alongside section 4.*
 
-The M-Pesa figure can be verified against the payment messages received on the paybill. The
-cash figure is recorded by the same person who hands the money over, and therefore confirms
-that the amount declared was handed over in full, rather than confirming the amount declared.
+The expected amount is the total of the sales the attendant recorded during the day — the
+same basis as the restaurant. Because it is assembled from sales recorded as they happen, it
+is independent of the person handing over.
 
-The weekly stock count provides the corresponding check on cash: takings not declared appear
-as stock reduced without corresponding revenue.
+```
+Canteen attendant — Tuesday
+
+  Sales recorded (cash + M-Pesa)   KSh 5,400
+  Cash + M-Pesa handed over        KSh 5,150
+  Difference                     − KSh   250
+```
+
+The M-Pesa portion can additionally be verified against the payment messages received on the
+paybill, evidence she does not control. Cash cannot be independently verified in the same way,
+but the weekly stock count remains a secondary check: stock leaving without a corresponding
+sale being recorded appears as a shortfall at the next count, the same shrinkage check the
+restaurant already relies on.
 
 Credit sales are excluded from the handover check, as no money changes hands at the point of
 sale. These appear under amounts owed.
@@ -232,8 +276,8 @@ outstanding balance is available at any time.
 ## 7. Reporting
 
 **Profitability.** By day, week or month, per location and for the business as a whole:
-revenue, less the cost of goods sold, less running costs. Available daily at both locations.
-Canteen figures are provisional between counts, as described in section 10.
+revenue, less the cost of goods sold, less running costs. Available daily and exact at both
+locations, as described in section 10.
 
 **Daily handover.** Amounts handed over against amounts expected, by person and by day, with
 cash and M-Pesa reported separately.
@@ -311,11 +355,11 @@ needed.
 | Location | Source |
 |---|---|
 | Restaurant | Each sale as recorded, at its selling price |
-| Canteen | The day's declared takings, cash and M-Pesa |
+| Canteen | Each sale as recorded, at its selling price — see section 4 |
 
 ```
 Restaurant sales          KSh 18,600
-Canteen takings           KSh  5,400
+Canteen sales              KSh  5,400
 Sales revenue             KSh 24,000
 ```
 
@@ -343,26 +387,33 @@ Food sent to the canteen is deducted because its cost travels with it, so that e
 profit reflects what it actually sold. The same amount is added to the canteen below. **The
 business total is unaffected** — the transfer only determines which location carries the cost.
 
-**At the canteen** the figure is produced in two parts, as its stock is of two kinds.
+**At the canteen** the figure is now calculated the same way as the restaurant's: from stock
+actually consumed, using each item's own cost.
 
-*Food supplied by the restaurant — exact, counted daily.* The ordinary calculation applies:
-opening, plus what was transferred in, less what remains at close. On most days everything sent
-is sold and the cost is simply the day's transfers. Where food is left over it carries forward
-as the next day's opening stock, as it would at the restaurant. This is a short count of a few
-items and is done at close each day.
-
-*The canteen's own goods — estimated between counts.* These are not counted daily, so the
-quantity sold on a given day is not known. What is known is the money taken. Cost is therefore
-calculated from the takings using the cost rate measured at the most recent count.
+*Revised 2026-08-13.* Previously this was split into an exact part (food from the restaurant)
+and an estimated part (the canteen's own goods, priced from a rate measured at the last count),
+because the canteen's own goods sold without an individual record. Now that every sale is
+recorded — see section 4 — cost of goods sold uses the same basis at both locations:
 
 ```
-Food from the restaurant  KSh  2,400   (exact)
-Own goods: takings of KSh 4,000 × 72%
-                          KSh  2,880   (estimated)
-Canteen cost              KSh  5,280
+opening stock + received/transferred in − closing stock = cost of goods sold
 ```
 
-The 72% is not assumed. It is the rate the last count measured for those goods.
+*Food supplied by the restaurant.* Its cost travels with it at the point of transfer, at the
+same per-unit cost the restaurant already knows — its recipe cost, where one is recorded.
+Where no recipe exists, the transfer is costed at the same estimate section 10.5 already uses
+for unsold cooked food without a recipe (60% of selling price), labelled as estimated and
+replaced automatically once a recipe is recorded — see section 10.7.
+
+*The canteen's own goods.* Costed from the purchase price recorded when the goods were
+received, the same as any bought-in stock at the restaurant. Always exact — every bought-in
+good has a purchase price by definition.
+
+```
+Food from the restaurant  KSh  2,400   (exact, recipe cost)
+Own goods sold            KSh  2,880   (exact, purchase cost)
+Canteen cost               KSh  5,280
+```
 
 ### 10.3 Profit
 
@@ -388,30 +439,24 @@ Running costs are gas, charcoal, electricity, rent and wages.
 
 ### 10.4 What is provisional
 
-Profit is reported **daily at both locations and for the business as a whole**. One part of it
-is provisional until the next canteen count.
+*Revised 2026-08-13.* Profit is reported **daily at both locations and for the business as a
+whole**, and is no longer provisional on waiting for a count at either:
 
 | | Basis | Status |
 |---|---|---|
 | Restaurant | Measured consumption | Final |
-| Canteen — restaurant food | That day's transfers | Final |
-| Canteen — its own goods | Estimated from the measured rate | Provisional |
+| Canteen — restaurant food, with a recipe | Cost travels with the transfer, at recipe cost | Final |
+| Canteen — restaurant food, no recipe | Cost travels with the transfer, at the 60% estimate | Estimated — same status as any cooked food without a recipe, see 10.5 |
+| Canteen — its own goods | Recorded sales, purchase-price cost | Final |
 
-At each count the measured figure replaces the estimates for that period, and the correction is
-reported rather than applied silently:
+The remaining estimate is not new: it is the same "cooked food without a recipe" gap the
+restaurant already has, now applied consistently where that food is also sold at the canteen —
+not a canteen-specific weakness, and not something a count corrects. Recording a recipe for the
+item replaces the estimate; nothing about counting more often does.
 
-```
-Estimated since last count    KSh 61,200
-Measured at the count         KSh 63,800
-Correction                  − KSh  2,600
-```
-
-A correction that consistently falls the same way indicates either that the rate requires
-revision or that stock is leaving without corresponding takings.
-
-Provisional figures are identified as such wherever they appear. **The count is the
-authoritative figure; the daily figure is a reliable indication.** A count may be taken on any
-day, and counting more frequently shortens the estimated period and improves accuracy.
+The weekly count remains, as a shrinkage check rather than a source of cost or revenue — see
+section 4. A count difference is reported as a variance to investigate, not as a correction to
+a previously estimated figure, because no figure was estimated.
 
 **Cash figures are never estimated.** Amounts received, amounts paid out, the expected cash
 position, handover comparisons and amounts owed are measured at both locations.
