@@ -32,6 +32,15 @@ import { History, ChevronLeft, ChevronRight } from "lucide-react";
 import { money } from "@/shared/money";
 import { RecordCorrectionDialog } from "./record-correction-dialog";
 
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export type ActivityKind =
   | "sale"
   | "void"
@@ -246,7 +255,7 @@ export function ActivityView({
       header: "Recorded",
       align: "left",
       width: "11rem",
-      cell: (r) => <span className="tabular whitespace-nowrap">{r.enteredAt}</span>,
+      cell: (r) => <span className="tabular whitespace-nowrap">{formatDateTime(r.enteredAt)}</span>,
     },
     {
       key: "effectiveOn",
@@ -254,7 +263,7 @@ export function ActivityView({
       align: "left",
       width: "9rem",
       cell: (r) => {
-        const backdated = r.effectiveOn !== r.enteredAt.slice(0, 10);
+        const backdated = r.effectiveOn.slice(0, 10) !== r.enteredAt.slice(0, 10);
         return (
           <span
             className={`tabular whitespace-nowrap ${
@@ -266,7 +275,7 @@ export function ActivityView({
                 : undefined
             }
           >
-            {r.effectiveOn}
+            {formatDateTime(r.effectiveOn)}
           </span>
         );
       },

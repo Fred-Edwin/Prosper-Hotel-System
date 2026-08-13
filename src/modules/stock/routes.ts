@@ -176,15 +176,14 @@ export async function recordProductionRoute(request: Request): Promise<Response>
 
   const body = await request.json();
   const result = await recordProduction(db, session, {
-    productId: body.productId,
     locationId: session.staff.locationId,
-    quantity: body.quantity,
+    lines: body.lines,
   });
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
 
-  return Response.json({ movement: result.movement });
+  return Response.json({ movements: result.movements });
 }
 
 export async function recordNonSalesConsumptionRoute(request: Request): Promise<Response> {

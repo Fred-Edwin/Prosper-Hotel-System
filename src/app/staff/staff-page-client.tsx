@@ -80,7 +80,7 @@ export function StaffPageClient({
         <StaffHome role={role} handedOverToday={handedOverToday} onOpen={setActive} />
       )}
       {active === "stock" && <StockList locationId={locationId} />}
-      {active === "sell" && <NewSale onDone={() => setActive(null)} />}
+      {active === "sell" && <NewSale onDone={() => setActive(null)} role={role} />}
       {active === "credit" && <CreditSale onDone={() => setActive(null)} />}
       {active === "sales" && <TodaysSales />}
       {active === "receive" && <ReceiveDelivery onDone={() => setActive(null)} />}

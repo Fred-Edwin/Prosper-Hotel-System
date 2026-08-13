@@ -14,7 +14,7 @@
  * one-column list).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,18 +93,20 @@ export function TodaysSales() {
 
 function TodaysSalesForAttempt({ onRetry }: { onRetry: () => void }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const cancelledRef = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
-
+  // A per-call closure flag rather than a shared ref (BUG-03) — a ref set
+  // true by StrictMode's dev-only mount/unmount/remount cycle stays true
+  // across the remount, since useRef's value (unlike useState/useEffect)
+  // isn't reset by that cycle, permanently discarding every future load()
+  // result including retries.
   const load = () => {
+    let cancelled = false;
     fetchTodaysSales().then((result) => {
-      if (!cancelledRef.current) setState(result);
+      if (!cancelled) setState(result);
     });
+    return () => {
+      cancelled = true;
+    };
   };
 
   useEffect(load, []);

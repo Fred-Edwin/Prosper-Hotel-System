@@ -43,6 +43,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyFirstUse, ErrorState } from "@/components/patterns/states";
 import { Minus, Plus, Search, Trash2, X, ShoppingCart, Check, UserPlus, Store, Truck } from "lucide-react";
 import { money } from "@/shared/money";
+import type { StaffRole } from "@/components/layout/staff-nav";
 
 type Product = {
   id: string;
@@ -139,13 +140,14 @@ async function submitSale(input: {
   }
 }
 
-export function NewSale({ onDone }: { onDone?: () => void }) {
+export function NewSale({ onDone, role }: { onDone?: () => void; role?: StaffRole }) {
   const [attempt, setAttempt] = useState(0);
   return (
     <NewSaleForAttempt
       key={attempt}
       onRetry={() => setAttempt((a) => a + 1)}
       onDone={onDone}
+      role={role}
     />
   );
 }
@@ -153,9 +155,11 @@ export function NewSale({ onDone }: { onDone?: () => void }) {
 function NewSaleForAttempt({
   onRetry,
   onDone,
+  role,
 }: {
   onRetry: () => void;
   onDone?: () => void;
+  role?: StaffRole;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
@@ -169,7 +173,7 @@ function NewSaleForAttempt({
     };
   }, []);
 
-  return <NewSaleView state={state} onRetry={onRetry} onDone={onDone} />;
+  return <NewSaleView state={state} onRetry={onRetry} onDone={onDone} role={role} />;
 }
 
 /** The presentational half, driven by state rather than fetching — what
@@ -181,6 +185,7 @@ export function NewSaleView({
   onSubmit = submitSale,
   onLoadCustomers = fetchCustomers,
   onCreateCustomer = createCustomer,
+  role,
 }: {
   state: LoadState;
   onRetry?: () => void;
@@ -188,6 +193,7 @@ export function NewSaleView({
   onSubmit?: typeof submitSale;
   onLoadCustomers?: typeof fetchCustomers;
   onCreateCustomer?: typeof createCustomer;
+  role?: StaffRole;
 }) {
   if (state.status === "loading") return <TillSkeleton />;
   if (state.status === "error") {
@@ -216,6 +222,7 @@ export function NewSaleView({
       onSubmit={onSubmit}
       onLoadCustomers={onLoadCustomers}
       onCreateCustomer={onCreateCustomer}
+      role={role}
     />
   );
 }
@@ -226,16 +233,25 @@ function Till({
   onSubmit,
   onLoadCustomers,
   onCreateCustomer,
+  role,
 }: {
   products: Product[];
   onDone: () => void;
   onSubmit: typeof submitSale;
   onLoadCustomers: typeof fetchCustomers;
   onCreateCustomer: typeof createCustomer;
+  role?: StaffRole;
 }) {
+  // proposal.md §2: the store manager records delivery orders only, never
+  // counter sales — see sales/logic.ts's forbidden check. Defaulting to
+  // delivery and disabling Counter keeps that role from ever hitting it by
+  // accident (BUG-04).
+  const counterDisabledForRole = role === "store-manager";
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
-  const [fulfilment, setFulfilment] = useState<Fulfilment>("counter");
+  const [fulfilment, setFulfilment] = useState<Fulfilment>(
+    counterDisabledForRole ? "delivery" : "counter",
+  );
   const [deliveryCustomer, setDeliveryCustomer] = useState<Customer | null>(null);
   const [deliveryFee, setDeliveryFee] = useState("");
   // Most sales are paid one way. One line by default — pre-filled with the
@@ -402,13 +418,16 @@ function Till({
           ).map((m) => {
             const Icon = m.icon;
             const on = fulfilment === m.key;
+            const disabled = m.key === "counter" && counterDisabledForRole;
             return (
               <button
                 key={m.key}
-                onClick={() => setFulfilmentMode(m.key)}
+                onClick={() => !disabled && setFulfilmentMode(m.key)}
+                disabled={disabled}
+                title={disabled ? "Store managers record delivery orders, not counter sales" : undefined}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-[13px] font-medium transition-colors duration-100 ${
                   on ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-                }`}
+                } ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
                 aria-pressed={on}
                 data-testid={`till-fulfilment-${m.key}`}
               >
@@ -664,7 +683,9 @@ function Till({
 
           {submitError && (
             <p className="text-[11px] text-destructive">
-              Couldn&apos;t complete the sale. Nothing was lost — check payment and try again.
+              {submitError === "forbidden" && fulfilment === "counter"
+                ? "Store managers record delivery orders, not counter sales."
+                : "Couldn't complete the sale. Nothing was lost — check payment and try again."}
             </p>
           )}
 

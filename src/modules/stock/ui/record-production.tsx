@@ -4,14 +4,14 @@
  * Production — record what the kitchen made from ingredients that
  * reached it. Ticket 19.
  *
- * Single product/quantity per entry, mirroring record-wastage.tsx's
- * item-then-quantity shape rather than issuing's multi-line basket — the
- * ticket's acceptance criteria describe one product and quantity per
- * record. The picker narrows to active cooked_food products (the only
- * kind recipes attach to, per catalogue) via the existing active-products
- * endpoint — no new catalogue endpoint added for this. A cooked_food
- * product can still lack a current recipe; the API's no_recipe rejection
- * is the real gate and surfaces as submitError below.
+ * Multi-line entry, same Line[] add/remove/setQuantity shape as
+ * record-stock-count.tsx (BUG-05 — a single-selection field was silently
+ * discarding every earlier tile tap). The picker narrows to active
+ * cooked_food products (the only kind recipes attach to, per catalogue)
+ * via the existing active-products endpoint — no new catalogue endpoint
+ * added for this. A cooked_food product can still lack a current recipe;
+ * the API's no_recipe rejection is the real gate and surfaces as
+ * submitError below.
  */
 
 import { useEffect, useState } from "react";
@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyFirstUse, ErrorState } from "@/components/patterns/states";
-import { Search, X, Check, ChefHat } from "lucide-react";
+import { Search, Trash2, X, Check, ChefHat } from "lucide-react";
 import { money } from "@/shared/money";
 
 type Product = {
@@ -29,6 +29,8 @@ type Product = {
   priceMinor: number | null;
   active: boolean;
 };
+
+type Line = { product: Product; quantity: string };
 
 export type LoadState =
   | { status: "loading" }
@@ -49,8 +51,7 @@ async function fetchProducibleProducts(): Promise<LoadState> {
 }
 
 async function submitProduction(input: {
-  productId: string;
-  quantity: number;
+  lines: { productId: string; quantity: number }[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const response = await fetch("/api/stock/produce", {
@@ -147,36 +148,45 @@ function Production({
   onSubmit: typeof submitProduction;
 }) {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Product | null>(null);
-  const [quantity, setQuantity] = useState("");
+  const [lines, setLines] = useState<Line[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [confirmed, setConfirmed] = useState<{ product: Product; quantity: string } | null>(null);
+  const [confirmed, setConfirmed] = useState<Line[] | null>(null);
 
   const shown = query.trim()
     ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
     : products;
 
-  const canComplete = selected != null && Number(quantity) > 0 && !submitting;
+  const add = (product: Product) =>
+    setLines((ls) => {
+      if (ls.some((l) => l.product.id === product.id)) return ls;
+      return [...ls, { product, quantity: "" }];
+    });
+
+  const remove = (id: string) => setLines((ls) => ls.filter((l) => l.product.id !== id));
+
+  const setQuantity = (id: string, quantity: string) =>
+    setLines((ls) => ls.map((l) => (l.product.id === id ? { ...l, quantity } : l)));
+
+  const linesComplete = lines.length > 0 && lines.every((l) => Number(l.quantity) > 0 && l.quantity !== "");
+  const canComplete = linesComplete && !submitting;
 
   const complete = async () => {
-    if (!selected) return;
     setSubmitting(true);
     setSubmitError(null);
     const result = await onSubmit({
-      productId: selected.id,
-      quantity: Number(quantity),
+      lines: lines.map((l) => ({ productId: l.product.id, quantity: Number(l.quantity) })),
     });
     setSubmitting(false);
     if (!result.ok) {
       setSubmitError(result.error);
       return;
     }
-    setConfirmed({ product: selected, quantity });
+    setConfirmed(lines);
   };
 
   if (confirmed) {
-    return <ProductionConfirmation entry={confirmed} onDone={onDone} />;
+    return <ProductionConfirmation lines={confirmed} onDone={onDone} />;
   }
 
   return (
@@ -216,15 +226,16 @@ function Production({
         ) : (
           <div className="grid grid-cols-2 gap-2" data-testid="production-product-grid">
             {shown.map((p) => {
-              const isSelected = selected?.id === p.id;
+              const inLines = lines.some((l) => l.product.id === p.id);
               return (
                 <button
                   key={p.id}
-                  onClick={() => setSelected(p)}
+                  onClick={() => add(p)}
                   title={p.name}
+                  disabled={inLines}
                   data-testid="production-product-tile"
-                  className={`relative flex h-[64px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 ${
-                    isSelected ? "border-neutral-400" : "active:bg-accent"
+                  className={`relative flex h-[64px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 disabled:opacity-50 ${
+                    inLines ? "border-neutral-400" : "active:bg-accent"
                   }`}
                 >
                   <span className="line-clamp-2 text-[13px] leading-tight font-medium">
@@ -233,7 +244,7 @@ function Production({
                   <span className="text-[11px] text-muted-foreground">
                     {p.priceMinor != null ? money(p.priceMinor) : "No price set"}
                   </span>
-                  {isSelected && (
+                  {inLines && (
                     <span className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-white">
                       <Check className="size-3" />
                     </span>
@@ -246,21 +257,38 @@ function Production({
       </div>
 
       <div className="border-t bg-card">
-        {selected && (
-          <div className="flex items-center justify-between gap-3 border-b px-4 py-3" data-testid="production-detail">
-            <span className="min-w-0 truncate text-[13px] font-medium">{selected.name}</span>
-            <Input
-              inputMode="numeric"
-              placeholder="Qty"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              className="h-9 w-20 text-[13px]"
-              data-testid="production-quantity"
-            />
+        {lines.length > 0 && (
+          <div className="max-h-64 overflow-y-auto px-4 py-1.5" data-testid="production-lines">
+            {lines.map((l) => (
+              <div key={l.product.id} className="flex items-center gap-2 border-b py-2 last:border-0">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-medium">{l.product.name}</div>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <Input
+                      inputMode="numeric"
+                      placeholder="Qty"
+                      value={l.quantity}
+                      onChange={(e) => setQuantity(l.product.id, e.target.value)}
+                      className="h-8 w-20 text-[13px]"
+                      data-testid={`production-quantity-${l.product.id}`}
+                    />
+                  </div>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0 text-muted-foreground"
+                  onClick={() => remove(l.product.id)}
+                  aria-label={`Remove ${l.product.name}`}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            ))}
           </div>
         )}
 
-        <div className="space-y-2.5 px-4 py-3">
+        <div className="space-y-2.5 border-t px-4 py-3">
           {submitError && (
             <p className="text-[11px] text-destructive">
               Couldn&apos;t record the production. Nothing was lost — check the details and try
@@ -283,10 +311,10 @@ function Production({
 }
 
 function ProductionConfirmation({
-  entry,
+  lines,
   onDone,
 }: {
-  entry: { product: Product; quantity: string };
+  lines: Line[];
   onDone: () => void;
 }) {
   return (
@@ -297,9 +325,14 @@ function ProductionConfirmation({
             <Check className="size-5" />
           </div>
           <p className="text-sm font-medium">Production recorded</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">
-            {entry.quantity} {entry.product.name}
-          </p>
+          <div className="mt-3 w-full space-y-1 text-left">
+            {lines.map((l) => (
+              <div key={l.product.id} className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{l.product.name}</span>
+                <span className="font-medium tabular-nums">{l.quantity}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

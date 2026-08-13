@@ -26,14 +26,19 @@ function daysAgoAt(days: number, hour: number, minute = 0) {
 }
 
 async function main() {
+  await db.drawingRepayment.deleteMany({});
   await db.drawingDebt.deleteMany({});
+  await db.asset.deleteMany({});
   await db.expense.deleteMany({});
+  await db.daysWorked.deleteMany({});
   await db.handover.deleteMany({});
+  await db.takings.deleteMany({});
   await db.stockCountLine.deleteMany({});
   await db.stockCount.deleteMany({});
   await db.paymentLine.deleteMany({});
   await db.saleLine.deleteMany({});
   await db.sale.deleteMany({});
+  await db.repayment.deleteMany({});
   await db.customer.deleteMany({});
   await db.recipeLine.deleteMany({});
   await db.recipe.deleteMany({});
@@ -41,6 +46,7 @@ async function main() {
   await db.ingredient.deleteMany({});
   await db.stockMovement.deleteMany({});
   await db.product.deleteMany({});
+  await db.category.deleteMany({});
   await db.session.deleteMany({});
   await db.staffMember.deleteMany({});
   await db.location.deleteMany({});

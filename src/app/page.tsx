@@ -1,10 +1,8 @@
-export default function Home() {
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-semibold">Prosper Hotel</h1>
-      <p className="mt-2 text-[var(--color-text-muted)]">
-        Design phase. Variants are mounted per screen.
-      </p>
-    </main>
-  );
+import { redirect } from "next/navigation";
+import { getSession } from "@/modules/people";
+
+export default async function Home() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  redirect(session.staff.role === "owner" ? "/dashboard" : "/staff");
 }
