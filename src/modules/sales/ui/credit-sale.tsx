@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyFirstUse, ErrorState } from "@/components/patterns/states";
 import { Minus, Plus, Search, Trash2, X, HandCoins, Check } from "lucide-react";
@@ -27,6 +28,7 @@ type Product = {
   kind: "goods" | "cooked_food" | "service" | "packaging";
   priceMinor: number | null;
   active: boolean;
+  locationId: string;
 };
 
 type Customer = { id: string; name: string; phone: string | null };
@@ -38,9 +40,11 @@ export type LoadState =
   | { status: "error" }
   | { status: "ready"; products: Product[] };
 
-async function fetchProducts(): Promise<LoadState> {
+async function fetchProducts(locationId: string): Promise<LoadState> {
   try {
-    const response = await fetch("/api/catalogue/products/active");
+    const response = await fetch(
+      `/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`,
+    );
     if (!response.ok) return { status: "error" };
     const body = await response.json();
     if (!Array.isArray(body?.products)) return { status: "error" };
@@ -109,13 +113,20 @@ async function submitCreditSale(input: {
   }
 }
 
-export function CreditSale({ onDone }: { onDone?: () => void }) {
+export function CreditSale({
+  onDone,
+  locationId,
+}: {
+  onDone?: () => void;
+  locationId: string;
+}) {
   const [attempt, setAttempt] = useState(0);
   return (
     <CreditSaleForAttempt
       key={attempt}
       onRetry={() => setAttempt((a) => a + 1)}
       onDone={onDone}
+      locationId={locationId}
     />
   );
 }
@@ -123,23 +134,27 @@ export function CreditSale({ onDone }: { onDone?: () => void }) {
 function CreditSaleForAttempt({
   onRetry,
   onDone,
+  locationId,
 }: {
   onRetry: () => void;
   onDone?: () => void;
+  locationId: string;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    fetchProducts().then((result) => {
+    fetchProducts(locationId).then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locationId]);
 
-  return <CreditSaleView state={state} onRetry={onRetry} onDone={onDone} />;
+  return (
+    <CreditSaleView state={state} onRetry={onRetry} onDone={onDone} locationId={locationId} />
+  );
 }
 
 /** The presentational half, driven by state rather than fetching — what
@@ -151,6 +166,7 @@ export function CreditSaleView({
   onSubmit = submitCreditSale,
   onLoadCustomers = fetchCustomers,
   onCreateCustomer = createCustomer,
+  locationId,
 }: {
   state: LoadState;
   onRetry?: () => void;
@@ -158,6 +174,7 @@ export function CreditSaleView({
   onSubmit?: typeof submitCreditSale;
   onLoadCustomers?: typeof fetchCustomers;
   onCreateCustomer?: typeof createCustomer;
+  locationId?: string;
 }) {
   if (state.status === "loading") return <CreditSaleSkeleton />;
   if (state.status === "error") {
@@ -186,7 +203,89 @@ export function CreditSaleView({
       onSubmit={onSubmit}
       onLoadCustomers={onLoadCustomers}
       onCreateCustomer={onCreateCustomer}
+      locationId={locationId}
     />
+  );
+}
+
+/** One tap-target product tile — mirrors new-sale.tsx's ProductTile, kept
+ * separate per this file's own not-a-reuse convention (see header comment). */
+function CreditProductTile({
+  product,
+  inBasket,
+  onAdd,
+  badge,
+}: {
+  product: Product;
+  inBasket?: Line;
+  onAdd: () => void;
+  badge?: string;
+}) {
+  return (
+    <button
+      onClick={onAdd}
+      title={product.name}
+      data-testid="credit-sale-product-tile"
+      className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 active:bg-accent ${
+        inBasket ? "border-neutral-400" : ""
+      }`}
+    >
+      <span className="line-clamp-2 text-[13px] leading-tight font-medium">{product.name}</span>
+      <div className="flex w-full items-center justify-between gap-1">
+        <span className="text-[11px] text-muted-foreground tabular-nums">
+          {money(product.priceMinor ?? 0)}
+        </span>
+        {badge && (
+          <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+            {badge}
+          </Badge>
+        )}
+      </div>
+      {inBasket && (
+        <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-[11px] font-semibold text-white tabular-nums">
+          {inBasket.qty}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** Own-stock / transferred-in grouped section — same split new-sale.tsx's
+ * Till uses. */
+function CreditProductTileGroup({
+  title,
+  products,
+  lines,
+  onAdd,
+  testIdPrefix,
+  badge,
+  className,
+}: {
+  title: string;
+  products: Product[];
+  lines: Line[];
+  onAdd: (p: Product) => void;
+  testIdPrefix: string;
+  badge?: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <h3 className="mb-1.5 px-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h3>
+      <div className="grid grid-cols-3 gap-2" data-testid={`credit-sale-product-grid-${testIdPrefix}`}>
+        {products.map((p) => (
+          <CreditProductTile
+            key={p.id}
+            product={p}
+            inBasket={lines.find((l) => l.product.id === p.id)}
+            onAdd={() => onAdd(p)}
+            badge={badge}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -196,12 +295,14 @@ function CreditTill({
   onSubmit,
   onLoadCustomers,
   onCreateCustomer,
+  locationId,
 }: {
   products: Product[];
   onDone: () => void;
   onSubmit: typeof submitCreditSale;
   onLoadCustomers: typeof fetchCustomers;
   onCreateCustomer: typeof createCustomer;
+  locationId?: string;
 }) {
   const [query, setQuery] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
@@ -228,6 +329,12 @@ function CreditTill({
   const shown = query.trim()
     ? products.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()))
     : products;
+
+  // docs/architecture.md's "Product home location" note: same own/
+  // transferred-in split as new-sale.tsx's Till — credit sales share the
+  // same picker concerns.
+  const ownProducts = shown.filter((p) => p.locationId === locationId);
+  const transferredProducts = shown.filter((p) => p.locationId !== locationId);
 
   const total = lines.reduce((s, l) => s + (l.product.priceMinor ?? 0) * l.qty, 0);
 
@@ -301,32 +408,35 @@ function CreditTill({
               Clear search
             </Button>
           </div>
+        ) : locationId ? (
+          <>
+            {ownProducts.length > 0 && (
+              <CreditProductTileGroup
+                title="My stock"
+                products={ownProducts}
+                lines={lines}
+                onAdd={add}
+                testIdPrefix="own"
+              />
+            )}
+            {transferredProducts.length > 0 && (
+              <CreditProductTileGroup
+                title="From another location"
+                products={transferredProducts}
+                lines={lines}
+                onAdd={add}
+                testIdPrefix="transferred"
+                badge="Transferred in"
+                className={ownProducts.length > 0 ? "mt-4" : undefined}
+              />
+            )}
+          </>
         ) : (
           <div className="grid grid-cols-3 gap-2" data-testid="credit-sale-product-grid">
             {shown.map((p) => {
               const inBasket = lines.find((l) => l.product.id === p.id);
               return (
-                <button
-                  key={p.id}
-                  onClick={() => add(p)}
-                  title={p.name}
-                  data-testid="credit-sale-product-tile"
-                  className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 active:bg-accent ${
-                    inBasket ? "border-neutral-400" : ""
-                  }`}
-                >
-                  <span className="line-clamp-2 text-[13px] leading-tight font-medium">
-                    {p.name}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground tabular-nums">
-                    {money(p.priceMinor ?? 0)}
-                  </span>
-                  {inBasket && (
-                    <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-[11px] font-semibold text-white tabular-nums">
-                      {inBasket.qty}
-                    </span>
-                  )}
-                </button>
+                <CreditProductTile key={p.id} product={p} inBasket={inBasket} onAdd={() => add(p)} />
               );
             })}
           </div>

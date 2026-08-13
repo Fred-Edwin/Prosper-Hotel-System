@@ -85,6 +85,7 @@ beforeEach(async () => {
     name: "Chips",
     kind: "cooked_food",
     priceMinor: 150,
+    locationId: restaurantId,
   });
   if (!product.ok) throw new Error("expected product create to succeed");
   chipsId = product.value.id;
@@ -178,6 +179,7 @@ describe("recordProduction", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!noRecipeProduct.ok) throw new Error("expected product create to succeed");
 
@@ -288,6 +290,7 @@ describe("recordProduction", () => {
       name: "Rice plate",
       kind: "cooked_food",
       priceMinor: 120,
+      locationId: restaurantId,
     });
     if (!rice.ok) throw new Error("expected product create to succeed");
     await createRecipe(testDb, owner, {
@@ -323,6 +326,7 @@ describe("recordProduction", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!noRecipeProduct.ok) throw new Error("expected product create to succeed");
 

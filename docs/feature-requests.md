@@ -50,6 +50,34 @@ copy block reused across the roles that see them — written once under
 Cashier, referenced (not duplicated) elsewhere. Use this approved copy
 verbatim as content; do not redraft it.
 
+## REQ-04: Product location scoping — fixing BUG-14/BUG-15
+**Requested by:** Edwinfred (owner-facing realization, prompted by the full-day
+walkthrough that logged BUG-14/BUG-15)
+**Date:** 2026-08-13
+**Status:** scoped — see `docs/scope.md`'s "Added post-v1" section, 2026-08-13
+"Product home location, and an overselling guard" entry
+
+### Description
+Products need to be scoped to a home location (restaurant or canteen), set by the
+owner at catalogue creation/edit time. Each location's New Sale, Production, and
+Correction screens should offer only products that genuinely belong there: the
+location's own products, plus anything currently sitting in that location's stock
+because it was transferred in and received. This directly resolves the open
+architectural fork BUG-14 already identified ("stock-aware New Sale" vs. "explicit
+location assignment") in favour of the latter, and gives BUG-15's overselling guard
+something concrete to check quantity against.
+
+### Initial notes
+Surfaced from the same full-day walkthrough that logged BUG-13/14/15 — investigating
+BUG-14 found that `Product` has no location concept at all today (unlike `Asset`,
+which already does), so New Sale shows the entire global catalogue to every location
+regardless of actual stock. Decided with Edwinfred, 2026-08-13: `Product.locationId`
+is required (every product has exactly one home location, no shared/global option);
+sellability at a location is the home-location match *or* positive transferred-in
+stock, combined; production is hard-gated to a product's home location; the
+correction dialog uses the same combined scoping as sales. See `docs/bugs.md`
+BUG-14 and BUG-15 for the original findings this closes.
+
 ## REQ-03: Canteen redesign — real sales instead of count-derived sales
 **Requested by:** Edwinfred (owner-facing realization, prompted by BUG-10)
 **Date:** 2026-08-13

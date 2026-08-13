@@ -2,6 +2,7 @@
 
 export {
   getCurrentStockAtLocation,
+  getSellableProductsAtLocation,
   getTransferableItems,
   recordTransfer,
   recordTransfers,
@@ -40,6 +41,7 @@ export {
 export type {
   ProductCostBasis,
   StockAccessResult,
+  SellableProductsResult,
   RecordTransferResult,
   RecordTransfersResult,
   TransferMovement,
@@ -80,6 +82,7 @@ export type {
 } from "./logic";
 export {
   stockAtLocationRoute,
+  sellableProductsAtLocationRoute,
   stockValueAtLocationRoute,
   recordTransferRoute,
   transferableItemsRoute,

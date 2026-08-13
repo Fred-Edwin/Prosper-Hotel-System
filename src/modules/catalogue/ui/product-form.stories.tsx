@@ -1,11 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { ProductForm } from "./product-form";
+import type { Location } from "@/modules/people";
 import type { Category, Product } from "../schema";
 
 const categories: Category[] = [
   { id: "c1", name: "Food", active: true },
   { id: "c2", name: "Drinks", active: true },
   { id: "c3", name: "Stationery", active: false },
+];
+
+const locations: Location[] = [
+  { id: "loc-1", code: "restaurant", name: "Prosper Restaurant" },
+  { id: "loc-2", code: "canteen", name: "Prosper Canteen" },
 ];
 
 const productWithCategory: Product = {
@@ -17,6 +23,7 @@ const productWithCategory: Product = {
   lowStockLevel: 10,
   active: true,
   categoryId: "c2",
+  locationId: "loc-1",
 };
 
 const productNoCategory: Product = {
@@ -28,6 +35,7 @@ const productNoCategory: Product = {
   lowStockLevel: null,
   active: true,
   categoryId: null,
+  locationId: "loc-2",
 };
 
 const productWithDeactivatedCategory: Product = {
@@ -39,6 +47,7 @@ const productWithDeactivatedCategory: Product = {
   lowStockLevel: null,
   active: true,
   categoryId: "c3",
+  locationId: "loc-1",
 };
 
 const meta = {
@@ -48,6 +57,7 @@ const meta = {
   args: {
     open: true,
     categories,
+    locations,
     onOpenChange: () => {},
     onSave: () => {},
   },
@@ -74,6 +84,11 @@ export const DeactivatedCategoryStillShownOnExistingProduct: Story = {
 export const NewProductNoCategory: Story = {
   name: "New product — no category yet",
   args: {},
+};
+
+export const LocationSelect: Story = {
+  name: "Home location select",
+  args: { product: productWithCategory },
 };
 
 export const LowStockLevelSet: Story = {

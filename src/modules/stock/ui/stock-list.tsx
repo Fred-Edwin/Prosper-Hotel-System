@@ -127,13 +127,52 @@ export function StockListView({
     );
   }
 
+  const own = state.levels.filter((l) => l.isOwn);
+  const transferredIn = state.levels.filter((l) => !l.isOwn);
+
   return (
     <div className="p-3" data-testid="stock-list">
-      {state.levels.map((level) => (
+      {own.length > 0 && (
+        <StockLevelGroup title="My stock" levels={own} testIdPrefix="own" />
+      )}
+      {transferredIn.length > 0 && (
+        <StockLevelGroup
+          title="From another location"
+          levels={transferredIn}
+          testIdPrefix="transferred"
+          className={own.length > 0 ? "mt-4" : undefined}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A titled section of stock rows — "My stock" / "From another location",
+ * docs/architecture.md's required split between a location's own products
+ * and items on hand there only via a confirmed transfer. Mirrors new-sale.tsx's
+ * ProductTileGroup split, applied to rows instead of tiles. */
+function StockLevelGroup({
+  title,
+  levels,
+  testIdPrefix,
+  className,
+}: {
+  title: string;
+  levels: StockLevel[];
+  testIdPrefix: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <h3 className="mb-1.5 px-0.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h3>
+      {levels.map((level) => (
         <div
           key={level.productId}
           className="mb-2 flex items-center justify-between gap-3 rounded-lg border bg-card p-3"
           data-testid="stock-row"
+          data-source={testIdPrefix}
         >
           <span className="min-w-0 truncate text-[13px] font-medium">
             {level.productName}

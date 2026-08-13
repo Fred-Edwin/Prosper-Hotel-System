@@ -145,3 +145,46 @@ receipt-confirmation status; a periodic canteen count still runs and reports a v
 report describes it as correcting an earlier estimate; `docs/proposal.md`,
 `docs/architecture.md`, `docs/formulas.md` and `CONTEXT.md` read consistently with the new
 design (done as part of this scoping pass, ahead of tickets).
+
+### 2026-08-13 — Product home location, and an overselling guard
+
+*Closes BUG-14 and BUG-15 in `docs/bugs.md`. See `docs/architecture.md`'s "Product home
+location" note (Data lifecycle section) for the full reasoning and how this relates to the
+existing "a stock level is the sum of the movements" rule — this is a deliberate, scoped
+exception to that rule, not an extension of it.*
+
+**What changes:**
+
+- `Product` gains a required home `Location` (restaurant or canteen), set by the owner in the
+  catalogue create/edit form, editable afterward the same as price or category.
+- New Sale, Production, and the stock-correction dialog, at each location, offer only: that
+  location's own products, plus products currently held there via a confirmed transfer in.
+  Transferred-in items are visually distinguished from the location's own products (badge or
+  grouped section), matching the existing canteen Stock page's "My stock / From restaurant"
+  split.
+- **Production is hard-gated to home location** — a location can only produce a product whose
+  home location it is (the canteen can never "produce" a restaurant-owned cooked-food item).
+- **A real overselling guard, in two parts, both required:**
+  - Soft: New Sale shows on-hand quantity per product tile, reusing the existing low-stock
+    visual pattern (`admin-stock-table.tsx`'s `isLow`/`TriangleAlert`).
+  - Hard: the sale-recording path rejects a line exceeding on-hand stock before writing
+    anything, mirroring `recordTransfer`'s existing `insufficient_stock` pattern
+    (`db.$transaction`, sum first, write only if sufficient). Surfaced to the cashier/attendant
+    as an inline error naming the item and quantity available, not a generic failure message.
+- Seed data's 13 products are assigned a home location matching their existing seeded stock
+  movements.
+
+**What this does not change:** the transfer mechanism itself (already two-sided, already
+correct); how current stock is computed (still purely the movement ledger); permissions
+(`canAccessLocation()` is unchanged and ungated by this — the new home-location filter is a
+business rule about *what's offered*, not a permission check about *who may act*, and is
+enforced separately in each module's `logic.ts`).
+
+**Definition of done:** every product has a home location, set at creation and editable after;
+New Sale/Production/Correction at each location show only in-scope products, with
+transferred-in items visually distinguished; production is rejected with a clear reason when
+attempted against a product whose home location doesn't match; a sale exceeding on-hand stock
+is rejected server-side with an inline, item-specific error, and cannot succeed via direct API
+call either; New Sale shows on-hand quantity per product; seed data reflects real home
+locations; BUG-14 and BUG-15 are marked fixed in `docs/bugs.md`, referencing the tickets that
+closed them.

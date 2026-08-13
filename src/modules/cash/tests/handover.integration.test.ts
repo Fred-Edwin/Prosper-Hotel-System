@@ -91,7 +91,7 @@ beforeAll(async () => {
   });
 
   const soda = await testDb.product.create({
-    data: { name: "Soda 500ml", kind: "goods", priceMinor: 80 },
+    data: { name: "Soda 500ml", kind: "goods", priceMinor: 80, locationId: restaurantId },
   });
   sodaId = soda.id;
 });

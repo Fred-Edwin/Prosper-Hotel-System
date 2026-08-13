@@ -254,6 +254,36 @@ an unexplained gap never blocks the next day's trading.
 shows the difference. Correcting the record is a separate, deliberate act — and **only the
 owner may correct.** The person who counts is not the person who adjusts.
 
+### Product home location — a deliberate exception to "the ledger is the only source"
+
+*Added 2026-08-13, per REQ-04 in `docs/feature-requests.md`, closing BUG-14/BUG-15 in
+`docs/bugs.md`.* `Product` gained a required `locationId` — the first catalogue item to carry
+location as stored data, alongside (not instead of) the movement ledger.
+
+**This does not weaken the stock-levels rule above.** No stock *quantity* is ever stored on
+`Product`; current stock is still purely the sum of movements. What's new is a different
+question the ledger was never positioned to answer well on its own: *whose product is this by
+default* — which location's New Sale, Production and stock-correction screens should offer it
+without the location needing any transfer history first. Before this, New Sale had no way to
+ask that question at all and simply offered every active product globally (BUG-14); nothing
+in the ledger can answer "what should this location be able to sell before it's ever moved
+anything," because the ledger only knows about movements that already happened.
+
+**Sellable-at-a-location is the union of both sources, not either alone:**
+`product.locationId === here` **OR** the product has positive current stock at `here` per the
+movement ledger (i.e. it was transferred in and confirmed received). The static field decides
+default visibility and where **production** may happen (a location may only produce a product
+whose home location it is — production is the restaurant kitchen's act, not a generic one).
+The ledger remains sole authority on **quantity** and therefore on overselling — a location
+can offer a transferred-in product it doesn't own, but never sell more of anything than the
+ledger says is actually there.
+
+**Why not fold this into the ledger instead** (e.g. an implicit "default location" inferred
+from first-ever movement)? Considered and rejected: it would make a brand-new product
+unsellable anywhere until some movement happened to it first, which is backwards — the owner
+needs to declare where a product belongs *before* any stock exists for it, the same way she
+already declares its price and category at creation.
+
 ---
 
 ## Integrations

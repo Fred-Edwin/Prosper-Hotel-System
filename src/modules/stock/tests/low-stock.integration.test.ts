@@ -72,18 +72,20 @@ describe("getLowStockItems", () => {
   test("restaurant: a product at or below its threshold is low, above is not", async () => {
     const owner = staffAt("owner", restaurantId, "restaurant");
 
-    const low = await createProduct(testDb, owner, { name: "Low soda", kind: "goods" });
-    const high = await createProduct(testDb, owner, { name: "High soda", kind: "goods" });
+    const low = await createProduct(testDb, owner, { name: "Low soda", kind: "goods", locationId: restaurantId });
+    const high = await createProduct(testDb, owner, { name: "High soda", kind: "goods", locationId: restaurantId });
     if (!low.ok || !high.ok) throw new Error("expected create to succeed");
     await updateProduct(testDb, owner, low.value.id, {
       name: "Low soda",
       kind: "goods",
       lowStockLevel: 10,
+      locationId: restaurantId,
     });
     await updateProduct(testDb, owner, high.value.id, {
       name: "High soda",
       kind: "goods",
       lowStockLevel: 10,
+      locationId: restaurantId,
     });
 
     await testDb.stockMovement.createMany({
@@ -134,7 +136,7 @@ describe("getLowStockItems", () => {
   test("an item with no threshold set is never low, even at zero stock", async () => {
     const owner = staffAt("owner", restaurantId, "restaurant");
 
-    const noThreshold = await createProduct(testDb, owner, { name: "No threshold", kind: "goods" });
+    const noThreshold = await createProduct(testDb, owner, { name: "No threshold", kind: "goods", locationId: restaurantId });
     if (!noThreshold.ok) throw new Error("expected create to succeed");
 
     const result = await getLowStockItems(testDb, owner, restaurantId);
@@ -147,12 +149,13 @@ describe("getLowStockItems", () => {
   test("canteen: compares against the quantity as at the most recent count, not live on-hand", async () => {
     const owner = staffAt("owner", canteenId, "canteen");
 
-    const product = await createProduct(testDb, owner, { name: "Canteen soda", kind: "goods" });
+    const product = await createProduct(testDb, owner, { name: "Canteen soda", kind: "goods", locationId: canteenId });
     if (!product.ok) throw new Error("expected create to succeed");
     await updateProduct(testDb, owner, product.value.id, {
       name: "Canteen soda",
       kind: "goods",
       lowStockLevel: 10,
+      locationId: canteenId,
     });
 
     // Live movements would put this well above threshold...
@@ -184,12 +187,13 @@ describe("getLowStockItems", () => {
   test("canteen: an item with no count yet is excluded, not shown as low", async () => {
     const owner = staffAt("owner", canteenId, "canteen");
 
-    const product = await createProduct(testDb, owner, { name: "Never counted", kind: "goods" });
+    const product = await createProduct(testDb, owner, { name: "Never counted", kind: "goods", locationId: canteenId });
     if (!product.ok) throw new Error("expected create to succeed");
     await updateProduct(testDb, owner, product.value.id, {
       name: "Never counted",
       kind: "goods",
       lowStockLevel: 10,
+      locationId: canteenId,
     });
 
     const result = await getLowStockItems(testDb, owner, canteenId);

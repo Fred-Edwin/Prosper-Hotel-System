@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Package, Plus } from "lucide-react";
 import { ProductForm } from "./product-form";
+import type { Location } from "@/modules/people";
 import type { Category, Product, ProductKind } from "../schema";
 
 const KIND_LABEL: Record<ProductKind, string> = {
@@ -26,6 +27,7 @@ const KIND_LABEL: Record<ProductKind, string> = {
 export function ProductsTab({
   products,
   categories,
+  locations,
   onCreate,
   onUpdate,
   onSetActive,
@@ -34,15 +36,23 @@ export function ProductsTab({
 }: {
   products: Product[];
   categories: Category[];
+  locations: Location[];
   onCreate: (input: {
     name: string;
     kind: ProductKind;
     priceMinor: number | null;
     categoryId: string | null;
+    locationId: string;
   }) => void;
   onUpdate: (
     id: string,
-    input: { name: string; kind: ProductKind; priceMinor: number | null; categoryId: string | null },
+    input: {
+      name: string;
+      kind: ProductKind;
+      priceMinor: number | null;
+      categoryId: string | null;
+      locationId: string;
+    },
   ) => void;
   onSetActive: (id: string, active: boolean) => void;
   saving?: boolean;
@@ -135,6 +145,7 @@ export function ProductsTab({
         open={creating}
         onOpenChange={setCreating}
         categories={categories}
+        locations={locations}
         saving={saving}
         error={error}
         onSave={(input) => onCreate(input)}
@@ -144,6 +155,7 @@ export function ProductsTab({
         onOpenChange={(v) => !v && setEditing(null)}
         product={editing ?? undefined}
         categories={categories}
+        locations={locations}
         saving={saving}
         error={error}
         onSave={(input) => {

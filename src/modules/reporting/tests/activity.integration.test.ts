@@ -74,8 +74,8 @@ async function resetDb() {
   await testDb.expense.deleteMany({});
   await testDb.daysWorked.deleteMany({});
   await testDb.staffMember.deleteMany({});
-  await testDb.location.deleteMany({});
   await testDb.product.deleteMany({});
+  await testDb.location.deleteMany({});
 }
 
 beforeEach(async () => {
@@ -104,7 +104,7 @@ beforeEach(async () => {
   cashierId = cashierRow.id;
   attendantId = attendantRow.id;
 
-  const soda = await testDb.product.create({ data: { name: "Soda 500ml", kind: "goods", priceMinor: 80 } });
+  const soda = await testDb.product.create({ data: { name: "Soda 500ml", kind: "goods", priceMinor: 80, locationId: restaurantId } });
   sodaId = soda.id;
 });
 

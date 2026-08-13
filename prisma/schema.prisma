@@ -26,6 +26,7 @@ model Location {
   code                LocationCode         @unique
   name                String
   staff               StaffMember[]
+  products            Product[]
   movements           StockMovement[]
   ingredientMovements IngredientMovement[]
   sales               Sale[]
@@ -99,6 +100,12 @@ model Product {
   // docs/architecture.md: deactivated, never deleted — a sold product must
   // stay attributed on historical sales even after withdrawal from sale.
   active             Boolean         @default(true)
+  // docs/architecture.md's "Product home location" note: whose product this
+  // is by default, set by the owner at creation. Not stock quantity — the
+  // ledger stays sole authority on that. Required, same shape as
+  // StaffMember.locationId.
+  locationId         String
+  location           Location        @relation(fields: [locationId], references: [id])
   createdAt          DateTime        @default(now())
   movements          StockMovement[]
   recipes            Recipe[]

@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { AuthenticatedStaff } from "@/modules/people";
 import {
   createCategory,
@@ -43,12 +43,21 @@ function staffAt(role: "owner" | "cashier"): AuthenticatedStaff {
 const owner = staffAt("owner");
 const cashier = staffAt("cashier");
 
+beforeAll(async () => {
+  await testDb.location.upsert({
+    where: { id: "location-1" },
+    update: {},
+    create: { id: "location-1", code: "restaurant", name: "Test" },
+  });
+});
+
 afterAll(async () => {
   await testDb.recipeLine.deleteMany({});
   await testDb.recipe.deleteMany({});
   await testDb.ingredient.deleteMany({});
   await testDb.product.deleteMany({});
   await testDb.category.deleteMany({});
+  await testDb.location.deleteMany({ where: { id: "location-1" } });
   await testDb.$disconnect();
 });
 
@@ -65,6 +74,7 @@ describe("products", () => {
     const result = await createProduct(testDb, owner, {
       name: "Sodas (500ml)",
       kind: "goods",
+      locationId: "location-1",
     });
 
     expect(result.ok).toBe(true);
@@ -78,26 +88,28 @@ describe("products", () => {
     const result = await createProduct(testDb, cashier, {
       name: "Sodas (500ml)",
       kind: "goods",
+      locationId: "location-1",
     });
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
   });
 
   test("product name must be unique", async () => {
-    await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
-    const result = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
+    const result = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
 
     expect(result).toEqual({ ok: false, reason: "duplicate_name" });
   });
 
   test("owner can edit a product's name, kind, and price", async () => {
-    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
 
     const result = await updateProduct(testDb, owner, created.value.id, {
       name: "Chips (large)",
       kind: "cooked_food",
       priceMinor: 20000,
+      locationId: "location-1",
     });
 
     expect(result.ok).toBe(true);
@@ -107,7 +119,7 @@ describe("products", () => {
   });
 
   test("owner can set and unset a product's low-stock level", async () => {
-    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
     expect(created.value.lowStockLevel).toBeNull();
 
@@ -115,6 +127,7 @@ describe("products", () => {
       name: "Chips",
       kind: "cooked_food",
       lowStockLevel: 10,
+      locationId: "location-1",
     });
     expect(set.ok).toBe(true);
     if (!set.ok) return;
@@ -124,6 +137,7 @@ describe("products", () => {
       name: "Chips",
       kind: "cooked_food",
       lowStockLevel: null,
+      locationId: "location-1",
     });
     expect(unset.ok).toBe(true);
     if (!unset.ok) return;
@@ -131,7 +145,7 @@ describe("products", () => {
   });
 
   test("owner can deactivate and reactivate a product", async () => {
-    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
 
     const deactivated = await deactivateProduct(testDb, owner, created.value.id);
@@ -144,7 +158,7 @@ describe("products", () => {
   });
 
   test("a deactivated product remains visible to the owner via listProducts", async () => {
-    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
     await deactivateProduct(testDb, owner, created.value.id);
 
@@ -155,7 +169,7 @@ describe("products", () => {
   });
 
   test("a non-owner deactivating a product is denied", async () => {
-    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
 
     const result = await deactivateProduct(testDb, cashier, created.value.id);
@@ -164,7 +178,7 @@ describe("products", () => {
   });
 
   test("owner can assign and change a product's category; category is optional", async () => {
-    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
     expect(created.value.categoryId).toBeNull();
 
@@ -175,6 +189,7 @@ describe("products", () => {
       name: "Chips",
       kind: "cooked_food",
       categoryId: foodCategory.value.id,
+      locationId: "location-1",
     });
     expect(assigned.ok).toBe(true);
     if (assigned.ok) expect(assigned.value.categoryId).toBe(foodCategory.value.id);
@@ -183,19 +198,21 @@ describe("products", () => {
       name: "Chips",
       kind: "cooked_food",
       categoryId: null,
+      locationId: "location-1",
     });
     expect(unassigned.ok).toBe(true);
     if (unassigned.ok) expect(unassigned.value.categoryId).toBeNull();
   });
 
   test("assigning a product to a nonexistent category is rejected", async () => {
-    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
 
     const result = await updateProduct(testDb, owner, created.value.id, {
       name: "Chips",
       kind: "cooked_food",
       categoryId: "nonexistent-category",
+      locationId: "location-1",
     });
 
     expect(result).toEqual({ ok: false, reason: "invalid_category" });
@@ -208,6 +225,7 @@ describe("products", () => {
       name: "Chips",
       kind: "cooked_food",
       categoryId: category.value.id,
+      locationId: "location-1",
     });
     if (!created.ok) throw new Error("expected create to succeed");
 
@@ -423,7 +441,7 @@ describe("cost recording — running average (formulas.md §3)", () => {
   });
 
   test("recordProductCost applies the same worked example to a product", async () => {
-    const created = await createProduct(testDb, owner, { name: "Soda (500ml)", kind: "goods" });
+    const created = await createProduct(testDb, owner, { name: "Soda (500ml)", kind: "goods", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
 
     // Seed the starting average — createProduct has no cost field, so the
@@ -448,7 +466,7 @@ describe("cost recording — running average (formulas.md §3)", () => {
   });
 
   test("recordProductCost is not owner-gated, same reasoning as recordIngredientCost", async () => {
-    const created = await createProduct(testDb, owner, { name: "Biscuits", kind: "goods" });
+    const created = await createProduct(testDb, owner, { name: "Biscuits", kind: "goods", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");
 
     const result = await recordProductCost(testDb, cashier, created.value.id, {
@@ -473,7 +491,7 @@ describe("cost recording — running average (formulas.md §3)", () => {
 
 describe("recipes", () => {
   async function chipsAndFlour() {
-    const product = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const product = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!product.ok) throw new Error("expected product create to succeed");
     const flour = await createIngredient(testDb, owner, {
       name: "Flour",
@@ -568,7 +586,7 @@ describe("recipes", () => {
   });
 
   test("a cooked-food product with no recipe has no current recipe", async () => {
-    const product = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food" });
+    const product = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!product.ok) throw new Error("expected product create to succeed");
 
     const current = await getCurrentRecipe(testDb, product.value.id);
@@ -615,7 +633,7 @@ describe("recipes", () => {
   });
 
   test("a recipe cannot reference a non-cooked-food product", async () => {
-    const soda = await createProduct(testDb, owner, { name: "Soda", kind: "goods" });
+    const soda = await createProduct(testDb, owner, { name: "Soda", kind: "goods", locationId: "location-1" });
     if (!soda.ok) throw new Error("expected product create to succeed");
     const flour = await createIngredient(testDb, owner, { name: "Flour", unitOfMeasure: "kg" });
     if (!flour.ok) throw new Error("expected ingredient create to succeed");

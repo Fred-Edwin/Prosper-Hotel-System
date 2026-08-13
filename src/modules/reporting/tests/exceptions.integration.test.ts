@@ -131,7 +131,7 @@ describe("getExceptions", () => {
     const today = new Date("2026-08-12T10:00:00Z");
 
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100 },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
     const sale = await testDb.sale.create({
       data: {

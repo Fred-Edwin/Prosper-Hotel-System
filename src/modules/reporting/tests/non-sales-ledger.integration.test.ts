@@ -107,6 +107,7 @@ describe("getNonSalesLedgerReport", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, ownerStaff, soda.value.id, {
@@ -128,6 +129,7 @@ describe("getNonSalesLedgerReport", () => {
       name: "Crisps",
       kind: "goods",
       priceMinor: 150,
+      locationId: restaurantId,
     });
     if (!crisps.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, ownerStaff, crisps.value.id, {

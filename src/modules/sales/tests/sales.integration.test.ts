@@ -84,12 +84,12 @@ beforeAll(async () => {
   });
 
   const soda = await testDb.product.create({
-    data: { name: "Soda 500ml", kind: "goods", priceMinor: 80 },
+    data: { name: "Soda 500ml", kind: "goods", priceMinor: 80, locationId: restaurantId },
   });
   sodaId = soda.id;
 
   const photocopy = await testDb.product.create({
-    data: { name: "Photocopy per page", kind: "service", priceMinor: 5 },
+    data: { name: "Photocopy per page", kind: "service", priceMinor: 5, locationId: restaurantId },
   });
   photocopyId = photocopy.id;
 });
@@ -165,7 +165,7 @@ describe("recordCounterSale", () => {
 
   test("rejects a sale for an inactive product", async () => {
     const discontinued = await testDb.product.create({
-      data: { name: "Discontinued snack", kind: "goods", priceMinor: 50, active: false },
+      data: { name: "Discontinued snack", kind: "goods", priceMinor: 50, active: false, locationId: restaurantId },
     });
 
     const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {

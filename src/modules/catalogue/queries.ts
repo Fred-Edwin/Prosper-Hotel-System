@@ -12,6 +12,13 @@ export async function findProductsByIds(
   return db.product.findMany({ where: { id: { in: ids } } });
 }
 
+export async function findProductsAtLocation(
+  db: PrismaClient,
+  locationId: string,
+): Promise<Product[]> {
+  return db.product.findMany({ where: { locationId } });
+}
+
 export async function findProductByName(
   db: PrismaClient,
   name: string,
@@ -28,7 +35,13 @@ export async function findProductById(
 
 export async function createProductRecord(
   db: PrismaClient,
-  data: { name: string; kind: ProductKind; priceMinor: number | null; categoryId: string | null },
+  data: {
+    name: string;
+    kind: ProductKind;
+    priceMinor: number | null;
+    categoryId: string | null;
+    locationId: string;
+  },
 ): Promise<Product> {
   return db.product.create({ data });
 }
@@ -42,6 +55,7 @@ export async function updateProductRecord(
     priceMinor: number | null;
     categoryId: string | null;
     lowStockLevel: number | null;
+    locationId: string;
   },
 ): Promise<Product> {
   return db.product.update({ where: { id }, data });

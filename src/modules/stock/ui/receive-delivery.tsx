@@ -58,11 +58,11 @@ export type LoadState =
   | { status: "error" }
   | { status: "ready"; ingredients: Ingredient[]; products: Product[] };
 
-async function fetchIngredientsAndProducts(): Promise<LoadState> {
+async function fetchIngredientsAndProducts(locationId: string): Promise<LoadState> {
   try {
     const [ingredientsResponse, productsResponse] = await Promise.all([
       fetch("/api/catalogue/ingredients/active"),
-      fetch("/api/catalogue/products/active"),
+      fetch(`/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`),
     ]);
     if (!ingredientsResponse.ok || !productsResponse.ok) return { status: "error" };
     const ingredientsBody = await ingredientsResponse.json();
@@ -104,13 +104,20 @@ async function submitReceipt(input: {
   }
 }
 
-export function ReceiveDelivery({ onDone }: { onDone?: () => void }) {
+export function ReceiveDelivery({
+  onDone,
+  locationId,
+}: {
+  onDone?: () => void;
+  locationId: string;
+}) {
   const [attempt, setAttempt] = useState(0);
   return (
     <ReceiveDeliveryForAttempt
       key={attempt}
       onRetry={() => setAttempt((a) => a + 1)}
       onDone={onDone}
+      locationId={locationId}
     />
   );
 }
@@ -118,21 +125,23 @@ export function ReceiveDelivery({ onDone }: { onDone?: () => void }) {
 function ReceiveDeliveryForAttempt({
   onRetry,
   onDone,
+  locationId,
 }: {
   onRetry: () => void;
   onDone?: () => void;
+  locationId: string;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    fetchIngredientsAndProducts().then((result) => {
+    fetchIngredientsAndProducts(locationId).then((result) => {
       if (!cancelled) setState(result);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locationId]);
 
   return <ReceiveDeliveryView state={state} onRetry={onRetry} onDone={onDone} />;
 }

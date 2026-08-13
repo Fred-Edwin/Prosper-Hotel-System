@@ -94,6 +94,7 @@ describe("getNonSalesConsumptionValue — proposal.md §10.5", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, ownerStaff, soda.value.id, {
@@ -164,6 +165,7 @@ describe("getNonSalesConsumptionValue — proposal.md §10.5", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, ownerStaff, soda.value.id, {
@@ -217,6 +219,7 @@ describe("getNonSalesConsumptionValue — proposal.md §10.5", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
     await recordProductCost(testDb, ownerStaff, soda.value.id, {

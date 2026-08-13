@@ -9,11 +9,11 @@ const categories: Category[] = [
 ];
 
 const products: Product[] = [
-  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1" },
-  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1" },
-  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1" },
-  { id: "p4", name: "Soda 500ml", kind: "goods", priceMinor: 80, lastKnownCostMinor: 50, lowStockLevel: null, active: true, categoryId: "c2" },
-  { id: "p5", name: "Photocopy (per page)", kind: "service", priceMinor: 5, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: null },
+  { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1", locationId: "l1" },
+  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1", locationId: "l1" },
+  { id: "p3", name: "Githeri", kind: "cooked_food", priceMinor: 120, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1", locationId: "l1" },
+  { id: "p4", name: "Soda 500ml", kind: "goods", priceMinor: 80, lastKnownCostMinor: 50, lowStockLevel: null, active: true, categoryId: "c2", locationId: "l1" },
+  { id: "p5", name: "Photocopy (per page)", kind: "service", priceMinor: 5, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: null, locationId: "l2" },
 ];
 
 const ingredients: Ingredient[] = [

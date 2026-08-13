@@ -109,7 +109,7 @@ describe("getProductLedger", () => {
 
   test("reconciles opening + in − out = closing across produced, received, transferred, sold, wasted", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, locationId: restaurantId },
     });
 
     // Opening balance at the restaurant, before the period, from an
@@ -206,7 +206,7 @@ describe("getProductLedger", () => {
 
   test("product with no recipe, no recorded cost, and no price shows profit as unavailable, not zero", async () => {
     const mystery = await testDb.product.create({
-      data: { name: "Mystery item", kind: "goods", priceMinor: null, lastKnownCostMinor: null },
+      data: { name: "Mystery item", kind: "goods", priceMinor: null, lastKnownCostMinor: null, locationId: restaurantId },
     });
 
     const periodStart = new Date("2026-08-06T00:00:00Z");
@@ -236,7 +236,7 @@ describe("getProductLedger", () => {
 
   test("a product priced via recipe cost shows profit, not null", async () => {
     const samosa = await testDb.product.create({
-      data: { name: "Samosa", kind: "cooked_food", priceMinor: 30 },
+      data: { name: "Samosa", kind: "cooked_food", priceMinor: 30, locationId: restaurantId },
     });
     const dough = await testDb.ingredient.create({
       data: { name: "Dough", unitOfMeasure: "kg", lastKnownCostMinor: 400 },
@@ -276,7 +276,7 @@ describe("getProductLedger", () => {
 
   test("filtering by location shows only that location's rows; same product at both locations appears twice", async () => {
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 80, lastKnownCostMinor: 58 },
+      data: { name: "Soda", kind: "goods", priceMinor: 80, lastKnownCostMinor: 58, locationId: restaurantId },
     });
 
     const periodStart = new Date("2026-08-06T00:00:00Z");
@@ -326,13 +326,13 @@ describe("getProductLedger", () => {
     const snacksCategory = await testDb.category.create({ data: { name: "Snacks" } });
 
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 80, lastKnownCostMinor: 58, categoryId: drinksCategory.id },
+      data: { name: "Soda", kind: "goods", priceMinor: 80, lastKnownCostMinor: 58, categoryId: drinksCategory.id, locationId: canteenId },
     });
     const water = await testDb.product.create({
-      data: { name: "Water", kind: "goods", priceMinor: 60, lastKnownCostMinor: 42, categoryId: drinksCategory.id },
+      data: { name: "Water", kind: "goods", priceMinor: 60, lastKnownCostMinor: 42, categoryId: drinksCategory.id, locationId: canteenId },
     });
     const crisps = await testDb.product.create({
-      data: { name: "Crisps", kind: "goods", priceMinor: 60, lastKnownCostMinor: 44, categoryId: snacksCategory.id },
+      data: { name: "Crisps", kind: "goods", priceMinor: 60, lastKnownCostMinor: 44, categoryId: snacksCategory.id, locationId: canteenId },
     });
 
     const periodStart = new Date("2026-08-06T00:00:00Z");
@@ -392,7 +392,7 @@ describe("getProductLedger", () => {
 
   test("day-expansion breakdown covers each day in the period with matching totals", async () => {
     const mandazi = await testDb.product.create({
-      data: { name: "Mandazi", kind: "cooked_food", priceMinor: 20, lastKnownCostMinor: 8 },
+      data: { name: "Mandazi", kind: "cooked_food", priceMinor: 20, lastKnownCostMinor: 8, locationId: restaurantId },
     });
 
     const periodStart = new Date("2026-08-06T00:00:00Z");
@@ -466,7 +466,7 @@ describe("getProductLedger", () => {
 
   test("empty period (no movements) returns no rows", async () => {
     await testDb.product.create({
-      data: { name: "Untouched", kind: "goods", priceMinor: 50 },
+      data: { name: "Untouched", kind: "goods", priceMinor: 50, locationId: restaurantId },
     });
 
     const result = await getProductLedger(testDb, owner(), {

@@ -147,26 +147,40 @@ async function main() {
   const anne = await db.staffMember.findUniqueOrThrow({ where: { phone: "+254700000005" } });
   const peter = await db.staffMember.findUniqueOrThrow({ where: { phone: "+254700000006" } });
 
-  const [sodas, mukimo, chips, paper, biscuits, photocopy, deliveryBox] = await Promise.all([
-    db.product.create({ data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 80 } }),
-    db.product.create({ data: { name: "Mukimo", kind: "cooked_food", priceMinor: 150 } }),
+  // docs/architecture.md's "Product home location" note: every product's
+  // locationId matches whichever location its seeded StockMovement history
+  // below is actually recorded at — sodas/mukimo/chips/rice plate/water/
+  // crisps/samosa/chapati/sweets at the restaurant, paper/biscuits/
+  // photocopy at the canteen.
+  const [sodas, mukimo, chips, paper, biscuits, photocopy] = await Promise.all([
+    db.product.create({ data: { name: "Sodas (500ml)", kind: "goods", priceMinor: 80, locationId: restaurant.id } }),
+    db.product.create({ data: { name: "Mukimo", kind: "cooked_food", priceMinor: 150, locationId: restaurant.id } }),
     // lowStockLevel set (and never restocked below) so the dashboard's
     // low-stock indicator has a real example to show, not just the
     // fully-depleted chips edge case above zero.
-    db.product.create({ data: { name: "Chips", kind: "cooked_food", priceMinor: 100, lowStockLevel: 5 } }),
-    db.product.create({ data: { name: "Printing paper (ream)", kind: "goods", priceMinor: 550 } }),
-    db.product.create({ data: { name: "Biscuits (packet)", kind: "goods", priceMinor: 50 } }),
+    db.product.create({ data: { name: "Chips", kind: "cooked_food", priceMinor: 100, lowStockLevel: 5, locationId: restaurant.id } }),
+    db.product.create({ data: { name: "Printing paper (ream)", kind: "goods", priceMinor: 550, locationId: canteen.id } }),
+    db.product.create({ data: { name: "Biscuits (packet)", kind: "goods", priceMinor: 50, locationId: canteen.id } }),
     // Edge case: fourth ProductKind (service) so the catalogue's kind filter
     // and grouping has an example of all four.
-    db.product.create({ data: { name: "Photocopy (per page)", kind: "service", priceMinor: 5 } }),
-    // Edge case: fourth ProductKind (packaging), and inactive + no price at
-    // once — proves the Price column's "—" and the "Inactive" badge coexist.
-    db.product.create({ data: { name: "Delivery box", kind: "packaging", priceMinor: null, active: false } }),
+    db.product.create({ data: { name: "Photocopy (per page)", kind: "service", priceMinor: 5, locationId: canteen.id } }),
     // Rice plate: a cooked_food product with a deliberately thin margin, to
     // demonstrate the Recipes tab's below-40%-margin warning.
-    db.product.create({ data: { name: "Rice plate", kind: "cooked_food", priceMinor: 120 } }),
+    db.product.create({ data: { name: "Rice plate", kind: "cooked_food", priceMinor: 120, locationId: restaurant.id } }),
   ]);
   const ricePlate = await db.product.findUniqueOrThrow({ where: { name: "Rice plate" } });
+
+  // More products, split across both locations, purely so the seeded
+  // catalogue reads as a realistic size rather than the bare minimum ticket
+  // 53's own home-location field needs to be demoed — each has real stock
+  // movements at exactly one location below, matching its locationId.
+  const [bottledWater, crisps, samosa, chapati, sweets] = await Promise.all([
+    db.product.create({ data: { name: "Bottled water (500ml)", kind: "goods", priceMinor: 60, locationId: restaurant.id } }),
+    db.product.create({ data: { name: "Crisps (packet)", kind: "goods", priceMinor: 70, locationId: restaurant.id } }),
+    db.product.create({ data: { name: "Samosa", kind: "cooked_food", priceMinor: 40, locationId: restaurant.id } }),
+    db.product.create({ data: { name: "Chapati", kind: "cooked_food", priceMinor: 30, locationId: restaurant.id } }),
+    db.product.create({ data: { name: "Sweets (piece)", kind: "goods", priceMinor: 10, locationId: canteen.id } }),
+  ]);
 
   const [maizeFlour, cookingOil, potatoes] = await Promise.all([
     db.ingredient.create({ data: { name: "Maize flour", unitOfMeasure: "kg", lastKnownCostMinor: 120 } }),
@@ -265,6 +279,19 @@ async function main() {
       { productId: biscuits.id, locationId: canteen.id, quantity: -32, reason: "sold", staffMemberId: anne.id },
       { productId: photocopy.id, locationId: canteen.id, quantity: 500, reason: "received", staffMemberId: anne.id },
       { productId: photocopy.id, locationId: canteen.id, quantity: -120, reason: "sold", staffMemberId: anne.id },
+      // More restaurant/canteen stock so ticket 53's home-location filter
+      // has a realistic-sized catalogue to demonstrate, not just the bare
+      // minimum above.
+      { productId: bottledWater.id, locationId: restaurant.id, quantity: 48, reason: "received", staffMemberId: sarah.id },
+      { productId: bottledWater.id, locationId: restaurant.id, quantity: -10, reason: "sold", staffMemberId: sarah.id },
+      { productId: crisps.id, locationId: restaurant.id, quantity: 36, reason: "received", staffMemberId: sarah.id },
+      { productId: crisps.id, locationId: restaurant.id, quantity: -8, reason: "sold", staffMemberId: sarah.id },
+      { productId: samosa.id, locationId: restaurant.id, quantity: 40, reason: "produced", staffMemberId: manager.id },
+      { productId: samosa.id, locationId: restaurant.id, quantity: -22, reason: "sold", staffMemberId: sarah.id },
+      { productId: chapati.id, locationId: restaurant.id, quantity: 60, reason: "produced", staffMemberId: manager.id },
+      { productId: chapati.id, locationId: restaurant.id, quantity: -30, reason: "sold", staffMemberId: sarah.id },
+      { productId: sweets.id, locationId: canteen.id, quantity: 200, reason: "received", staffMemberId: anne.id },
+      { productId: sweets.id, locationId: canteen.id, quantity: -40, reason: "sold", staffMemberId: anne.id },
     ],
   });
 
@@ -525,7 +552,7 @@ async function main() {
   });
 
   console.log(
-    "Seeded 2 locations, 8 staff members, 8 products, 12 ingredients, 3 recipe versions, stock/ingredient movements, 3 customers, 7 sales (incl. delivery, credit, split payment, void), 2 handovers (1 agreed, 1 short), 5 expenses (1 reversed), and 2 stock counts (1 with open + corrected differences).",
+    "Seeded 2 locations, 8 staff members, 12 products, 12 ingredients, 3 recipe versions, stock/ingredient movements, 3 customers, 7 sales (incl. delivery, credit, split payment, void), 2 handovers (1 agreed, 1 short), 5 expenses (1 reversed), and 2 stock counts (1 with open + corrected differences).",
   );
   console.log(`Every seeded staff member's PIN is ${SEED_PIN}.`);
   console.log("Log in as 'Restaurant Cashier' or 'Brian Otieno' to see today's sales and a completed handover.");

@@ -612,3 +612,231 @@ relied on the old (buggy) inclusive behaviour. Regression test:
 `sales/tests/sales.integration.test.ts` — records a credit sale, asserts
 the balance rises, voids it, asserts both the per-customer balance and
 `getTotalCustomerBalance` return to zero.
+
+## BUG-13: Staff-shell Stock page (StockList) never shows ingredients, no Products/Ingredients toggle
+**Severity:** high
+**Discovered:** manual testing (Edwinfred), full-day walkthrough, 2026-08-13
+**Status:** open
+
+### Description
+`src/modules/stock/ui/stock-list.tsx` — the Stock page every non-owner
+role lands on via `/staff` (`staff-page-client.tsx:93`) — only ever
+fetches and renders **products**. Its two fetch paths, `fetchStock`
+(`GET /api/stock/:locationId`) and `fetchStockBySource`
+(`GET /api/stock/:locationId/by-source`, canteen only), both return
+`StockLevel`/`StockLevelWithSource` shapes keyed by `productId`/
+`productName`. Ingredients are a genuinely separate model
+(`docs/architecture.md`'s ingredient-vs-product split) with their own
+data and their own endpoint (`/api/stock/:locationId/ingredient-value`),
+but `StockList` never calls it — ingredients cannot appear on this
+screen under any filter, for any role.
+
+A Products/Ingredients toggle already exists, but only on the
+**owner-only** `AdminStockTable` (`/stock`, gated to `role === "owner"`
+in `src/app/stock/page.tsx`), added in the most recent commit
+(`d7a9b73`). It was never extended to the staff-facing `StockList` that
+the store manager and canteen attendant actually use day-to-day. The
+only tab/filter logic `StockList` has is the canteen's "My stock / From
+restaurant" source split (`isCanteen`), which is itself product-only.
+
+Production output is correctly wired and unaffected by this bug —
+`recordProduction` (`stock/logic.ts:1124`) deducts ingredients and
+creates a real product-stock movement, so produced items (e.g. Chips)
+do appear as product stock once the same screen is fixed to show
+products correctly; only the ingredient side is missing.
+
+### Repro steps
+1. Log in as Store Manager.
+2. Receive a delivery of an ingredient (e.g. Potatoes or Cooking oil).
+3. Open the Stock page (staff shell, `/staff`).
+
+### Expected vs actual
+Expected: the store manager's Stock page shows both the ingredients on
+hand (potatoes, cooking oil, etc. — what she just received) and the
+products on hand (what the kitchen has produced), ideally with a
+Products/Ingredients toggle mirroring the one already built for the
+owner's `AdminStockTable`.
+Actual: only products ever render; ingredients received are invisible
+on this screen regardless of what was just recorded. No toggle exists
+to switch views.
+
+### Notes
+Reported by the client mid-walkthrough as "the stock page isn't showing
+what I received" — traced to a structural gap (wrong/missing data
+source), not a query or filter bug. Fix should reuse
+`ingredient-value`'s data (or a lighter ingredient-quantity endpoint,
+since `StockList` doesn't need cost/value, only quantity-on-hand) and
+extend `StockListView`'s existing tab pattern to add a Products/
+Ingredients toggle, consistent with `AdminStockTable`'s. Not fixed
+inline — logged per the walkthrough checklist's own rule, to keep
+testing moving; route through `/fix` or `/add` when ready.
+
+## BUG-14: New Sale offers products with no stock history at the requester's location
+**Severity:** critical
+**Discovered:** manual testing (Edwinfred), full-day walkthrough, 2026-08-13
+**Status:** fixed — 2026-08-13, ticket 53
+
+### Description
+Reported as "the items I see in New Sale don't match what's on the Stock
+page" — e.g. Mukimo appears as sellable at the canteen on New Sale, but
+never appears on the canteen Stock page (neither "My stock" nor "From
+restaurant"), because the canteen has no stock history for it at all.
+
+The Stock page is correct, not buggy: `getCurrentStockAtLocation`
+(`src/modules/stock/logic.ts:154`) sums real `StockMovement` rows for
+that specific location via `sumMovementsByProductAtLocation`
+(`src/modules/stock/queries.ts:51-65`) — a product with zero movements
+at a location correctly shows nothing there.
+
+New Sale is the actual bug: `activeProductsRoute`
+(`src/modules/catalogue/routes.ts:62-67`) does
+`listProducts(db).filter(p => p.active)` — every active catalogue
+product, for every location, with no location scoping and no join
+against `StockMovement` at all. `Product`/`Ingredient` have no
+`locationId` or location relation in the schema (unlike `Asset`, which
+does) — location-ness was designed to live implicitly in the movement
+ledger, not on the catalogue item. New Sale never consults that ledger,
+so the implicit design is never actually enforced on the one screen
+that most needs it.
+
+Practical effect: a canteen attendant can "sell" a product the canteen
+has never received/produced/transferred a single unit of. The seed data
+itself does this — `prisma/seed.ts:343` and `:356` record canteen sales
+of Mukimo, whose only `StockMovement` rows are at the restaurant
+(`prisma/seed.ts:263-264`). Nothing in `recordCounterSale` appears to
+check location stock before accepting the sale either (not yet
+confirmed directly — worth checking during the fix).
+
+### Repro steps
+1. Log in as canteen attendant.
+2. Open New Sale — note Mukimo (or any restaurant-only-stocked product)
+   appears as sellable.
+3. Open the Stock page (both tabs) — Mukimo appears in neither.
+4. (Optional) Complete a sale of Mukimo at the canteen — it succeeds
+   despite zero canteen stock ever existing.
+
+### Expected vs actual
+Expected: New Sale only offers products/ingredients with real stock
+history at the requester's own location, consistent with the Stock
+page and with `getTransferableItems`' existing pattern
+(`stock/logic.ts:360-385`) of scoping to positive movement sums at a
+location.
+Actual: New Sale shows the full global catalogue regardless of
+location, allowing sales with no stock backing.
+
+### Notes
+Two possible fix shapes, deliberately not decided yet:
+1. **Stock-aware New Sale** (smaller, no schema change) — scope the
+   active-products/ingredients list to items with movement history at
+   the requester's location, mirroring `getTransferableItems`.
+2. **Explicit location assignment** (bigger, schema-level) — give
+   Product/Ingredient real location scoping (e.g. a locations relation)
+   independent of stock history, so a location can be restricted to
+   sell certain products even before any stock movement exists.
+
+Edwinfred wants this logged and investigation of other stock-page
+issues to continue before deciding which shape to take. Route through
+`/fix` or `/add` when ready to decide/build.
+
+### Fix (2026-08-13, ticket 53)
+Shape 2 (explicit location assignment) chosen — see
+`docs/scope.md`'s 2026-08-13 "Product home location, and an overselling
+guard" entry and `docs/architecture.md`'s "Product home location" note
+for the full reasoning. `Product` gained a required `locationId`, set at
+creation and editable after. A new `getSellableProductsAtLocation`
+(`stock/logic.ts`) unions `product.locationId === here` with positive
+current stock at `here` per the movement ledger, mirroring
+`getTransferableItems`'s shape. `activeProductsRoute` (now
+`sellableProductsAtLocationRoute`, moved to `stock/routes.ts` — see that
+file's comment for why; the URL stays `/api/catalogue/products/active`)
+requires a `locationId` query param and calls this function instead of
+returning the full catalogue.
+
+`new-sale.tsx`, `credit-sale.tsx`, `receive-delivery.tsx`, and
+`record-wastage.tsx` all pass the requester's own `locationId`. New Sale
+and Credit Sale visually group tiles into "My stock" / "From another
+location" sections, the latter badged "Transferred in". The staff Stock
+page (`stock-list.tsx`) gained the same split (`StockLevel.isOwn`),
+addressing the client's original "the items I see in New Sale don't
+match what's on the Stock page" report from both sides at once.
+
+Seed data's 12 products (13 named in the ticket's context section
+described a different, unmerged branch's seed state — not `main`'s;
+noted rather than silently reconciled) each carry a real `locationId`
+matching their seeded movement history. Regression: 4 new integration
+tests in `stock/tests/sellable-products.integration.test.ts` — own
+product with no movements (included), transferred-in-and-reflected
+product (included), product with neither (excluded — the literal repro
+above), and a product excluded at a *different* location than its home
+despite having stock there under a different rule (home-location match
+alone is sufficient regardless of stock).
+
+## BUG-15: Nothing prevents overselling — no on-hand visibility on New Sale, no backend check
+**Severity:** critical
+**Discovered:** manual testing (Edwinfred), full-day walkthrough, 2026-08-13
+**Status:** open
+
+### Description
+Two compounding gaps on the sale-recording path, found together but
+distinct from BUG-14 (which is about a product appearing at a location
+it has *no* stock history at all — this bug is about a product that
+does belong at the location, but selling more of it than is on hand).
+
+**1. No UX signal.** `src/modules/sales/ui/new-sale.tsx` fetches only
+`/api/catalogue/products/active` (line 83), which returns
+`{ id, name, kind, priceMinor, active }` — no stock quantity field at
+all. Product tiles (lines 498-524) render only name and price; basket
+quantity steppers (`bump`, line 337) have no upper bound tied to stock.
+A cashier/attendant has no way to see how many units of an item remain
+without leaving New Sale and checking the Stock page separately.
+
+**2. No backend guard either.** `recordCounterSale`
+(`src/modules/sales/logic.ts:165-205`) delegates to `priceAndCreateSale`
+(`logic.ts:61-160`), which validates quantities are positive and prices
+lines, then writes the sale and calls `recordStockMovement` per line
+(`logic.ts:150-157`) — at no point does it read current stock-on-hand
+or compare it to the requested quantity. No `insufficient_stock` reason
+exists anywhere in the sales module (only in `stock/logic.ts`). A sale
+for more than is on hand succeeds silently and drives stock negative.
+Sale-line writes also aren't wrapped in a transaction with the sale
+record.
+
+Contrast: `recordTransfer` (`src/modules/stock/logic.ts:417+`) already
+has the correct pattern — inside a `db.$transaction`, it sums existing
+movements at the source location and returns
+`{ ok: false, reason: "insufficient_stock" }` before writing anything if
+the sum is short. Sales never got the equivalent treatment.
+
+### Repro steps
+1. As any sales-capable role, open New Sale.
+2. Note no tile shows remaining stock for any product.
+3. Select a product known to have low/zero stock at this location, set
+   quantity higher than what's on hand, submit.
+4. Sale succeeds; check Stock page or Product Ledger — quantity is now
+   negative or understated with no rejection ever surfaced.
+
+### Expected vs actual
+Expected: staff can see roughly how much of an item is available while
+selling (mirroring the low-stock badge pattern already built in
+`admin-stock-table.tsx` — `isLow` + `TriangleAlert`, warning tone), and
+the backend rejects a sale line that exceeds on-hand stock as a hard
+guarantee, the same way `recordTransfer` already does.
+Actual: neither exists. Overselling is possible from the UI with no
+warning, and even a careful UI could be bypassed by a stale tile, a
+race between two staff, or a direct API call, since there is no
+server-side check at all.
+
+### Notes
+Two guardrails, not one — both wanted, not either/or:
+- **Soft (UX):** show on-hand quantity per tile in New Sale, reusing
+  the existing low-stock visual pattern. Needs a stock-levels fetch
+  wired into `new-sale.tsx`, which currently has none.
+- **Hard (data integrity):** add an on-hand check to
+  `recordCounterSale`/`priceAndCreateSale` before committing stock
+  movements, mirroring `recordTransfer`'s `insufficient_stock` guard,
+  and wrap the sale + stock movements in a transaction together.
+
+Likely shares plumbing with BUG-14's fix (both need New Sale to become
+stock-aware for the requester's location) — worth deciding together
+whether one ticket covers both or they're sequenced. Not fixed inline;
+route through `/fix` or `/add` when ready.

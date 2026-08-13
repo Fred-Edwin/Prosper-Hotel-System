@@ -121,7 +121,7 @@ describe("getDashboardStockMovements", () => {
 
   test("reconciles today's totals with getProductLedger for the same day, split by reason and location", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null },
+      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, locationId: restaurantId },
     });
 
     await testDb.stockMovement.create({
@@ -184,7 +184,7 @@ describe("getDashboardStockMovements", () => {
 
   test("wasted, consumed and given-away are reported as separate rows, not folded together", async () => {
     const soda = await testDb.product.create({
-      data: { name: "Soda", kind: "goods", priceMinor: 50, lastKnownCostMinor: 30 },
+      data: { name: "Soda", kind: "goods", priceMinor: 50, lastKnownCostMinor: 30, locationId: restaurantId },
     });
 
     await testDb.stockMovement.create({

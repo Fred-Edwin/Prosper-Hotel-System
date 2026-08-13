@@ -3,6 +3,7 @@
 export {
   listProducts,
   findProductsByIds,
+  findProductsAtLocation,
   listIngredients,
   findIngredientsByIds,
   listCategories,
@@ -35,7 +36,6 @@ export {
 export type { Product, ProductKind, Ingredient, Recipe, RecipeWithCost, Asset, Category } from "./schema";
 export {
   catalogueRoute,
-  activeProductsRoute,
   activeIngredientsRoute,
   createProductRoute,
   updateProductRoute,
