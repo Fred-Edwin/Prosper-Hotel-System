@@ -21,7 +21,9 @@ async function main() {
 
   const productNames: string[] = data.items.map((i: { name: string }) => i.name);
   const ingredientNames: string[] = data.ingredients.map((i: { name: string }) => i.name);
-  const categoryNames: string[] = [...new Set(data.items.map((i: { category: string }) => i.category))];
+  const categoryNames: string[] = Array.from(
+    new Set<string>(data.items.map((i: { category: string }) => i.category)),
+  );
 
   // "Sausage" and "Potatoes" pre-date the import (they're in prisma/seed.ts
   // and were skipped as already-existing when import-v2-catalog.ts ran) —

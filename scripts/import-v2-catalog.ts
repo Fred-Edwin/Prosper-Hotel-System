@@ -28,6 +28,29 @@ const dryRun = process.argv.includes("--dry-run");
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const db = new PrismaClient({ adapter });
 
+type CatalogItem = {
+  name: string;
+  category: string;
+  supply_type: string;
+  buying_price: string;
+  selling_price: string;
+  low_stock_threshold: string | null;
+  active: boolean;
+};
+
+type CatalogIngredient = {
+  name: string;
+  unit: string;
+  buying_price: string;
+  low_stock_threshold: string | null;
+  active: boolean;
+};
+
+type CatalogExport = {
+  items: CatalogItem[];
+  ingredients: CatalogIngredient[];
+};
+
 const SUPPLY_TYPE_TO_LOCATION_CODE: Record<string, string> = {
   restaurant_only: "restaurant",
   canteen_independent: "canteen",
@@ -66,7 +89,7 @@ function toShillings(decimalString: string): number | null {
 
 async function main() {
   const raw = readFileSync("scripts/v2-catalog-export.json", "utf-8");
-  const data = JSON.parse(raw);
+  const data: CatalogExport = JSON.parse(raw);
 
   const locations = await db.location.findMany();
   const locationIdByCode = Object.fromEntries(locations.map((l) => [l.code, l.id]));

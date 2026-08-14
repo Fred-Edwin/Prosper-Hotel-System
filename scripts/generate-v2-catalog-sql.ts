@@ -67,7 +67,9 @@ function main() {
   lines.push("BEGIN;");
   lines.push("");
 
-  const categoryNames: string[] = [...new Set(data.items.map((i: { category: string }) => i.category))];
+  const categoryNames: string[] = Array.from(
+    new Set<string>(data.items.map((i: { category: string }) => i.category)),
+  );
   const categoryIdByName: Record<string, string> = {};
   lines.push("-- Categories");
   for (const name of categoryNames) {
