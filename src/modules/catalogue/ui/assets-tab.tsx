@@ -33,6 +33,7 @@ export function AssetsTab({
   error?: string;
 }) {
   const [query, setQuery] = useState("");
+  const [locationId, setLocationId] = useState("all");
   const [editing, setEditing] = useState<Asset | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -43,8 +44,12 @@ export function AssetsTab({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return assets.filter((a) => !q || a.name.toLowerCase().includes(q));
-  }, [assets, query]);
+    return assets.filter(
+      (a) =>
+        (!q || a.name.toLowerCase().includes(q)) &&
+        (locationId === "all" || a.locationId === locationId),
+    );
+  }, [assets, query, locationId]);
 
   const columns: Column<Asset>[] = [
     {
@@ -77,6 +82,15 @@ export function AssetsTab({
           query={query}
           onQuery={setQuery}
           placeholder="Search assets"
+          filters={[
+            {
+              key: "location",
+              value: locationId,
+              onChange: setLocationId,
+              allLabel: "All locations",
+              options: locations.map((l) => ({ value: l.id, label: l.name })),
+            },
+          ]}
           count={filtered.length}
           total={assets.length}
           noun="assets"
@@ -105,7 +119,13 @@ export function AssetsTab({
               }
             />
           ) : (
-            <EmptyFiltered onClear={() => setQuery("")} noun="assets" />
+            <EmptyFiltered
+              onClear={() => {
+                setQuery("");
+                setLocationId("all");
+              }}
+              noun="assets"
+            />
           )
         }
       />

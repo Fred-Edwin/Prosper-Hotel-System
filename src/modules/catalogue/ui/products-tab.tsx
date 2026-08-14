@@ -59,13 +59,21 @@ export function ProductsTab({
   error?: string;
 }) {
   const [query, setQuery] = useState("");
+  const [locationId, setLocationId] = useState("all");
+  const [categoryId, setCategoryId] = useState("all");
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return products.filter((p) => !q || p.name.toLowerCase().includes(q));
-  }, [products, query]);
+    return products.filter(
+      (p) =>
+        (!q || p.name.toLowerCase().includes(q)) &&
+        (locationId === "all" || p.locationId === locationId) &&
+        (categoryId === "all" ||
+          (categoryId === "uncategorised" ? p.categoryId === null : p.categoryId === categoryId)),
+    );
+  }, [products, query, locationId, categoryId]);
 
   const columns: Column<Product>[] = [
     {
@@ -108,6 +116,25 @@ export function ProductsTab({
           query={query}
           onQuery={setQuery}
           placeholder="Search products"
+          filters={[
+            {
+              key: "location",
+              value: locationId,
+              onChange: setLocationId,
+              allLabel: "All locations",
+              options: locations.map((l) => ({ value: l.id, label: l.name })),
+            },
+            {
+              key: "category",
+              value: categoryId,
+              onChange: setCategoryId,
+              allLabel: "All categories",
+              options: [
+                ...categories.map((c) => ({ value: c.id, label: c.name })),
+                { value: "uncategorised", label: "Uncategorised" },
+              ],
+            },
+          ]}
           count={filtered.length}
           total={products.length}
           noun="products"
@@ -136,7 +163,14 @@ export function ProductsTab({
               }
             />
           ) : (
-            <EmptyFiltered onClear={() => setQuery("")} noun="products" />
+            <EmptyFiltered
+              onClear={() => {
+                setQuery("");
+                setLocationId("all");
+                setCategoryId("all");
+              }}
+              noun="products"
+            />
           )
         }
       />
