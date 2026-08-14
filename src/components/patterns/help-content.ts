@@ -275,15 +275,15 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   wastage: {
-    title: "Wastage",
+    title: "Non-sales",
     sections: [
       {
-        heading: "Wastage",
+        heading: "Non-sales",
         summary: "Recording stock that didn't get sold — spoiled, used by staff, or given away.",
         points: [
           "Search for the product or ingredient.",
           "Enter the quantity.",
-          "Choose why: Wasted, Consumed, or Given away.",
+          "Choose why: Wasted, Staff meals, or Complimentary.",
           "Tap Record. You can record another straight after.",
         ],
       },

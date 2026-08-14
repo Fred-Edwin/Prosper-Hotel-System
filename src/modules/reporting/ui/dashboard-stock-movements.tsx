@@ -42,8 +42,8 @@ const REASON_LABELS: Record<string, string> = {
   transferred_out: "Transferred out",
   sold: "Sold",
   wasted: "Wasted",
-  consumed: "Consumed",
-  given_away: "Given away",
+  consumed: "Staff meals",
+  given_away: "Complimentary",
 };
 
 async function fetchStockMovements(): Promise<LoadState> {

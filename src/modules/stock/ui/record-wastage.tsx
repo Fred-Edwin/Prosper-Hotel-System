@@ -1,8 +1,13 @@
 "use client";
 
 /**
- * Wastage — record stock that left without being sold: wasted, consumed
- * by staff, or given away (CONTEXT.md's Non-sales Stock Consumption).
+ * Non-sales — record stock that left without being sold: wasted, staff
+ * meals, or complimentary (CONTEXT.md's Non-sales Stock Consumption).
+ * Nav label and category copy renamed from "Wastage"/"Consumed"/"Given
+ * away" so the tab doesn't read as wastage-only when staff meals are the
+ * more frequent reason staff open it. Underlying StockMovementReason
+ * values (consumed, given_away) and the "wastage" route/nav key are
+ * unchanged — this is a display-copy rename only.
  *
  * Course-correction on receive-delivery.tsx's item-tile pattern (ticket
  * 12), simplified from a multi-line basket to a single item per entry —
@@ -161,7 +166,7 @@ export function RecordWastageView({
         <EmptyFirstUse
           icon={<PackageX className="size-4" />}
           title="Nothing to record yet"
-          body="Once products or ingredients exist in the catalogue, they will appear here to record as wasted, consumed or given away."
+          body="Once products or ingredients exist in the catalogue, they will appear here to record as wasted, staff meals or complimentary."
         />
       </div>
     );
@@ -179,8 +184,8 @@ export function RecordWastageView({
 
 const categories: { key: Category; label: string; icon: typeof Trash2 }[] = [
   { key: "wasted", label: "Wasted", icon: Trash2 },
-  { key: "consumed", label: "Consumed", icon: Utensils },
-  { key: "given_away", label: "Given away", icon: Gift },
+  { key: "consumed", label: "Staff meals", icon: Utensils },
+  { key: "given_away", label: "Complimentary", icon: Gift },
 ];
 
 function Wastage({

@@ -2,8 +2,9 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { RecordWastageView } from "./record-wastage";
 
 /**
- * Wastage — record stock that left without being sold: wasted, consumed
- * by staff, or given away. Ticket 15.
+ * Non-sales — record stock that left without being sold: wasted, staff
+ * meals, or complimentary. Ticket 15; nav/category copy renamed from
+ * Wastage/Consumed/Given away — see record-wastage.tsx's header comment.
  *
  * Default is interactive — search, tap a product or ingredient tile,
  * enter a quantity, pick a category, then Record to reach confirmation,

@@ -96,7 +96,7 @@ export const staffLinks: Record<string, StaffLink> = {
   },
   wastage: {
     key: "wastage",
-    label: "Wastage",
+    label: "Non-sales",
     icon: Trash2,
     hint: "Wasted, staff meals, complimentary",
   },
