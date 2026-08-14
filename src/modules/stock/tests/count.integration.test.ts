@@ -297,12 +297,12 @@ describe("correctStockCount", () => {
     const movements = await testDb.stockMovement.findMany({
       where: { productId: sodaId, locationId: restaurantId },
     });
-    const quantityOnHand = movements.reduce((sum, m) => sum + m.quantity, 0);
+    const quantityOnHand = movements.reduce((sum, m) => sum + m.quantity.toNumber(), 0);
     expect(quantityOnHand).toBe(37);
 
     const correctionMovement = movements.find((m) => m.reason === "corrected");
     // Soda priceMinor 100, no recipe -> estimated cost 60% = 60/unit, 3 short.
-    expect(correctionMovement).toEqual(
+    expect(correctionMovement && { ...correctionMovement, quantity: correctionMovement.quantity.toNumber() }).toEqual(
       expect.objectContaining({
         quantity: -3,
         costBasisMinor: 180,
@@ -345,7 +345,7 @@ describe("correctStockCount", () => {
       where: { productId: sodaId, locationId: restaurantId },
     });
     const correctionMovement = movements.find((m) => m.reason === "corrected");
-    expect(correctionMovement).toEqual(
+    expect(correctionMovement && { ...correctionMovement, quantity: correctionMovement.quantity.toNumber() }).toEqual(
       expect.objectContaining({
         quantity: 2,
         costBasisMinor: 120,
@@ -398,7 +398,7 @@ describe("correctStockCount", () => {
     const correctionMovement = movements.find((m) => m.reason === "corrected");
     // No prior movements, so expectedQuantity is 0 — correcting to 8 is a
     // surplus (positive delta), cost-only, no selling value recognised.
-    expect(correctionMovement).toEqual(
+    expect(correctionMovement && { ...correctionMovement, quantity: correctionMovement.quantity.toNumber() }).toEqual(
       expect.objectContaining({
         quantity: 8,
         costBasisMinor: 16000,
@@ -447,7 +447,7 @@ describe("correctStockCount", () => {
       where: { ingredientId: flour.value.id, locationId: restaurantId },
     });
     const correctionMovement = movements.find((m) => m.reason === "corrected");
-    expect(correctionMovement).toEqual(
+    expect(correctionMovement && { ...correctionMovement, quantity: correctionMovement.quantity.toNumber() }).toEqual(
       expect.objectContaining({
         quantity: -2,
         costBasisMinor: 16000,

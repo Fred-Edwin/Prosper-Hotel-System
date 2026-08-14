@@ -64,7 +64,7 @@ export function IngredientForm({
             name,
             unitOfMeasure,
             lastKnownCostMinor: cost.trim() === "" ? null : Math.round(Number(cost)),
-            lowStockLevel: lowStockLevel.trim() === "" ? null : Math.round(Number(lowStockLevel)),
+            lowStockLevel: lowStockLevel.trim() === "" ? null : Number(lowStockLevel),
             active,
           });
         }}
@@ -102,7 +102,7 @@ export function IngredientForm({
             <Input
               value={lowStockLevel}
               onChange={(e) => setLowStockLevel(e.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
               className="tabular h-9"
             />
           </Field>

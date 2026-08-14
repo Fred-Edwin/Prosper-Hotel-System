@@ -112,7 +112,7 @@ export function ProductForm({
             kind,
             priceMinor: price.trim() === "" ? null : Math.round(Number(price)),
             categoryId,
-            lowStockLevel: lowStockLevel.trim() === "" ? null : Math.round(Number(lowStockLevel)),
+            lowStockLevel: lowStockLevel.trim() === "" ? null : Number(lowStockLevel),
             active,
             locationId,
           });
@@ -196,7 +196,7 @@ export function ProductForm({
             <Input
               value={lowStockLevel}
               onChange={(e) => setLowStockLevel(e.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
               className="tabular h-9"
             />
           </Field>

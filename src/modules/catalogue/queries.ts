@@ -1,36 +1,76 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import type {
+  Product as PrismaProduct,
+  Ingredient as PrismaIngredient,
+  Recipe as PrismaRecipe,
+  RecipeLine as PrismaRecipeLine,
+  Asset as PrismaAsset,
+} from "@/generated/prisma/client";
 import type { Asset, Category, Ingredient, Product, ProductKind, Recipe } from "./schema";
 
+// Prisma returns Decimal fields as Decimal.js objects, not plain numbers.
+// Every quantity/threshold field is converted to a number at this boundary
+// so the rest of the app (logic.ts, routes.ts, UI) keeps working with plain
+// numbers exactly as before the Int -> Decimal(10,2) migration.
+function toProduct(row: PrismaProduct): Product {
+  return { ...row, lowStockLevel: row.lowStockLevel?.toNumber() ?? null };
+}
+
+function toIngredient(row: PrismaIngredient): Ingredient {
+  return { ...row, lowStockLevel: row.lowStockLevel?.toNumber() ?? null };
+}
+
+function toRecipeLine(row: PrismaRecipeLine): { ingredientId: string; quantity: number } {
+  return { ingredientId: row.ingredientId, quantity: row.quantity.toNumber() };
+}
+
+function toRecipe(row: PrismaRecipe & { lines: PrismaRecipeLine[] }): Recipe {
+  return {
+    ...row,
+    yieldQuantity: row.yieldQuantity.toNumber(),
+    lines: row.lines.map(toRecipeLine),
+  };
+}
+
+function toAsset(row: PrismaAsset): Asset {
+  return { ...row, quantity: row.quantity.toNumber() };
+}
+
 export async function listProducts(db: PrismaClient): Promise<Product[]> {
-  return db.product.findMany({ orderBy: { name: "asc" } });
+  const rows = await db.product.findMany({ orderBy: { name: "asc" } });
+  return rows.map(toProduct);
 }
 
 export async function findProductsByIds(
   db: PrismaClient,
   ids: string[],
 ): Promise<Product[]> {
-  return db.product.findMany({ where: { id: { in: ids } } });
+  const rows = await db.product.findMany({ where: { id: { in: ids } } });
+  return rows.map(toProduct);
 }
 
 export async function findProductsAtLocation(
   db: PrismaClient,
   locationId: string,
 ): Promise<Product[]> {
-  return db.product.findMany({ where: { locationId } });
+  const rows = await db.product.findMany({ where: { locationId } });
+  return rows.map(toProduct);
 }
 
 export async function findProductByName(
   db: PrismaClient,
   name: string,
 ): Promise<Product | null> {
-  return db.product.findUnique({ where: { name } });
+  const row = await db.product.findUnique({ where: { name } });
+  return row && toProduct(row);
 }
 
 export async function findProductById(
   db: PrismaClient,
   id: string,
 ): Promise<Product | null> {
-  return db.product.findUnique({ where: { id } });
+  const row = await db.product.findUnique({ where: { id } });
+  return row && toProduct(row);
 }
 
 export async function createProductRecord(
@@ -43,7 +83,8 @@ export async function createProductRecord(
     locationId: string;
   },
 ): Promise<Product> {
-  return db.product.create({ data });
+  const row = await db.product.create({ data });
+  return toProduct(row);
 }
 
 export async function updateProductRecord(
@@ -58,7 +99,8 @@ export async function updateProductRecord(
     locationId: string;
   },
 ): Promise<Product> {
-  return db.product.update({ where: { id }, data });
+  const row = await db.product.update({ where: { id }, data });
+  return toProduct(row);
 }
 
 export async function setProductActive(
@@ -66,39 +108,45 @@ export async function setProductActive(
   id: string,
   active: boolean,
 ): Promise<Product> {
-  return db.product.update({ where: { id }, data: { active } });
+  const row = await db.product.update({ where: { id }, data: { active } });
+  return toProduct(row);
 }
 
 export async function listIngredients(db: PrismaClient): Promise<Ingredient[]> {
-  return db.ingredient.findMany({ orderBy: { name: "asc" } });
+  const rows = await db.ingredient.findMany({ orderBy: { name: "asc" } });
+  return rows.map(toIngredient);
 }
 
 export async function findIngredientByName(
   db: PrismaClient,
   name: string,
 ): Promise<Ingredient | null> {
-  return db.ingredient.findUnique({ where: { name } });
+  const row = await db.ingredient.findUnique({ where: { name } });
+  return row && toIngredient(row);
 }
 
 export async function findIngredientById(
   db: PrismaClient,
   id: string,
 ): Promise<Ingredient | null> {
-  return db.ingredient.findUnique({ where: { id } });
+  const row = await db.ingredient.findUnique({ where: { id } });
+  return row && toIngredient(row);
 }
 
 export async function findIngredientsByIds(
   db: PrismaClient,
   ids: string[],
 ): Promise<Ingredient[]> {
-  return db.ingredient.findMany({ where: { id: { in: ids } } });
+  const rows = await db.ingredient.findMany({ where: { id: { in: ids } } });
+  return rows.map(toIngredient);
 }
 
 export async function createIngredientRecord(
   db: PrismaClient,
   data: { name: string; unitOfMeasure: string; lastKnownCostMinor: number | null },
 ): Promise<Ingredient> {
-  return db.ingredient.create({ data });
+  const row = await db.ingredient.create({ data });
+  return toIngredient(row);
 }
 
 export async function updateIngredientRecord(
@@ -111,7 +159,8 @@ export async function updateIngredientRecord(
     lowStockLevel: number | null;
   },
 ): Promise<Ingredient> {
-  return db.ingredient.update({ where: { id }, data });
+  const row = await db.ingredient.update({ where: { id }, data });
+  return toIngredient(row);
 }
 
 export async function setIngredientActive(
@@ -119,7 +168,8 @@ export async function setIngredientActive(
   id: string,
   active: boolean,
 ): Promise<Ingredient> {
-  return db.ingredient.update({ where: { id }, data: { active } });
+  const row = await db.ingredient.update({ where: { id }, data: { active } });
+  return toIngredient(row);
 }
 
 export async function setIngredientLastKnownCost(
@@ -127,7 +177,8 @@ export async function setIngredientLastKnownCost(
   id: string,
   lastKnownCostMinor: number,
 ): Promise<Ingredient> {
-  return db.ingredient.update({ where: { id }, data: { lastKnownCostMinor } });
+  const row = await db.ingredient.update({ where: { id }, data: { lastKnownCostMinor } });
+  return toIngredient(row);
 }
 
 export async function listCategories(db: PrismaClient): Promise<Category[]> {
@@ -170,7 +221,8 @@ export async function setProductLastKnownCost(
   id: string,
   lastKnownCostMinor: number,
 ): Promise<Product> {
-  return db.product.update({ where: { id }, data: { lastKnownCostMinor } });
+  const row = await db.product.update({ where: { id }, data: { lastKnownCostMinor } });
+  return toProduct(row);
 }
 
 export async function createRecipeRecord(
@@ -182,7 +234,7 @@ export async function createRecipeRecord(
     lines: { ingredientId: string; quantity: number }[];
   },
 ): Promise<Recipe> {
-  return db.recipe.create({
+  const row = await db.recipe.create({
     data: {
       productId: data.productId,
       yieldQuantity: data.yieldQuantity,
@@ -191,17 +243,19 @@ export async function createRecipeRecord(
     },
     include: { lines: true },
   });
+  return toRecipe(row);
 }
 
 export async function listRecipeVersionsByProduct(
   db: PrismaClient,
   productId: string,
 ): Promise<Recipe[]> {
-  return db.recipe.findMany({
+  const rows = await db.recipe.findMany({
     where: { productId },
     include: { lines: true },
     orderBy: { effectiveFrom: "desc" },
   });
+  return rows.map(toRecipe);
 }
 
 export async function findRecipeInForceAt(
@@ -209,21 +263,24 @@ export async function findRecipeInForceAt(
   productId: string,
   at: Date,
 ): Promise<Recipe | null> {
-  return db.recipe.findFirst({
+  const row = await db.recipe.findFirst({
     where: { productId, effectiveFrom: { lte: at } },
     include: { lines: true },
     orderBy: { effectiveFrom: "desc" },
   });
+  return row && toRecipe(row);
 }
 
 // Excludes retired assets — the ticket's filter-only soft delete, applied
 // at the query layer so no caller can accidentally see a retired row.
 export async function listActiveAssets(db: PrismaClient): Promise<Asset[]> {
-  return db.asset.findMany({ where: { retiredAt: null }, orderBy: { name: "asc" } });
+  const rows = await db.asset.findMany({ where: { retiredAt: null }, orderBy: { name: "asc" } });
+  return rows.map(toAsset);
 }
 
 export async function findAssetById(db: PrismaClient, id: string): Promise<Asset | null> {
-  return db.asset.findUnique({ where: { id } });
+  const row = await db.asset.findUnique({ where: { id } });
+  return row && toAsset(row);
 }
 
 export async function findAssetByNameAndLocation(
@@ -231,14 +288,16 @@ export async function findAssetByNameAndLocation(
   name: string,
   locationId: string,
 ): Promise<Asset | null> {
-  return db.asset.findUnique({ where: { name_locationId: { name, locationId } } });
+  const row = await db.asset.findUnique({ where: { name_locationId: { name, locationId } } });
+  return row && toAsset(row);
 }
 
 export async function createAssetRecord(
   db: PrismaClient,
   data: { name: string; locationId: string; quantity: number; expenseId: string | null },
 ): Promise<Asset> {
-  return db.asset.create({ data });
+  const row = await db.asset.create({ data });
+  return toAsset(row);
 }
 
 export async function incrementAssetQuantity(
@@ -246,7 +305,8 @@ export async function incrementAssetQuantity(
   id: string,
   by: number,
 ): Promise<Asset> {
-  return db.asset.update({ where: { id }, data: { quantity: { increment: by } } });
+  const row = await db.asset.update({ where: { id }, data: { quantity: { increment: by } } });
+  return toAsset(row);
 }
 
 export async function setAssetQuantity(
@@ -254,7 +314,8 @@ export async function setAssetQuantity(
   id: string,
   quantity: number,
 ): Promise<Asset> {
-  return db.asset.update({ where: { id }, data: { quantity } });
+  const row = await db.asset.update({ where: { id }, data: { quantity } });
+  return toAsset(row);
 }
 
 export async function setAssetExpenseId(
@@ -262,9 +323,11 @@ export async function setAssetExpenseId(
   id: string,
   expenseId: string,
 ): Promise<Asset> {
-  return db.asset.update({ where: { id }, data: { expenseId } });
+  const row = await db.asset.update({ where: { id }, data: { expenseId } });
+  return toAsset(row);
 }
 
 export async function setAssetRetired(db: PrismaClient, id: string): Promise<Asset> {
-  return db.asset.update({ where: { id }, data: { retiredAt: new Date() } });
+  const row = await db.asset.update({ where: { id }, data: { retiredAt: new Date() } });
+  return toAsset(row);
 }

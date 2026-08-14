@@ -61,7 +61,7 @@ export function AssetForm({
           onSave({
             name,
             locationId,
-            quantity: quantity.trim() === "" ? 0 : Math.round(Number(quantity)),
+            quantity: quantity.trim() === "" ? 0 : Number(quantity),
           });
         }}
       >

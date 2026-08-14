@@ -1,4 +1,9 @@
-import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import type {
+  Prisma,
+  PrismaClient,
+  StockMovement as PrismaStockMovement,
+  IngredientMovement as PrismaIngredientMovement,
+} from "@/generated/prisma/client";
 
 // recordStockMovement is called both with the ordinary db handle and, from
 // sales/logic.ts's BUG-15 fix, from inside a db.$transaction callback —
@@ -52,6 +57,9 @@ import {
   findNonSalesMovementsAtLocationInPeriod,
   findAllNonSalesMovementsInPeriod,
   listStockCountsInPeriod,
+  toTransfer,
+  toStockMovement,
+  toIngredientMovement,
   type NonSalesMovementLineWithLocation,
 } from "./queries";
 import type {
@@ -495,7 +503,7 @@ export async function recordTransfers(
           where: { productId: product.id, locationId: input.fromLocationId },
           _sum: { quantity: true },
         });
-        if ((stock._sum.quantity ?? 0) < line.quantity) {
+        if ((stock._sum.quantity?.toNumber() ?? 0) < line.quantity) {
           return { ok: false, reason: "insufficient_stock" } as const;
         }
 
@@ -519,7 +527,7 @@ export async function recordTransfers(
             transferId: transfer.id,
           },
         });
-        transfers.push(transfer);
+        transfers.push(toTransfer(transfer));
         continue;
       }
 
@@ -531,7 +539,7 @@ export async function recordTransfers(
         where: { ingredientId: ingredient.id, locationId: input.fromLocationId },
         _sum: { quantity: true },
       });
-      if ((stock._sum.quantity ?? 0) < line.quantity) {
+      if ((stock._sum.quantity?.toNumber() ?? 0) < line.quantity) {
         return { ok: false, reason: "insufficient_stock" } as const;
       }
 
@@ -555,7 +563,7 @@ export async function recordTransfers(
           transferId: transfer.id,
         },
       });
-      transfers.push(transfer);
+      transfers.push(toTransfer(transfer));
     }
 
     return { ok: true, transfers } as const;
@@ -707,7 +715,7 @@ export async function confirmTransfer(
       }
     }
 
-    return { ok: true, transfer: updated } as const;
+    return { ok: true, transfer: toTransfer(updated) } as const;
   });
 }
 
@@ -770,7 +778,7 @@ export async function cancelPendingTransfer(
       });
     }
 
-    return { ok: true, transfer: updated } as const;
+    return { ok: true, transfer: toTransfer(updated) } as const;
   });
 }
 
@@ -853,7 +861,14 @@ export async function reverseTransfer(
               reversedTransferId: transfer.id,
             },
           });
-    return { ok: true, movements: [outgoing, incoming] } as const;
+    const movements: TransferMovement[] =
+      transfer.itemType === "product"
+        ? [toStockMovement(outgoing as PrismaStockMovement), toStockMovement(incoming as PrismaStockMovement)]
+        : [
+            toIngredientMovement(outgoing as PrismaIngredientMovement),
+            toIngredientMovement(incoming as PrismaIngredientMovement),
+          ];
+    return { ok: true, movements } as const;
   });
 }
 

@@ -165,12 +165,12 @@ describe("recordProduction", () => {
       where: { ingredientId: potatoesId, locationId: restaurantId, reason: "issued" },
     });
     expect(ingredientMovements).toHaveLength(1);
-    expect(ingredientMovements[0].quantity).toBe(-8); // 2kg * 4 units
+    expect(ingredientMovements[0].quantity.toNumber()).toBe(-8); // 2kg * 4 units
 
     const allPotatoMovements = await testDb.ingredientMovement.findMany({
       where: { ingredientId: potatoesId, locationId: restaurantId },
     });
-    const onHand = allPotatoMovements.reduce((sum, m) => sum + m.quantity, 0);
+    const onHand = allPotatoMovements.reduce((sum, m) => sum + m.quantity.toNumber(), 0);
     expect(onHand).toBe(92); // 100 received - 8 consumed
   });
 

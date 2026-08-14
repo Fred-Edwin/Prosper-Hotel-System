@@ -1,4 +1,10 @@
-import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import type {
+  Prisma,
+  PrismaClient,
+  Sale as PrismaSale,
+  SaleLine as PrismaSaleLine,
+  PaymentLine as PrismaPaymentLine,
+} from "@/generated/prisma/client";
 import type { PaymentLine, PaymentMethod, Repayment, Sale, SaleFulfilment } from "./schema";
 
 // createSaleRecord is called from inside a db.$transaction for BUG-15's
@@ -6,11 +12,24 @@ import type { PaymentLine, PaymentMethod, Repayment, Sale, SaleFulfilment } from
 // transaction client, not just the top-level PrismaClient.
 type Db = PrismaClient | Prisma.TransactionClient;
 
+// Prisma returns SaleLine.quantity as a Decimal.js object, not a plain
+// number — converted here so the rest of the app keeps using plain numbers
+// as before the Int -> Decimal(10,2) migration.
+function toSale(
+  row: PrismaSale & { lines: PrismaSaleLine[]; paymentLines: PrismaPaymentLine[] },
+): Sale {
+  return {
+    ...row,
+    lines: row.lines.map((line) => ({ ...line, quantity: line.quantity.toNumber() })),
+  };
+}
+
 export async function findSaleById(db: PrismaClient, saleId: string): Promise<Sale | null> {
-  return db.sale.findUnique({
+  const row = await db.sale.findUnique({
     where: { id: saleId },
     include: { lines: true, paymentLines: true },
   });
+  return row && toSale(row);
 }
 
 export async function markSaleVoided(
@@ -18,11 +37,12 @@ export async function markSaleVoided(
   saleId: string,
   voidedBy: string,
 ): Promise<Sale> {
-  return db.sale.update({
+  const row = await db.sale.update({
     where: { id: saleId },
     data: { voided: true, voidedAt: new Date(), voidedBy },
     include: { lines: true, paymentLines: true },
   });
+  return toSale(row);
 }
 
 export async function createSaleRecord(
@@ -42,7 +62,7 @@ export async function createSaleRecord(
     correctionReason?: string;
   },
 ): Promise<Sale> {
-  return db.sale.create({
+  const row = await db.sale.create({
     data: {
       locationId: data.locationId,
       staffMemberId: data.staffMemberId,
@@ -65,6 +85,7 @@ export async function createSaleRecord(
     },
     include: { lines: true, paymentLines: true },
   });
+  return toSale(row);
 }
 
 // Ticket 45 — Activity's sale/void/correction rows: every sale across
@@ -75,11 +96,12 @@ export async function listSalesInPeriod(
   periodStart: Date,
   periodEnd: Date,
 ): Promise<Sale[]> {
-  return db.sale.findMany({
+  const rows = await db.sale.findMany({
     where: { occurredAt: { gt: periodStart, lte: periodEnd } },
     include: { lines: true, paymentLines: true },
     orderBy: { occurredAt: "desc" },
   });
+  return rows.map(toSale);
 }
 
 // Non-void only, via the sale relation — "cancelled entries count
@@ -180,7 +202,7 @@ export async function sumCreditSaleQuantityByProductAtLocation(
     for (const line of sale.lines) {
       quantityByProduct.set(
         line.productId,
-        (quantityByProduct.get(line.productId) ?? 0) + line.quantity,
+        (quantityByProduct.get(line.productId) ?? 0) + line.quantity.toNumber(),
       );
     }
   }
@@ -215,7 +237,7 @@ export async function findSalesForStaffToday(
   dayStart: Date,
   dayEnd: Date,
 ): Promise<Sale[]> {
-  return db.sale.findMany({
+  const rows = await db.sale.findMany({
     where: {
       staffMemberId,
       locationId,
@@ -224,4 +246,5 @@ export async function findSalesForStaffToday(
     include: { lines: true, paymentLines: true },
     orderBy: { occurredAt: "desc" },
   });
+  return rows.map(toSale);
 }

@@ -148,7 +148,7 @@ async function priceAndCreateSale(
         where: { productId: line.productId, locationId },
         _sum: { quantity: true },
       });
-      const available = stock._sum.quantity ?? 0;
+      const available = stock._sum.quantity?.toNumber() ?? 0;
       if (available < line.quantity) {
         return { ok: false, reason: "insufficient_stock", productId: line.productId, available } as const;
       }

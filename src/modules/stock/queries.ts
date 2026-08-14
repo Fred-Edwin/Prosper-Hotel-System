@@ -1,4 +1,12 @@
-import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import type {
+  Prisma,
+  PrismaClient,
+  StockMovement as PrismaStockMovement,
+  IngredientMovement as PrismaIngredientMovement,
+  StockCount as PrismaStockCount,
+  StockCountLine as PrismaStockCountLine,
+  Transfer as PrismaTransfer,
+} from "@/generated/prisma/client";
 import type {
   IngredientMovement,
   PendingTransferForReader,
@@ -15,6 +23,37 @@ import type {
 // for BUG-15's overselling guard, so this needs to accept a transaction
 // client, not just the top-level PrismaClient.
 type Db = PrismaClient | Prisma.TransactionClient;
+
+// Prisma returns Decimal fields as Decimal.js objects, not plain numbers —
+// converted here so the rest of the app (logic.ts, routes.ts, UI) keeps
+// working with plain numbers exactly as before the Int -> Decimal(10,2)
+// migration.
+export function toStockMovement(row: PrismaStockMovement): StockMovement {
+  return { ...row, quantity: row.quantity.toNumber() };
+}
+
+export function toIngredientMovement(row: PrismaIngredientMovement): IngredientMovement {
+  return { ...row, quantity: row.quantity.toNumber() };
+}
+
+function toStockCount(row: PrismaStockCount & { lines: PrismaStockCountLine[] }): StockCount {
+  return {
+    ...row,
+    lines: row.lines.map((line) => ({
+      ...line,
+      countedQuantity: line.countedQuantity.toNumber(),
+      expectedQuantity: line.expectedQuantity.toNumber(),
+    })),
+  } as StockCount;
+}
+
+export function toTransfer(row: PrismaTransfer): Transfer {
+  return {
+    ...row,
+    sentQuantity: row.sentQuantity.toNumber(),
+    confirmedQuantity: row.confirmedQuantity?.toNumber() ?? null,
+  };
+}
 
 export async function createStockMovement(
   db: Db,
@@ -36,7 +75,8 @@ export async function createStockMovement(
     occurredAt?: Date;
   },
 ): Promise<StockMovement> {
-  return db.stockMovement.create({ data });
+  const row = await db.stockMovement.create({ data });
+  return toStockMovement(row);
 }
 
 export async function createProductionMovement(
@@ -50,7 +90,10 @@ export async function createProductionMovement(
     sellingValueMinor: number | null;
   },
 ): Promise<StockMovement> {
-  return db.stockMovement.create({ data: { ...data, reason: "produced", isEstimated: false } });
+  const row = await db.stockMovement.create({
+    data: { ...data, reason: "produced", isEstimated: false },
+  });
+  return toStockMovement(row);
 }
 
 export async function sumMovementsByProductAtLocation(
@@ -65,7 +108,7 @@ export async function sumMovementsByProductAtLocation(
 
   return grouped.map((g) => ({
     productId: g.productId,
-    quantityOnHand: g._sum.quantity ?? 0,
+    quantityOnHand: g._sum.quantity?.toNumber() ?? 0,
   }));
 }
 
@@ -85,7 +128,7 @@ export async function sumMovementsByProductAtLocationAsOf(
 
   return grouped.map((g) => ({
     productId: g.productId,
-    quantityOnHand: g._sum.quantity ?? 0,
+    quantityOnHand: g._sum.quantity?.toNumber() ?? 0,
   }));
 }
 
@@ -102,7 +145,8 @@ export async function createIngredientMovement(
     transferId?: string;
   },
 ): Promise<IngredientMovement> {
-  return db.ingredientMovement.create({ data });
+  const row = await db.ingredientMovement.create({ data });
+  return toIngredientMovement(row);
 }
 
 export async function createIngredientIssueMovement(
@@ -114,7 +158,8 @@ export async function createIngredientIssueMovement(
     staffMemberId: string;
   },
 ): Promise<IngredientMovement> {
-  return db.ingredientMovement.create({ data: { ...data, reason: "issued" } });
+  const row = await db.ingredientMovement.create({ data: { ...data, reason: "issued" } });
+  return toIngredientMovement(row);
 }
 
 export async function createIngredientCorrectionMovement(
@@ -127,9 +172,10 @@ export async function createIngredientCorrectionMovement(
     costBasisMinor: number;
   },
 ): Promise<IngredientMovement> {
-  return db.ingredientMovement.create({
+  const row = await db.ingredientMovement.create({
     data: { ...data, reason: "corrected", isEstimated: false },
   });
+  return toIngredientMovement(row);
 }
 
 export async function createIngredientConsumptionMovement(
@@ -144,7 +190,8 @@ export async function createIngredientConsumptionMovement(
     isEstimated: boolean;
   },
 ): Promise<IngredientMovement> {
-  return db.ingredientMovement.create({ data });
+  const row = await db.ingredientMovement.create({ data });
+  return toIngredientMovement(row);
 }
 
 // receiptId is only nullable for wasted/consumed/given_away rows (ticket
@@ -179,14 +226,14 @@ export async function findReceiptsAtLocation(db: PrismaClient, locationId: strin
   for (const movement of ingredientMovements) {
     const receiptId = movement.receiptId as string;
     const group = byReceiptId.get(receiptId) ?? { occurredAt: movement.occurredAt, totalMinor: 0, lineCount: 0 };
-    group.totalMinor += movement.quantity * (movement.unitCostMinor ?? 0);
+    group.totalMinor += movement.quantity.toNumber() * (movement.unitCostMinor ?? 0);
     group.lineCount += 1;
     byReceiptId.set(receiptId, group);
   }
   for (const movement of stockMovements) {
     const receiptId = movement.receiptId as string;
     const group = byReceiptId.get(receiptId) ?? { occurredAt: movement.occurredAt, totalMinor: 0, lineCount: 0 };
-    group.totalMinor += movement.quantity * (productCostById.get(movement.productId) ?? 0);
+    group.totalMinor += movement.quantity.toNumber() * (productCostById.get(movement.productId) ?? 0);
     group.lineCount += 1;
     byReceiptId.set(receiptId, group);
   }
@@ -225,7 +272,7 @@ export async function sumMovementsByIngredientAtLocation(
 
   return grouped.map((g) => ({
     ingredientId: g.ingredientId,
-    quantityOnHand: g._sum.quantity ?? 0,
+    quantityOnHand: g._sum.quantity?.toNumber() ?? 0,
   }));
 }
 
@@ -253,7 +300,7 @@ export async function sumMovementsByProductReasonAtLocationInPeriod(
   return grouped.map((g) => ({
     productId: g.productId,
     reason: g.reason,
-    quantity: g._sum.quantity ?? 0,
+    quantity: g._sum.quantity?.toNumber() ?? 0,
   }));
 }
 
@@ -273,7 +320,7 @@ export async function sumIngredientMovementsAtLocationAsOf(
 
   return grouped.map((g) => ({
     ingredientId: g.ingredientId,
-    quantityOnHand: g._sum.quantity ?? 0,
+    quantityOnHand: g._sum.quantity?.toNumber() ?? 0,
   }));
 }
 
@@ -294,7 +341,7 @@ export async function sumIngredientsBoughtMinorAtLocationInPeriod(
     },
     select: { quantity: true, unitCostMinor: true },
   });
-  return received.reduce((sum, r) => sum + r.quantity * (r.unitCostMinor ?? 0), 0);
+  return received.reduce((sum, r) => sum + r.quantity.toNumber() * (r.unitCostMinor ?? 0), 0);
 }
 
 // Ticket 25: formulas.md §5's transfer rate needs "ingredients the
@@ -316,7 +363,10 @@ export async function sumIngredientsIssuedByIngredientAtLocationInPeriod(
     },
     _sum: { quantity: true },
   });
-  return grouped.map((g) => ({ ingredientId: g.ingredientId, quantity: -(g._sum.quantity ?? 0) }));
+  return grouped.map((g) => ({
+    ingredientId: g.ingredientId,
+    quantity: -(g._sum.quantity?.toNumber() ?? 0),
+  }));
 }
 
 // Ticket 42: per-ingredient counterpart to sumIngredientsBoughtMinorAtLocationInPeriod
@@ -338,9 +388,10 @@ export async function sumIngredientsPurchasedByIngredientAtLocationInPeriod(
   });
   const byIngredient = new Map<string, { quantity: number; valueMinor: number }>();
   for (const r of received) {
+    const quantity = r.quantity.toNumber();
     const existing = byIngredient.get(r.ingredientId) ?? { quantity: 0, valueMinor: 0 };
-    existing.quantity += r.quantity;
-    existing.valueMinor += r.quantity * (r.unitCostMinor ?? 0);
+    existing.quantity += quantity;
+    existing.valueMinor += quantity * (r.unitCostMinor ?? 0);
     byIngredient.set(r.ingredientId, existing);
   }
   return Array.from(byIngredient.entries()).map(([ingredientId, v]) => ({ ingredientId, ...v }));
@@ -366,7 +417,7 @@ export async function sumIngredientMovementsByReasonAtLocationInPeriod(
   return grouped.map((g) => ({
     ingredientId: g.ingredientId,
     reason: g.reason,
-    quantity: g._sum.quantity ?? 0,
+    quantity: g._sum.quantity?.toNumber() ?? 0,
   }));
 }
 
@@ -387,7 +438,7 @@ export async function sumProductMovementsByReasonAtLocationInPeriod(
     where: { locationId, reason, occurredAt: { gt: periodStart, lte: periodEnd } },
     _sum: { quantity: true },
   });
-  return grouped.map((g) => ({ productId: g.productId, quantity: g._sum.quantity ?? 0 }));
+  return grouped.map((g) => ({ productId: g.productId, quantity: g._sum.quantity?.toNumber() ?? 0 }));
 }
 
 // Ticket 38: proposal.md §10.5's non-sales consumption report — wasted,
@@ -479,7 +530,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
     ...productMovements.map((m) => ({
       itemType: "product" as const,
       itemId: m.productId,
-      quantity: m.quantity,
+      quantity: m.quantity.toNumber(),
       reason: m.reason,
       costBasisMinor: m.costBasisMinor,
       sellingValueMinor: m.sellingValueMinor,
@@ -490,7 +541,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
     ...ingredientMovements.map((m) => ({
       itemType: "ingredient" as const,
       itemId: m.ingredientId,
-      quantity: m.quantity,
+      quantity: m.quantity.toNumber(),
       reason: m.reason,
       costBasisMinor: m.costBasisMinor,
       sellingValueMinor: m.sellingValueMinor,
@@ -554,7 +605,7 @@ export async function findAllNonSalesMovementsInPeriod(
       itemType: "product" as const,
       itemId: m.productId,
       locationId: m.locationId,
-      quantity: m.quantity,
+      quantity: m.quantity.toNumber(),
       reason: m.reason,
       costBasisMinor: m.costBasisMinor,
       sellingValueMinor: m.sellingValueMinor,
@@ -566,7 +617,7 @@ export async function findAllNonSalesMovementsInPeriod(
       itemType: "ingredient" as const,
       itemId: m.ingredientId,
       locationId: m.locationId,
-      quantity: m.quantity,
+      quantity: m.quantity.toNumber(),
       reason: m.reason,
       costBasisMinor: m.costBasisMinor,
       sellingValueMinor: m.sellingValueMinor,
@@ -588,7 +639,7 @@ export async function listStockCountsInPeriod(
     include: { lines: true },
     orderBy: { occurredAt: "asc" },
   });
-  return counts as StockCount[];
+  return counts.map(toStockCount);
 }
 
 // The count immediately before a given one at the same location — the
@@ -604,7 +655,7 @@ export async function findPreviousStockCountAtLocation(
     orderBy: { occurredAt: "desc" },
     include: { lines: true },
   });
-  return count as StockCount | null;
+  return count && toStockCount(count);
 }
 
 export async function createStockCount(
@@ -628,7 +679,7 @@ export async function createStockCount(
     },
     include: { lines: true },
   });
-  return count as StockCount;
+  return toStockCount(count);
 }
 
 export async function findStockCountById(
@@ -639,7 +690,7 @@ export async function findStockCountById(
     where: { id: stockCountId },
     include: { lines: true },
   });
-  return count as StockCount | null;
+  return count && toStockCount(count);
 }
 
 // The owner's review screen shows the current/most recent count, not a
@@ -654,7 +705,7 @@ export async function findLatestStockCountAtLocation(
     orderBy: { occurredAt: "desc" },
     include: { lines: true },
   });
-  return count as StockCount | null;
+  return count && toStockCount(count);
 }
 
 // Added 2026-08-13 — REQ-02 Part A. A transfer starts life here, pending,
@@ -673,11 +724,13 @@ export async function createPendingTransfer(
     reversedTransferId?: string;
   },
 ): Promise<Transfer> {
-  return db.transfer.create({ data });
+  const row = await db.transfer.create({ data });
+  return toTransfer(row);
 }
 
 export async function findTransferById(db: PrismaClient, id: string): Promise<Transfer | null> {
-  return db.transfer.findUnique({ where: { id } });
+  const row = await db.transfer.findUnique({ where: { id } });
+  return row && toTransfer(row);
 }
 
 // The receiving screen's queue — every transfer sent to this location
@@ -708,7 +761,7 @@ export async function findPendingTransfersAtLocation(
     ...ingredients.map((i) => [i.id, i.name] as const),
   ]);
 
-  return transfers.map((t) => ({ ...t, itemName: nameById.get(t.itemId) ?? "Unknown item" }));
+  return transfers.map((t) => ({ ...toTransfer(t), itemName: nameById.get(t.itemId) ?? "Unknown item" }));
 }
 
 // 2026-08-13 canteen redesign, item 4: the sender's reconciliation view —
@@ -743,7 +796,7 @@ export async function findConfirmedTransfersSentFromLocation(
     ...ingredients.map((i) => [i.id, i.name] as const),
   ]);
 
-  return transfers.map((t) => ({ ...t, itemName: nameById.get(t.itemId) ?? "Unknown item" }));
+  return transfers.map((t) => ({ ...toTransfer(t), itemName: nameById.get(t.itemId) ?? "Unknown item" }));
 }
 
 // 2026-08-13 — history view's source of truth. Reads the Transfer model
@@ -751,10 +804,11 @@ export async function findConfirmedTransfersSentFromLocation(
 // reconstructing from movement pairs, since a pending transfer only ever
 // writes the sender's outgoing movement — see gotchas.md.
 export async function findTransfersInvolvingLocation(db: PrismaClient, locationId: string): Promise<Transfer[]> {
-  return db.transfer.findMany({
+  const rows = await db.transfer.findMany({
     where: { OR: [{ fromLocationId: locationId }, { toLocationId: locationId }] },
     orderBy: { sentAt: "desc" },
   });
+  return rows.map(toTransfer);
 }
 
 // Confirmation writes the incoming movement (at the confirmed quantity,
@@ -769,7 +823,7 @@ export async function markTransferConfirmed(
   id: string,
   data: { confirmedQuantity: number; confirmedByStaffMemberId: string },
 ): Promise<Transfer> {
-  return db.transfer.update({
+  const row = await db.transfer.update({
     where: { id },
     data: {
       status: "confirmed",
@@ -778,6 +832,7 @@ export async function markTransferConfirmed(
       confirmedAt: new Date(),
     },
   });
+  return toTransfer(row);
 }
 
 export async function markTransferCancelled(
@@ -785,10 +840,11 @@ export async function markTransferCancelled(
   id: string,
   cancelledByStaffMemberId: string,
 ): Promise<Transfer> {
-  return db.transfer.update({
+  const row = await db.transfer.update({
     where: { id },
     data: { status: "cancelled", cancelledByStaffMemberId, cancelledAt: new Date() },
   });
+  return toTransfer(row);
 }
 
 export async function markStockCountLineCorrected(

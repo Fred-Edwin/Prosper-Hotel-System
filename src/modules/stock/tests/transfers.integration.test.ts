@@ -306,7 +306,7 @@ describe("confirmTransfer — receiving", () => {
     const shortfallMovement = await testDb.stockMovement.findFirst({
       where: { productId, locationId: canteenId, reason: "transfer_shortfall" },
     });
-    expect(shortfallMovement).toMatchObject({ quantity: 0 });
+    expect(shortfallMovement?.quantity.toNumber()).toBe(0);
   });
 
   test("rejects confirming from the sending location, twice, or above what was sent", async () => {

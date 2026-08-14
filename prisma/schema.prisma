@@ -98,7 +98,9 @@ model Product {
   lastKnownCostMinor Int?
   // Ticket 44: null means no threshold defined, distinct from a threshold
   // of zero — same nullable-until-set convention as priceMinor above.
-  lowStockLevel      Int?
+  // Decimal(10,2): thresholds may be fractional, matching quantity fields
+  // below — a kg/litre-measured item can have a non-integer reorder point.
+  lowStockLevel      Decimal?        @db.Decimal(10, 2)
   // docs/architecture.md: deactivated, never deleted — a sold product must
   // stay attributed on historical sales even after withdrawal from sale.
   active             Boolean         @default(true)
@@ -146,7 +148,9 @@ model Ingredient {
   // stock's movement ledger once receiving is built). Null until known.
   lastKnownCostMinor Int?
   // Ticket 44: same nullable-until-set convention as Product.lowStockLevel.
-  lowStockLevel      Int?
+  // Decimal(10,2): ingredient stock is measured fractionally (kg, litre) —
+  // see Ingredient.unitOfMeasure and quantity fields below.
+  lowStockLevel      Decimal?             @db.Decimal(10, 2)
   active             Boolean              @default(true)
   createdAt          DateTime             @default(now())
   recipeLines        RecipeLine[]
@@ -168,7 +172,9 @@ model Asset {
   name       String
   locationId String
   location   Location  @relation(fields: [locationId], references: [id])
-  quantity   Int
+  // Decimal(10,2): consistent with other quantity fields, though assets are
+  // typically whole-counted in practice.
+  quantity   Decimal   @db.Decimal(10, 2)
   // Optional: assets already owned before the system existed can be
   // recorded without a fabricated historical Expense.
   expenseId  String?   @unique
@@ -190,8 +196,9 @@ model Recipe {
   product       Product      @relation(fields: [productId], references: [id])
   // Quantity of the output product this recipe is expected to produce.
   // ADR 0005: this is per-unit-cost and yield-variance input only — it
-  // never feeds cost of goods sold.
-  yieldQuantity Int
+  // never feeds cost of goods sold. Decimal(10,2): a batch's yield may be
+  // fractional (e.g. weighed output), consistent with other quantity fields.
+  yieldQuantity Decimal      @db.Decimal(10, 2)
   effectiveFrom DateTime
   createdAt     DateTime     @default(now())
   lines         RecipeLine[]
@@ -205,7 +212,9 @@ model RecipeLine {
   recipe       Recipe     @relation(fields: [recipeId], references: [id])
   ingredientId String
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
-  quantity     Int
+  // Decimal(10,2): recipe lines are entered in the ingredient's own
+  // unitOfMeasure (kg, litre, ...), which is routinely fractional.
+  quantity     Decimal    @db.Decimal(10, 2)
 
   @@map("recipe_lines")
 }
@@ -331,7 +340,9 @@ model SaleLine {
   sale       Sale    @relation(fields: [saleId], references: [id])
   productId  String
   product    Product @relation(fields: [productId], references: [id])
-  quantity   Int
+  // Decimal(10,2): consistent with other quantity fields; most products are
+  // whole-counted but a few (e.g. weighed portions) are not.
+  quantity   Decimal @db.Decimal(10, 2)
   // The product's priceMinor at the moment of sale — see Sale.totalMinor.
   priceMinor Int
 
@@ -423,7 +434,9 @@ model Transfer {
   toLocation               Location         @relation("TransferToLocation", fields: [toLocationId], references: [id])
   itemType                 TransferItemType
   itemId                   String
-  sentQuantity             Int
+  // Decimal(10,2): consistent with the underlying StockMovement/
+  // IngredientMovement quantity fields this transfer produces.
+  sentQuantity             Decimal          @db.Decimal(10, 2)
   status                   TransferStatus   @default(pending)
   sentByStaffMemberId      String
   sentByStaffMember        StaffMember      @relation("TransferSentBy", fields: [sentByStaffMemberId], references: [id])
@@ -433,7 +446,7 @@ model Transfer {
   // silently absorbed. Never exceeds sentQuantity in ordinary use (there
   // is nothing to confirm beyond what was sent); not enforced at the DB
   // level, same trust-the-caller convention as the rest of this schema.
-  confirmedQuantity        Int?
+  confirmedQuantity        Decimal?         @db.Decimal(10, 2)
   confirmedByStaffMemberId String?
   confirmedByStaffMember   StaffMember?     @relation("TransferConfirmedBy", fields: [confirmedByStaffMemberId], references: [id])
   confirmedAt              DateTime?
@@ -461,8 +474,10 @@ model StockMovement {
   location           Location            @relation(fields: [locationId], references: [id])
   // Signed: positive for stock arriving, negative for stock leaving.
   // docs/architecture.md: a stock level is not a stored number, it is the
-  // sum of the movements.
-  quantity           Int
+  // sum of the movements. Decimal(10,2): products may be sold/moved in
+  // fractional quantities (weighed portions), consistent with ingredient
+  // quantities below.
+  quantity           Decimal             @db.Decimal(10, 2)
   reason             StockMovementReason
   // Populated only for wasted/consumed/given_away (ticket 15) — the two
   // ways CONTEXT.md's Non-sales Stock Consumption is valued, snapshotted
@@ -505,8 +520,9 @@ model IngredientMovement {
   // Unsigned in this ticket — receiving is the only reason written so far.
   // A future issuing/wastage ticket may need this signed, same as
   // StockMovement.quantity; revisit then rather than guessing the sign
-  // convention now.
-  quantity           Int
+  // convention now. Decimal(10,2): ingredients are received/issued in
+  // fractional quantities (e.g. 3.50 kg), matching Ingredient.unitOfMeasure.
+  quantity           Decimal             @db.Decimal(10, 2)
   reason             StockMovementReason
   // Price paid per unit on this occasion — proposal.md: "prices are
   // entered per delivery rather than held as a fixed figure." Required for
@@ -747,8 +763,10 @@ model StockCountLine {
   stockCount       StockCount @relation(fields: [stockCountId], references: [id])
   itemType         String
   itemId           String
-  countedQuantity  Int
-  expectedQuantity Int
+  // Decimal(10,2): counts may be fractional for ingredient rows (kg,
+  // litre), matching StockMovement/IngredientMovement quantity above.
+  countedQuantity  Decimal    @db.Decimal(10, 2)
+  expectedQuantity Decimal    @db.Decimal(10, 2)
   // Set only once the owner applies the correction from this line's
   // difference — ticket's "correcting an already-corrected line is
   // rejected" rule reads off this being non-null.

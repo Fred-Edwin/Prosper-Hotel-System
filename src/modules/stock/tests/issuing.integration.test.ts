@@ -99,7 +99,7 @@ describe("recordIngredientIssue", () => {
     const movements = await testDb.ingredientMovement.findMany({
       where: { ingredientId: flourId, locationId: restaurantId },
     });
-    const quantityOnHand = movements.reduce((sum, m) => sum + m.quantity, 0);
+    const quantityOnHand = movements.reduce((sum, m) => sum + m.quantity.toNumber(), 0);
     expect(quantityOnHand).toBe(30);
   });
 
