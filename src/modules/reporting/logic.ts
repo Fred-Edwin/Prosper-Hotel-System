@@ -749,6 +749,85 @@ function foldReasonLines(
 // getProductStockValueAtLocation(AsOf) would otherwise skip, so a product
 // with genuinely no cost basis still gets a row with profit shown as
 // unavailable (formulas.md's "not zero, not a guess").
+// Builds one product's full ledger row (period totals + day-by-day
+// breakdown) for a single location. `dayMovements` is pre-fetched once per
+// day for the whole location by the caller, not per product.
+async function buildProductLedgerRow(
+  db: PrismaClient,
+  location: { id: string; code: string },
+  product: Awaited<ReturnType<typeof findProductsByIds>>[number],
+  days: { start: Date; end: Date; label: string }[],
+  openingQty: number,
+  closingQty: number,
+  periodLines: { reason: string; quantity: number }[],
+  dayMovements: Awaited<ReturnType<typeof getProductMovementsByReasonInPeriod>>[],
+): Promise<ProductLedgerRow> {
+  const sums = foldReasonLines(periodLines);
+
+  const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
+  const basis = resolveProductCostBasis(product, recipe);
+
+  const soldQty = sums.sold;
+  const salesValueMinor = product.priceMinor != null ? soldQty * product.priceMinor : 0;
+  const costOfSalesMinor = basis ? basis.costBasisMinor * soldQty : null;
+  const profitMinor = costOfSalesMinor === null ? null : salesValueMinor - costOfSalesMinor;
+  const closingValueMinor = basis ? basis.costBasisMinor * closingQty : null;
+
+  const productDays: ProductLedgerDay[] = [];
+  let runningOpening = openingQty;
+  for (let i = 0; i < days.length; i++) {
+    const dm = dayMovements[i];
+    if (!dm.ok) continue;
+    const dayLines = dm.lines.filter((l) => l.productId === product.id);
+    const daySums = foldReasonLines(dayLines);
+    const dayClosing =
+      runningOpening +
+      daySums.produced +
+      daySums.received +
+      daySums.transferredIn -
+      daySums.sold -
+      daySums.transferredOut -
+      daySums.nonSales;
+    productDays.push({
+      date: days[i].label,
+      opening: runningOpening,
+      produced: daySums.produced,
+      received: daySums.received,
+      transferredIn: daySums.transferredIn,
+      sold: daySums.sold,
+      transferredOut: daySums.transferredOut,
+      nonSales: daySums.nonSales,
+      salesValueMinor: product.priceMinor != null ? daySums.sold * product.priceMinor : 0,
+      closing: dayClosing,
+    });
+    runningOpening = dayClosing;
+  }
+
+  return {
+    productId: product.id,
+    productName: product.name,
+    locationId: location.id,
+    locationCode: location.code,
+    categoryId: product.categoryId,
+    openingQty,
+    produced: sums.produced,
+    received: sums.received,
+    transferredIn: sums.transferredIn,
+    sold: sums.sold,
+    transferredOut: sums.transferredOut,
+    nonSales: sums.nonSales,
+    salesValueMinor,
+    unitCostMinor: basis?.costBasisMinor ?? null,
+    isEstimated: basis?.isEstimated ?? false,
+    sellingPriceMinor: product.priceMinor,
+    costOfSalesMinor,
+    profitMinor,
+    closingQty,
+    closingValueMinor,
+    days: productDays,
+  };
+}
+
 export async function getProductLedger(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -834,70 +913,19 @@ export async function getProductLedger(
 
       const openingQty = openingByProduct.get(productId) ?? 0;
       const closingQty = closingByProduct.get(productId) ?? openingQty;
-      const sums = foldReasonLines(linesByProduct.get(productId) ?? []);
 
-      const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
-      const basis = resolveProductCostBasis(product, recipe);
-
-      const soldQty = sums.sold;
-      const salesValueMinor = product.priceMinor != null ? soldQty * product.priceMinor : 0;
-      const costOfSalesMinor = basis ? basis.costBasisMinor * soldQty : null;
-      const profitMinor = costOfSalesMinor === null ? null : salesValueMinor - costOfSalesMinor;
-      const closingValueMinor = basis ? basis.costBasisMinor * closingQty : null;
-
-      const productDays: ProductLedgerDay[] = [];
-      let runningOpening = openingQty;
-      for (let i = 0; i < days.length; i++) {
-        const dm = dayMovements[i];
-        if (!dm.ok) continue;
-        const dayLines = dm.lines.filter((l) => l.productId === productId);
-        const daySums = foldReasonLines(dayLines);
-        const dayClosing =
-          runningOpening +
-          daySums.produced +
-          daySums.received +
-          daySums.transferredIn -
-          daySums.sold -
-          daySums.transferredOut -
-          daySums.nonSales;
-        productDays.push({
-          date: days[i].label,
-          opening: runningOpening,
-          produced: daySums.produced,
-          received: daySums.received,
-          transferredIn: daySums.transferredIn,
-          sold: daySums.sold,
-          transferredOut: daySums.transferredOut,
-          nonSales: daySums.nonSales,
-          salesValueMinor: product.priceMinor != null ? daySums.sold * product.priceMinor : 0,
-          closing: dayClosing,
-        });
-        runningOpening = dayClosing;
-      }
-
-      rows.push({
-        productId: product.id,
-        productName: product.name,
-        locationId: location.id,
-        locationCode: location.code,
-        categoryId: product.categoryId,
-        openingQty,
-        produced: sums.produced,
-        received: sums.received,
-        transferredIn: sums.transferredIn,
-        sold: sums.sold,
-        transferredOut: sums.transferredOut,
-        nonSales: sums.nonSales,
-        salesValueMinor,
-        unitCostMinor: basis?.costBasisMinor ?? null,
-        isEstimated: basis?.isEstimated ?? false,
-        sellingPriceMinor: product.priceMinor,
-        costOfSalesMinor,
-        profitMinor,
-        closingQty,
-        closingValueMinor,
-        days: productDays,
-      });
+      rows.push(
+        await buildProductLedgerRow(
+          db,
+          location,
+          product,
+          days,
+          openingQty,
+          closingQty,
+          linesByProduct.get(productId) ?? [],
+          dayMovements,
+        ),
+      );
     }
   }
 
@@ -1420,46 +1448,31 @@ const ACTIVITY_DEFAULT_PERIOD_DAYS = 90;
 // (days worked). Reads through each module's index.ts only, per
 // docs/architecture.md's "reporting owns no data."
 // Owner-only, same gate as every other business-wide read here.
-export async function getActivity(
+type ActivityNameLookups = {
+  productNameById: Map<string, string>;
+  ingredientNameById: Map<string, string>;
+  locationNameById: Map<string, string>;
+  nameFor: (id: string | null) => string;
+};
+
+// Batches every product/ingredient/staff ID referenced across the five
+// record types into one lookup fetch each, rather than N+1 per row.
+async function buildActivityNameLookups(
   db: PrismaClient,
-  requester: AuthenticatedStaff,
-  input: {
-    periodStart?: Date;
-    periodEnd?: Date;
-    personId?: string;
-    kind?: ActivityKind;
-    search?: string;
-    page: number;
-    pageSize: number;
+  locations: { id: string; name: string }[],
+  sales: Awaited<ReturnType<typeof listSalesInPeriod>>,
+  movements: { itemType: "product" | "ingredient"; itemId: string; staffMemberId: string }[],
+  stockCounts: {
+    staffMemberId: string;
+    lines: { itemType: "product" | "ingredient"; itemId: string }[];
+  }[],
+  cashTransactions: {
+    handovers: { staffMemberId: string }[];
+    expenses: { staffMemberId: string }[];
+    repayments: { recordedBy: string }[];
   },
-): Promise<GetActivityResult> {
-  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
-
-  const periodEnd = input.periodEnd ?? new Date();
-  const periodStart =
-    input.periodStart ??
-    new Date(periodEnd.getTime() - ACTIVITY_DEFAULT_PERIOD_DAYS * 24 * 60 * 60 * 1000);
-
-  const [
-    sales,
-    movements,
-    stockCounts,
-    cashTransactions,
-    daysWorked,
-    locations,
-  ] = await Promise.all([
-    listSalesInPeriod(db, periodStart, periodEnd),
-    getMovementsForActivity(db, requester, periodStart, periodEnd),
-    getStockCountsForActivity(db, requester, periodStart, periodEnd),
-    getCashLedgerTransactions(db, requester, periodStart, periodEnd),
-    getDaysWorkedForActivity(db, requester, periodStart, periodEnd),
-    listLocations(db),
-  ]);
-  if (!movements.ok) return movements;
-  if (!stockCounts.ok) return stockCounts;
-  if (!cashTransactions.ok) return cashTransactions;
-  if (!daysWorked.ok) return daysWorked;
-
+  daysWorked: { staffMemberId: string }[],
+): Promise<ActivityNameLookups> {
   const locationNameById = new Map(locations.map((l) => [l.id, l.name]));
 
   const productIds = new Set<string>();
@@ -1467,11 +1480,11 @@ export async function getActivity(
   for (const sale of sales) {
     for (const line of sale.lines) productIds.add(line.productId);
   }
-  for (const m of movements.lines) {
+  for (const m of movements) {
     if (m.itemType === "product") productIds.add(m.itemId);
     else ingredientIds.add(m.itemId);
   }
-  for (const count of stockCounts.counts) {
+  for (const count of stockCounts) {
     for (const line of count.lines) {
       if (line.itemType === "product") productIds.add(line.itemId);
       else ingredientIds.add(line.itemId);
@@ -1488,17 +1501,25 @@ export async function getActivity(
   const staffIds = new Set<string>([
     ...sales.map((s) => s.staffMemberId),
     ...sales.filter((s) => s.voidedBy).map((s) => s.voidedBy!),
-    ...movements.lines.map((m) => m.staffMemberId),
-    ...stockCounts.counts.map((c) => c.staffMemberId),
+    ...movements.map((m) => m.staffMemberId),
+    ...stockCounts.map((c) => c.staffMemberId),
     ...cashTransactions.handovers.map((h) => h.staffMemberId),
     ...cashTransactions.expenses.map((e) => e.staffMemberId),
     ...cashTransactions.repayments.map((r) => r.recordedBy),
-    ...daysWorked.value.map((d) => d.staffMemberId),
+    ...daysWorked.map((d) => d.staffMemberId),
   ]);
   const staff = await findStaffMembersByIds(db, Array.from(staffIds));
   const staffNameById = new Map(staff.map((s) => [s.id, s.name]));
   const nameFor = (id: string | null) => (id ? (staffNameById.get(id) ?? "Unknown") : "—");
 
+  return { productNameById, ingredientNameById, locationNameById, nameFor };
+}
+
+function salesToActivityRows(
+  sales: Awaited<ReturnType<typeof listSalesInPeriod>>,
+  lookups: ActivityNameLookups,
+): ActivityEntry[] {
+  const { productNameById, locationNameById, nameFor } = lookups;
   const rows: ActivityEntry[] = [];
 
   for (const sale of sales) {
@@ -1552,7 +1573,26 @@ export async function getActivity(
     }
   }
 
-  for (const m of movements.lines) {
+  return rows;
+}
+
+function movementsToActivityRows(
+  movements: {
+    itemType: "product" | "ingredient";
+    itemId: string;
+    quantity: number;
+    reason: string;
+    costBasisMinor: number | null;
+    staffMemberId: string;
+    occurredAt: Date;
+    locationId: string;
+  }[],
+  lookups: ActivityNameLookups,
+): ActivityEntry[] {
+  const { productNameById, ingredientNameById, locationNameById, nameFor } = lookups;
+  const rows: ActivityEntry[] = [];
+
+  for (const m of movements) {
     const itemName =
       m.itemType === "product"
         ? (productNameById.get(m.itemId) ?? "Unknown item")
@@ -1572,7 +1612,31 @@ export async function getActivity(
     });
   }
 
-  for (const count of stockCounts.counts) {
+  return rows;
+}
+
+function countsToActivityRows(
+  stockCounts: {
+    id: string;
+    locationId: string;
+    staffMemberId: string;
+    occurredAt: Date;
+    lines: {
+      id: string;
+      itemType: "product" | "ingredient";
+      itemId: string;
+      countedQuantity: number;
+      expectedQuantity: number;
+      correctedAt: Date | null;
+      correctedBy: string | null;
+    }[];
+  }[],
+  lookups: ActivityNameLookups,
+): ActivityEntry[] {
+  const { productNameById, ingredientNameById, locationNameById, nameFor } = lookups;
+  const rows: ActivityEntry[] = [];
+
+  for (const count of stockCounts) {
     const locationName = locationNameById.get(count.locationId) ?? null;
 
     rows.push({
@@ -1613,6 +1677,40 @@ export async function getActivity(
       });
     }
   }
+
+  return rows;
+}
+
+function cashToActivityRows(
+  cashTransactions: {
+    handovers: {
+      id: string;
+      locationId: string;
+      staffMemberId: string;
+      actualCashMinor: number;
+      actualMpesaMinor: number;
+      occurredAt: Date;
+    }[];
+    expenses: {
+      id: string;
+      locationId: string;
+      staffMemberId: string;
+      category: string;
+      amountMinor: number;
+      note: string | null;
+      occurredAt: Date;
+    }[];
+    repayments: {
+      id: string;
+      amountMinor: number;
+      recordedBy: string;
+      occurredAt: Date;
+    }[];
+  },
+  lookups: ActivityNameLookups,
+): ActivityEntry[] {
+  const { locationNameById, nameFor } = lookups;
+  const rows: ActivityEntry[] = [];
 
   for (const h of cashTransactions.handovers) {
     rows.push({
@@ -1659,7 +1757,17 @@ export async function getActivity(
     });
   }
 
-  for (const d of daysWorked.value) {
+  return rows;
+}
+
+function daysWorkedToActivityRows(
+  daysWorked: { id: string; staffMemberId: string; date: Date }[],
+  lookups: ActivityNameLookups,
+): ActivityEntry[] {
+  const { nameFor } = lookups;
+  const rows: ActivityEntry[] = [];
+
+  for (const d of daysWorked) {
     // DaysWorked has no separate recorded-at timestamp distinct from the
     // day itself — unlike a correction, there is no effective/entered gap
     // here, so both columns show the same date.
@@ -1677,10 +1785,17 @@ export async function getActivity(
     });
   }
 
-  rows.sort((a, b) => b.enteredAt.getTime() - a.enteredAt.getTime());
+  return rows;
+}
+
+function filterAndPaginateActivity(
+  rows: ActivityEntry[],
+  input: { personId?: string; kind?: ActivityKind; search?: string; page: number; pageSize: number },
+): { rows: ActivityEntry[]; total: number } {
+  const sorted = [...rows].sort((a, b) => b.enteredAt.getTime() - a.enteredAt.getTime());
 
   const search = input.search?.trim().toLowerCase();
-  const filtered = rows.filter(
+  const filtered = sorted.filter(
     (r) =>
       (!input.personId || r.whoId === input.personId) &&
       (!input.kind || r.kind === input.kind) &&
@@ -1693,6 +1808,69 @@ export async function getActivity(
   const total = filtered.length;
   const start = (input.page - 1) * input.pageSize;
   const paged = filtered.slice(start, start + input.pageSize);
+
+  return { rows: paged, total };
+}
+
+export async function getActivity(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    periodStart?: Date;
+    periodEnd?: Date;
+    personId?: string;
+    kind?: ActivityKind;
+    search?: string;
+    page: number;
+    pageSize: number;
+  },
+): Promise<GetActivityResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const periodEnd = input.periodEnd ?? new Date();
+  const periodStart =
+    input.periodStart ??
+    new Date(periodEnd.getTime() - ACTIVITY_DEFAULT_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+
+  const [
+    sales,
+    movements,
+    stockCounts,
+    cashTransactions,
+    daysWorked,
+    locations,
+  ] = await Promise.all([
+    listSalesInPeriod(db, periodStart, periodEnd),
+    getMovementsForActivity(db, requester, periodStart, periodEnd),
+    getStockCountsForActivity(db, requester, periodStart, periodEnd),
+    getCashLedgerTransactions(db, requester, periodStart, periodEnd),
+    getDaysWorkedForActivity(db, requester, periodStart, periodEnd),
+    listLocations(db),
+  ]);
+  if (!movements.ok) return movements;
+  if (!stockCounts.ok) return stockCounts;
+  if (!cashTransactions.ok) return cashTransactions;
+  if (!daysWorked.ok) return daysWorked;
+
+  const lookups = await buildActivityNameLookups(
+    db,
+    locations,
+    sales,
+    movements.lines,
+    stockCounts.counts,
+    cashTransactions,
+    daysWorked.value,
+  );
+
+  const rows: ActivityEntry[] = [
+    ...salesToActivityRows(sales, lookups),
+    ...movementsToActivityRows(movements.lines, lookups),
+    ...countsToActivityRows(stockCounts.counts, lookups),
+    ...cashToActivityRows(cashTransactions, lookups),
+    ...daysWorkedToActivityRows(daysWorked.value, lookups),
+  ];
+
+  const { rows: paged, total } = filterAndPaginateActivity(rows, input);
 
   return { ok: true, rows: paged, total };
 }

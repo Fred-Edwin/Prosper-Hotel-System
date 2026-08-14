@@ -5,6 +5,12 @@
 `cash/logic.ts` + `sales/logic.ts` — checked against `docs/proposal.md` §10.
 Read-only; nothing in `src/` was changed.
 
+> **2026-08-14:** `getActivity` and `getProductLedger` in
+> `reporting/logic.ts` were split into named helper functions (no behavior
+> change — see `docs/architecture.md`'s Reporting section). Line numbers
+> below predate that refactor and no longer point at the same code; the
+> function/helper names they name are still accurate.
+
 ---
 
 ## 1. Verdict
