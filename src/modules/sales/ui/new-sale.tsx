@@ -823,7 +823,7 @@ function Till({
                   Delivery fee (optional)
                 </label>
                 <Input
-                  inputMode="numeric"
+                  inputMode="decimal"
                   placeholder="0"
                   value={deliveryFee}
                   onChange={(e) => setDeliveryFeeAmount(e.target.value)}
@@ -860,7 +860,7 @@ function Till({
                     </SelectContent>
                   </Select>
                   <Input
-                    inputMode="numeric"
+                    inputMode="decimal"
                     placeholder="0"
                     value={p.amount}
                     onChange={(e) => setPayAmount(p.id, e.target.value)}

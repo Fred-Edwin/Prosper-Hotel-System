@@ -4,6 +4,7 @@ import type {
   Sale as PrismaSale,
   SaleLine as PrismaSaleLine,
   PaymentLine as PrismaPaymentLine,
+  Repayment as PrismaRepayment,
 } from "@/generated/prisma/client";
 import type { PaymentLine, PaymentMethod, Repayment, Sale, SaleFulfilment } from "./schema";
 
@@ -12,16 +13,31 @@ import type { PaymentLine, PaymentMethod, Repayment, Sale, SaleFulfilment } from
 // transaction client, not just the top-level PrismaClient.
 type Db = PrismaClient | Prisma.TransactionClient;
 
-// Prisma returns SaleLine.quantity as a Decimal.js object, not a plain
-// number — converted here so the rest of the app keeps using plain numbers
-// as before the Int -> Decimal(10,2) migration.
+// Prisma returns Decimal fields (quantity, and every *Minor money field) as
+// Decimal.js objects, not plain numbers — converted here so the rest of the
+// app keeps using plain numbers as before the Int -> Decimal(10,2)
+// migrations.
 function toSale(
   row: PrismaSale & { lines: PrismaSaleLine[]; paymentLines: PrismaPaymentLine[] },
 ): Sale {
   return {
     ...row,
-    lines: row.lines.map((line) => ({ ...line, quantity: line.quantity.toNumber() })),
+    totalMinor: row.totalMinor.toNumber(),
+    deliveryFeeMinor: row.deliveryFeeMinor?.toNumber() ?? null,
+    lines: row.lines.map((line) => ({
+      ...line,
+      quantity: line.quantity.toNumber(),
+      priceMinor: line.priceMinor.toNumber(),
+    })),
+    paymentLines: row.paymentLines.map((line) => ({
+      ...line,
+      amountMinor: line.amountMinor.toNumber(),
+    })),
   };
+}
+
+function toRepayment(row: PrismaRepayment): Repayment {
+  return { ...row, amountMinor: row.amountMinor.toNumber() };
 }
 
 export async function findSaleById(db: PrismaClient, saleId: string): Promise<Sale | null> {
@@ -111,7 +127,7 @@ export async function sumCreditForCustomer(db: PrismaClient, customerId: string)
     where: { customerId, method: "credit", sale: { voided: false } },
     _sum: { amountMinor: true },
   });
-  return result._sum.amountMinor ?? 0;
+  return result._sum.amountMinor?.toNumber() ?? 0;
 }
 
 // Ticket 33: "Owed to you" on the Dashboard — the sum across all
@@ -122,7 +138,7 @@ export async function sumCreditAcrossAllCustomers(db: PrismaClient): Promise<num
     where: { method: "credit", sale: { voided: false } },
     _sum: { amountMinor: true },
   });
-  return result._sum.amountMinor ?? 0;
+  return result._sum.amountMinor?.toNumber() ?? 0;
 }
 
 // Ticket 36 — formulas.md §11: "owed by a customer = credit given −
@@ -134,7 +150,7 @@ export async function sumRepaymentsForCustomer(db: PrismaClient, customerId: str
     where: { customerId, reversed: false },
     _sum: { amountMinor: true },
   });
-  return result._sum.amountMinor ?? 0;
+  return result._sum.amountMinor?.toNumber() ?? 0;
 }
 
 export async function sumRepaymentsAcrossAllCustomers(db: PrismaClient): Promise<number> {
@@ -142,24 +158,26 @@ export async function sumRepaymentsAcrossAllCustomers(db: PrismaClient): Promise
     where: { reversed: false },
     _sum: { amountMinor: true },
   });
-  return result._sum.amountMinor ?? 0;
+  return result._sum.amountMinor?.toNumber() ?? 0;
 }
 
 export async function createRepaymentRecord(
   db: PrismaClient,
   data: { customerId: string; locationId: string; staffMemberId: string; amountMinor: number },
 ): Promise<Repayment> {
-  return db.repayment.create({ data });
+  const row = await db.repayment.create({ data });
+  return toRepayment(row);
 }
 
 export async function findRepaymentsForCustomer(
   db: PrismaClient,
   customerId: string,
 ): Promise<Repayment[]> {
-  return db.repayment.findMany({
+  const rows = await db.repayment.findMany({
     where: { customerId, reversed: false },
     orderBy: { occurredAt: "desc" },
   });
+  return rows.map(toRepayment);
 }
 
 // Ticket 36's customer detail view: credit lines with the sale's
@@ -174,7 +192,11 @@ export async function findCreditPaymentLinesForCustomer(
     include: { sale: true },
     orderBy: { sale: { occurredAt: "desc" } },
   });
-  return lines.map(({ sale, ...line }) => ({ ...line, occurredAt: sale.occurredAt }));
+  return lines.map(({ sale, ...line }) => ({
+    ...line,
+    amountMinor: line.amountMinor.toNumber(),
+    occurredAt: sale.occurredAt,
+  }));
 }
 
 // Ticket 24: count-derived sales at the canteen subtracts recorded credit
@@ -227,7 +249,7 @@ export async function sumSalesRevenueMinorAtLocationInPeriod(
     where: { locationId, voided: false, occurredAt: { gt: periodStart, lte: periodEnd } },
     _sum: { totalMinor: true },
   });
-  return result._sum.totalMinor ?? 0;
+  return result._sum.totalMinor?.toNumber() ?? 0;
 }
 
 export async function findSalesForStaffToday(

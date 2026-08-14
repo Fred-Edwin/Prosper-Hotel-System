@@ -96,7 +96,34 @@ describe("recordIngredientReceipt", () => {
     ]);
 
     const ingredient = await testDb.ingredient.findUnique({ where: { id: flourId } });
-    expect(ingredient?.lastKnownCostMinor).toBe(8000);
+    expect(ingredient?.lastKnownCostMinor?.toNumber()).toBe(8000);
+  });
+
+  // Real supplier prices are cent-precise (e.g. cooking oil at KSh 253.33/L)
+  // — Decimal(10,2) storage must round-trip that exactly, not silently
+  // round to whole shillings.
+  test("records and reads back a cent-precise cost exactly", async () => {
+    const requester = staffAt("store_manager", restaurantId, storeManagerId);
+
+    const result = await recordIngredientReceipt(testDb, requester, {
+      locationId: restaurantId,
+      lines: [{ itemType: "ingredient", itemId: flourId, quantity: 10, unitCostMinor: 253.33 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.movements).toEqual([
+      expect.objectContaining({
+        ingredientId: flourId,
+        locationId: restaurantId,
+        quantity: 10,
+        reason: "received",
+        unitCostMinor: 253.33,
+      }),
+    ]);
+
+    const ingredient = await testDb.ingredient.findUnique({ where: { id: flourId } });
+    expect(ingredient?.lastKnownCostMinor?.toNumber()).toBe(253.33);
   });
 
   test("denies a staff member recording at a location they can't access", async () => {
@@ -217,7 +244,7 @@ describe("recordIngredientReceipt", () => {
     ]);
 
     const product = await testDb.product.findUnique({ where: { id: sodaId } });
-    expect(product?.lastKnownCostMinor).toBe(5000);
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(5000);
   });
 
   test("accepts a mixed delivery of product and ingredient lines sharing one receipt id", async () => {
@@ -242,9 +269,9 @@ describe("recordIngredientReceipt", () => {
     expect([...receiptIds][0]).toBeTruthy();
 
     const ingredient = await testDb.ingredient.findUnique({ where: { id: flourId } });
-    expect(ingredient?.lastKnownCostMinor).toBe(8000);
+    expect(ingredient?.lastKnownCostMinor?.toNumber()).toBe(8000);
     const product = await testDb.product.findUnique({ where: { id: sodaId } });
-    expect(product?.lastKnownCostMinor).toBe(5000);
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(5000);
   });
 
   test("the running average applies correctly to a product line given quantity already on hand", async () => {
@@ -264,7 +291,28 @@ describe("recordIngredientReceipt", () => {
     expect(second.ok).toBe(true);
 
     const product = await testDb.product.findUnique({ where: { id: sodaId } });
-    expect(product?.lastKnownCostMinor).toBe(9000);
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(9000);
+  });
+
+  // The running average is cent-precise, not rounded to whole shillings —
+  // (10*80 + 5*95.50) / 15 = 85.17 (2dp), not 85.
+  test("the running average keeps cent precision, not whole-shilling rounding", async () => {
+    const requester = staffAt("store_manager", restaurantId, storeManagerId);
+
+    const first = await recordIngredientReceipt(testDb, requester, {
+      locationId: restaurantId,
+      lines: [{ itemType: "product", itemId: sodaId, quantity: 10, unitCostMinor: 80 }],
+    });
+    expect(first.ok).toBe(true);
+
+    const second = await recordIngredientReceipt(testDb, requester, {
+      locationId: restaurantId,
+      lines: [{ itemType: "product", itemId: sodaId, quantity: 5, unitCostMinor: 95.5 }],
+    });
+    expect(second.ok).toBe(true);
+
+    const product = await testDb.product.findUnique({ where: { id: sodaId } });
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(85.17);
   });
 
   // Review finding (PR #6): quantity-on-hand was read once, up front, for
@@ -287,7 +335,7 @@ describe("recordIngredientReceipt", () => {
     expect(result.ok).toBe(true);
 
     const product = await testDb.product.findUnique({ where: { id: sodaId } });
-    expect(product?.lastKnownCostMinor).toBe(9000);
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(9000);
   });
 
   test("two lines for the same ingredient in one call apply the running average sequentially", async () => {
@@ -304,7 +352,7 @@ describe("recordIngredientReceipt", () => {
     expect(result.ok).toBe(true);
 
     const ingredient = await testDb.ingredient.findUnique({ where: { id: flourId } });
-    expect(ingredient?.lastKnownCostMinor).toBe(9000);
+    expect(ingredient?.lastKnownCostMinor?.toNumber()).toBe(9000);
   });
 
   test("rejects a line for an inactive product", async () => {

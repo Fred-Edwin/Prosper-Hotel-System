@@ -234,7 +234,7 @@ describe("recordHandover", () => {
 
     const all = await testDb.handover.findMany({ where: { staffMemberId: "staff-1" } });
     expect(all).toHaveLength(1);
-    expect(all[0].actualCashMinor).toBe(100);
+    expect(all[0].actualCashMinor.toNumber()).toBe(100);
   });
 
   test("the owner can still edit a handover in place after the day is closed", async () => {
@@ -368,7 +368,7 @@ describe("recordHandover — canteen", () => {
 
     const all = await testDb.handover.findMany({ where: { staffMemberId: "staff-3" } });
     expect(all).toHaveLength(1);
-    expect(all[0].actualCashMinor).toBe(160);
+    expect(all[0].actualCashMinor.toNumber()).toBe(160);
   });
 });
 

@@ -52,7 +52,9 @@ model StaffMember {
   // proposal.md §11: "a daily rate set for each" — minor units, same
   // convention as Product.priceMinor. Pay calculation itself (days worked
   // x rate) is a follow-on ticket; this ticket only stores the rate.
-  dailyRateMinor      Int
+  // Decimal(10,2): money is cent-precise, not whole-shilling only — see
+  // Product.priceMinor.
+  dailyRateMinor      Decimal              @db.Decimal(10, 2)
   // docs/architecture.md: deactivated, never deleted — a former employee's
   // sales must stay attributed to them.
   active              Boolean              @default(true)
@@ -90,12 +92,15 @@ model Product {
   kind               ProductKind
   // Minor units (e.g. cents), never float — avoids rounding drift in money
   // figures. Null means no price set, distinct from priced-at-zero.
-  priceMinor         Int?
+  // Decimal(10,2): real supplier/delivery prices are cent-precise (e.g. KSh
+  // 253.33), not whole-shilling only — a plain Int silently rounded them.
+  priceMinor         Decimal?        @db.Decimal(10, 2)
   // Convenience figure only, not the authoritative cost history (that's
   // stock's movement ledger). Null until a delivery is received. Same
   // running-average update as Ingredient.lastKnownCostMinor (formulas.md
   // §3) — applies to purchased goods, not recipe-costed cooked food.
-  lastKnownCostMinor Int?
+  // Decimal(10,2): see priceMinor above.
+  lastKnownCostMinor Decimal?        @db.Decimal(10, 2)
   // Ticket 44: null means no threshold defined, distinct from a threshold
   // of zero — same nullable-until-set convention as priceMinor above.
   // Decimal(10,2): thresholds may be fractional, matching quantity fields
@@ -146,7 +151,8 @@ model Ingredient {
   unitOfMeasure      String
   // Convenience figure only, not the authoritative cost history (that's
   // stock's movement ledger once receiving is built). Null until known.
-  lastKnownCostMinor Int?
+  // Decimal(10,2): see Product.priceMinor.
+  lastKnownCostMinor Decimal?             @db.Decimal(10, 2)
   // Ticket 44: same nullable-until-set convention as Product.lowStockLevel.
   // Decimal(10,2): ingredient stock is measured fractionally (kg, litre) —
   // see Ingredient.unitOfMeasure and quantity fields below.
@@ -306,13 +312,13 @@ model Sale {
   // Minor units, same convention as Product.priceMinor. Sum of line
   // quantity x product price at the time of sale — stored rather than
   // recomputed, because a later product price change must not reshape a
-  // past sale's total.
-  totalMinor       Int
+  // past sale's total. Decimal(10,2): see Product.priceMinor.
+  totalMinor       Decimal        @db.Decimal(10, 2)
   // Present only when fulfilment = delivery. Added on top of product-line
   // value to form totalMinor; kept as its own figure (not blended into line
   // totals) so a later reporting stage can tell delivery income apart from
-  // product revenue — ticket 11.
-  deliveryFeeMinor Int?
+  // product revenue — ticket 11. Decimal(10,2): see Product.priceMinor.
+  deliveryFeeMinor Decimal?       @db.Decimal(10, 2)
   lines            SaleLine[]
   paymentLines     PaymentLine[]
   occurredAt       DateTime       @default(now())
@@ -344,7 +350,8 @@ model SaleLine {
   // whole-counted but a few (e.g. weighed portions) are not.
   quantity   Decimal @db.Decimal(10, 2)
   // The product's priceMinor at the moment of sale — see Sale.totalMinor.
-  priceMinor Int
+  // Decimal(10,2): see Product.priceMinor.
+  priceMinor Decimal @db.Decimal(10, 2)
 
   @@map("sale_lines")
 }
@@ -354,7 +361,8 @@ model PaymentLine {
   saleId      String
   sale        Sale          @relation(fields: [saleId], references: [id])
   method      PaymentMethod
-  amountMinor Int
+  // Decimal(10,2): see Product.priceMinor.
+  amountMinor Decimal       @db.Decimal(10, 2)
   // Required for credit lines only — CONTEXT.md: "any staff member may
   // extend credit provided the customer is named." Null for cash/M-Pesa.
   customerId  String?
@@ -376,7 +384,8 @@ model Repayment {
   location      Location    @relation(fields: [locationId], references: [id])
   staffMemberId String
   staffMember   StaffMember @relation(fields: [staffMemberId], references: [id])
-  amountMinor   Int
+  // Decimal(10,2): see Product.priceMinor.
+  amountMinor   Decimal     @db.Decimal(10, 2)
   occurredAt    DateTime    @default(now())
   reversed      Boolean     @default(false)
   reversedAt    DateTime?
@@ -483,8 +492,9 @@ model StockMovement {
   // ways CONTEXT.md's Non-sales Stock Consumption is valued, snapshotted
   // at record time same as SaleLine.priceMinor, so a later price/cost
   // change never reshapes a past entry. Null for every other reason.
-  costBasisMinor     Int?
-  sellingValueMinor  Int?
+  // Decimal(10,2): see Product.priceMinor.
+  costBasisMinor     Decimal?            @db.Decimal(10, 2)
+  sellingValueMinor  Decimal?            @db.Decimal(10, 2)
   isEstimated        Boolean?
   staffMemberId      String
   staffMember        StaffMember         @relation(fields: [staffMemberId], references: [id])
@@ -529,13 +539,14 @@ model IngredientMovement {
   // `received`; unused for wasted/consumed/given_away (ticket 15), which
   // use costBasisMinor/sellingValueMinor below instead — an ingredient's
   // per-unit purchase cost doesn't change when some of it is wasted.
-  unitCostMinor      Int?
+  // Decimal(10,2): see Product.priceMinor.
+  unitCostMinor      Decimal?            @db.Decimal(10, 2)
   // Populated only for wasted/consumed/given_away (ticket 15), same
   // convention as StockMovement. Ingredients have no selling price
   // (CONTEXT.md: never sold on their own), so sellingValueMinor is always
   // null here — only costBasisMinor/isEstimated apply.
-  costBasisMinor     Int?
-  sellingValueMinor  Int?
+  costBasisMinor     Decimal?            @db.Decimal(10, 2)
+  sellingValueMinor  Decimal?            @db.Decimal(10, 2)
   isEstimated        Boolean?
   staffMemberId      String
   staffMember        StaffMember         @relation(fields: [staffMemberId], references: [id])
@@ -635,10 +646,11 @@ model Handover {
   // the whole figure," not "expected zero M-Pesa." Any comparison
   // against actualCashMinor/actualMpesaMinor must branch on this null
   // rather than assume both are always populated.
-  expectedCashMinor  Int
-  expectedMpesaMinor Int?
-  actualCashMinor    Int
-  actualMpesaMinor   Int
+  // Decimal(10,2): see Product.priceMinor.
+  expectedCashMinor  Decimal     @db.Decimal(10, 2)
+  expectedMpesaMinor Decimal?    @db.Decimal(10, 2)
+  actualCashMinor    Decimal     @db.Decimal(10, 2)
+  actualMpesaMinor   Decimal     @db.Decimal(10, 2)
   occurredAt         DateTime    @default(now())
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
@@ -683,7 +695,8 @@ model Expense {
   // this field existed, since there is no real record of which method
   // they used.
   paymentMethod      PaymentMethod   @default(cash)
-  amountMinor        Int
+  // Decimal(10,2): see Product.priceMinor.
+  amountMinor        Decimal         @db.Decimal(10, 2)
   note               String?
   // Required only for category = stock — the IngredientMovement.receiptId
   // group this payment pays for. Not a Prisma relation: receiptId is a
@@ -709,7 +722,8 @@ model DrawingDebt {
   id          String    @id @default(cuid())
   expenseId   String    @unique
   expense     Expense   @relation(fields: [expenseId], references: [id])
-  amountMinor Int
+  // Decimal(10,2): see Product.priceMinor.
+  amountMinor Decimal   @db.Decimal(10, 2)
   reversed    Boolean   @default(false)
   reversedAt  DateTime?
 
@@ -721,7 +735,8 @@ model DrawingDebt {
 // discipline (never edited, only added to or marked reversed).
 model DrawingRepayment {
   id            String        @id @default(cuid())
-  amountMinor   Int
+  // Decimal(10,2): see Product.priceMinor.
+  amountMinor   Decimal       @db.Decimal(10, 2)
   // Cash or M-Pesa only — never credit, same reasoning as Expense.
   // Defaulted to cash for rows recorded before this field existed, since
   // there is no real record of which method they used. Ticket 40 — the

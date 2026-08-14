@@ -9,15 +9,24 @@ import type {
 import type { Asset, Category, Ingredient, Product, ProductKind, Recipe } from "./schema";
 
 // Prisma returns Decimal fields as Decimal.js objects, not plain numbers.
-// Every quantity/threshold field is converted to a number at this boundary
-// so the rest of the app (logic.ts, routes.ts, UI) keeps working with plain
-// numbers exactly as before the Int -> Decimal(10,2) migration.
+// Every quantity/threshold/money field is converted to a number at this
+// boundary so the rest of the app (logic.ts, routes.ts, UI) keeps working
+// with plain numbers exactly as before the Int -> Decimal(10,2) migrations.
 function toProduct(row: PrismaProduct): Product {
-  return { ...row, lowStockLevel: row.lowStockLevel?.toNumber() ?? null };
+  return {
+    ...row,
+    priceMinor: row.priceMinor?.toNumber() ?? null,
+    lastKnownCostMinor: row.lastKnownCostMinor?.toNumber() ?? null,
+    lowStockLevel: row.lowStockLevel?.toNumber() ?? null,
+  };
 }
 
 function toIngredient(row: PrismaIngredient): Ingredient {
-  return { ...row, lowStockLevel: row.lowStockLevel?.toNumber() ?? null };
+  return {
+    ...row,
+    lastKnownCostMinor: row.lastKnownCostMinor?.toNumber() ?? null,
+    lowStockLevel: row.lowStockLevel?.toNumber() ?? null,
+  };
 }
 
 function toRecipeLine(row: PrismaRecipeLine): { ingredientId: string; quantity: number } {

@@ -297,7 +297,9 @@ export async function reactivateCategory(
 //   new average = (qty on hand × current average + qty bought × price paid)
 //                 ÷ (qty on hand + qty bought)
 // Where nothing is on hand yet (or no average is known), the new average is
-// simply the price just paid.
+// simply the price just paid. Rounded to cents (2dp), matching storage
+// precision (Decimal(10,2)) — not whole shillings, which would silently
+// discard the cent-level precision real delivery prices carry.
 function runningAverageMinor(input: {
   quantityOnHand: number;
   currentAverageMinor: number | null;
@@ -308,7 +310,7 @@ function runningAverageMinor(input: {
   if (quantityOnHand <= 0 || currentAverageMinor == null) return unitCostMinor;
 
   const totalValue = quantityOnHand * currentAverageMinor + quantityBought * unitCostMinor;
-  return Math.round(totalValue / (quantityOnHand + quantityBought));
+  return Math.round((totalValue / (quantityOnHand + quantityBought)) * 100) / 100;
 }
 
 // Deliberately not owner-gated, unlike updateIngredient: this only records
@@ -414,7 +416,10 @@ async function withPerUnitCost(
     totalCostMinor += cost * line.quantity;
   }
 
-  return { ...recipe, perUnitCostMinor: Math.round(totalCostMinor / recipe.yieldQuantity) };
+  return {
+    ...recipe,
+    perUnitCostMinor: Math.round((totalCostMinor / recipe.yieldQuantity) * 100) / 100,
+  };
 }
 
 export async function getCurrentRecipe(

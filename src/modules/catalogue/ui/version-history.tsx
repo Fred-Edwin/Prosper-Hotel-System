@@ -22,7 +22,7 @@ function perUnitMinor(recipe: Recipe, ingredients: Ingredient[]): number | null 
     if (cost == null) return null;
     totalMinor += cost * line.quantity;
   }
-  return Math.round(totalMinor / recipe.yieldQuantity);
+  return Math.round((totalMinor / recipe.yieldQuantity) * 100) / 100;
 }
 
 export function VersionHistory({

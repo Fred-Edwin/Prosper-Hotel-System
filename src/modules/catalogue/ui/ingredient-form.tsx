@@ -63,7 +63,7 @@ export function IngredientForm({
           onSave({
             name,
             unitOfMeasure,
-            lastKnownCostMinor: cost.trim() === "" ? null : Math.round(Number(cost)),
+            lastKnownCostMinor: cost.trim() === "" ? null : Number(cost),
             lowStockLevel: lowStockLevel.trim() === "" ? null : Number(lowStockLevel),
             active,
           });
@@ -89,7 +89,7 @@ export function IngredientForm({
             <Input
               value={cost}
               onChange={(e) => setCost(e.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
               className="tabular h-9"
             />
           </Field>

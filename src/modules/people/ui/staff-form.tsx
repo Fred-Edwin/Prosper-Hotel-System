@@ -91,7 +91,7 @@ export function StaffForm({
             phone,
             role,
             locationId,
-            dailyRateMinor: dailyRate.trim() === "" ? 0 : Math.round(Number(dailyRate)),
+            dailyRateMinor: dailyRate.trim() === "" ? 0 : Number(dailyRate),
             pin: pin.trim() === "" ? undefined : pin.trim(),
             active,
           });
@@ -140,7 +140,7 @@ export function StaffForm({
             <Input
               value={dailyRate}
               onChange={(e) => setDailyRate(e.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
               className="tabular h-9"
             />
           </Field>

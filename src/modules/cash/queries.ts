@@ -2,6 +2,8 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import type {
   Expense as PrismaExpense,
   DrawingRepayment as PrismaDrawingRepayment,
+  DrawingDebt as PrismaDrawingDebt,
+  Handover as PrismaHandover,
 } from "@/generated/prisma/client";
 import type {
   DrawingDebt,
@@ -12,16 +14,42 @@ import type {
   Handover,
 } from "./schema";
 
+// Prisma returns Decimal fields (every *Minor money field) as Decimal.js
+// objects, not plain numbers — converted here so the rest of the app
+// (logic.ts, routes.ts, UI) keeps working with plain numbers exactly as
+// before the Int -> Decimal(10,2) migration.
+function toHandover(row: PrismaHandover): Handover {
+  return {
+    ...row,
+    expectedCashMinor: row.expectedCashMinor.toNumber(),
+    expectedMpesaMinor: row.expectedMpesaMinor?.toNumber() ?? null,
+    actualCashMinor: row.actualCashMinor.toNumber(),
+    actualMpesaMinor: row.actualMpesaMinor.toNumber(),
+  };
+}
+
 // Prisma's generated PaymentMethod is shared with PaymentLine, so it
 // includes "credit" — a sales-only concept. createExpense never writes
 // it, so this narrowing is safe; it just isn't expressible in the
 // Prisma-generated type itself.
 function toExpense(row: PrismaExpense): Expense {
-  return { ...row, paymentMethod: row.paymentMethod as ExpensePaymentMethod };
+  return {
+    ...row,
+    amountMinor: row.amountMinor.toNumber(),
+    paymentMethod: row.paymentMethod as ExpensePaymentMethod,
+  };
+}
+
+function toDrawingDebt(row: PrismaDrawingDebt): DrawingDebt {
+  return { ...row, amountMinor: row.amountMinor.toNumber() };
 }
 
 function toDrawingRepayment(row: PrismaDrawingRepayment): DrawingRepayment {
-  return { ...row, paymentMethod: row.paymentMethod as ExpensePaymentMethod };
+  return {
+    ...row,
+    amountMinor: row.amountMinor.toNumber(),
+    paymentMethod: row.paymentMethod as ExpensePaymentMethod,
+  };
 }
 
 export async function findTodaysHandover(
@@ -31,13 +59,14 @@ export async function findTodaysHandover(
   dayStart: Date,
   dayEnd: Date,
 ): Promise<Handover | null> {
-  return db.handover.findFirst({
+  const row = await db.handover.findFirst({
     where: {
       staffMemberId,
       locationId,
       occurredAt: { gte: dayStart, lt: dayEnd },
     },
   });
+  return row && toHandover(row);
 }
 
 export async function createHandoverRecord(
@@ -53,7 +82,8 @@ export async function createHandoverRecord(
     actualMpesaMinor: number;
   },
 ): Promise<Handover> {
-  return db.handover.create({ data });
+  const row = await db.handover.create({ data });
+  return toHandover(row);
 }
 
 export async function updateHandoverActuals(
@@ -61,7 +91,8 @@ export async function updateHandoverActuals(
   id: string,
   data: { actualCashMinor: number; actualMpesaMinor: number },
 ): Promise<Handover> {
-  return db.handover.update({ where: { id }, data });
+  const row = await db.handover.update({ where: { id }, data });
+  return toHandover(row);
 }
 
 export async function createExpense(
@@ -85,7 +116,8 @@ export async function createDrawingDebt(
   db: PrismaClient,
   data: { expenseId: string; amountMinor: number },
 ): Promise<DrawingDebt> {
-  return db.drawingDebt.create({ data });
+  const row = await db.drawingDebt.create({ data });
+  return toDrawingDebt(row);
 }
 
 export async function findExpenseById(db: PrismaClient, id: string): Promise<Expense | null> {
@@ -97,7 +129,8 @@ export async function findDrawingDebtByExpenseId(
   db: PrismaClient,
   expenseId: string,
 ): Promise<DrawingDebt | null> {
-  return db.drawingDebt.findUnique({ where: { expenseId } });
+  const row = await db.drawingDebt.findUnique({ where: { expenseId } });
+  return row && toDrawingDebt(row);
 }
 
 export async function markExpenseReversed(
@@ -113,10 +146,11 @@ export async function markExpenseReversed(
 }
 
 export async function markDrawingDebtReversed(db: PrismaClient, id: string): Promise<DrawingDebt> {
-  return db.drawingDebt.update({
+  const row = await db.drawingDebt.update({
     where: { id },
     data: { reversed: true, reversedAt: new Date() },
   });
+  return toDrawingDebt(row);
 }
 
 export async function listExpensesAtLocation(
@@ -152,7 +186,7 @@ export async function sumRunningCostsMinorInPeriod(
     },
     _sum: { amountMinor: true },
   });
-  return result._sum.amountMinor ?? 0;
+  return result._sum.amountMinor?.toNumber() ?? 0;
 }
 
 export async function sumUnreversedDrawingDebt(db: PrismaClient): Promise<number> {
@@ -160,7 +194,7 @@ export async function sumUnreversedDrawingDebt(db: PrismaClient): Promise<number
     where: { reversed: false },
     _sum: { amountMinor: true },
   });
-  return result._sum.amountMinor ?? 0;
+  return result._sum.amountMinor?.toNumber() ?? 0;
 }
 
 // Ticket 32 — symmetric counterpart to sumUnreversedDrawingDebt.
@@ -169,7 +203,7 @@ export async function sumUnreversedDrawingRepayment(db: PrismaClient): Promise<n
     where: { reversed: false },
     _sum: { amountMinor: true },
   });
-  return result._sum.amountMinor ?? 0;
+  return result._sum.amountMinor?.toNumber() ?? 0;
 }
 
 // Ticket 40 — getRunningCashBalance needs repayments split by method the
@@ -189,8 +223,8 @@ export async function sumUnreversedDrawingRepaymentByMethod(
     }),
   ]);
   return {
-    cashMinor: cash._sum.amountMinor ?? 0,
-    mpesaMinor: mpesa._sum.amountMinor ?? 0,
+    cashMinor: cash._sum.amountMinor?.toNumber() ?? 0,
+    mpesaMinor: mpesa._sum.amountMinor?.toNumber() ?? 0,
   };
 }
 
@@ -254,8 +288,8 @@ export async function sumHandoversMinor(
     _sum: { actualCashMinor: true, actualMpesaMinor: true },
   });
   return {
-    cashMinor: result._sum.actualCashMinor ?? 0,
-    mpesaMinor: result._sum.actualMpesaMinor ?? 0,
+    cashMinor: result._sum.actualCashMinor?.toNumber() ?? 0,
+    mpesaMinor: result._sum.actualMpesaMinor?.toNumber() ?? 0,
   };
 }
 
@@ -277,8 +311,8 @@ export async function sumExpensesMinorByMethod(
     }),
   ]);
   return {
-    cashMinor: cash._sum.amountMinor ?? 0,
-    mpesaMinor: mpesa._sum.amountMinor ?? 0,
+    cashMinor: cash._sum.amountMinor?.toNumber() ?? 0,
+    mpesaMinor: mpesa._sum.amountMinor?.toNumber() ?? 0,
   };
 }
 
@@ -296,7 +330,7 @@ export async function findTodaysHandoversAtLocations(
     orderBy: { staffMember: { name: "asc" } },
   });
   return handovers.map(({ staffMember, ...handover }) => ({
-    ...handover,
+    ...toHandover(handover),
     staffName: staffMember.name,
   }));
 }
@@ -311,10 +345,11 @@ export async function listHandoversInPeriod(
   periodStart: Date,
   periodEnd: Date,
 ): Promise<Handover[]> {
-  return db.handover.findMany({
+  const rows = await db.handover.findMany({
     where: { occurredAt: { gt: periodStart, lte: periodEnd } },
     orderBy: { occurredAt: "asc" },
   });
+  return rows.map(toHandover);
 }
 
 // Ticket 40 — the cash ledger's day-expansion needs individual expense

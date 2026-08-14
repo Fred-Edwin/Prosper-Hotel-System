@@ -411,7 +411,7 @@ function Receiving({
                     <span className="text-[11px] text-muted-foreground">{l.unit}</span>
                     <span className="text-[11px] text-muted-foreground">@</span>
                     <Input
-                      inputMode="numeric"
+                      inputMode="decimal"
                       placeholder="Price/unit"
                       value={l.unitCostMinor}
                       onChange={(e) => setUnitCost(l.itemId, e.target.value)}

@@ -1134,7 +1134,7 @@ describe("recordSaleCorrection", () => {
     const untouched = await testDb.sale.findUnique({ where: { id: original.sale.id } });
     expect(untouched?.occurredAt.getTime()).toBe(originalOccurredAt);
     expect(untouched?.effectiveAt.getTime()).toBe(originalEffectiveAt);
-    expect(untouched?.totalMinor).toBe(80);
+    expect(untouched?.totalMinor.toNumber()).toBe(80);
     expect(untouched?.isCorrection).toBe(false);
   });
 

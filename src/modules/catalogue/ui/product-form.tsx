@@ -110,7 +110,7 @@ export function ProductForm({
           onSave({
             name,
             kind,
-            priceMinor: price.trim() === "" ? null : Math.round(Number(price)),
+            priceMinor: price.trim() === "" ? null : Number(price),
             categoryId,
             lowStockLevel: lowStockLevel.trim() === "" ? null : Number(lowStockLevel),
             active,
@@ -183,7 +183,7 @@ export function ProductForm({
             <Input
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
               className="tabular h-9"
             />
           </Field>

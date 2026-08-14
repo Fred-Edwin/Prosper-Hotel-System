@@ -992,7 +992,7 @@ function previousUnitCostMinor(input: {
 
   const valueBeforePurchases = closingQty * currentAverageMinor - purchasedValueMinor;
   if (valueBeforePurchases < 0) return currentAverageMinor;
-  return Math.round(valueBeforePurchases / qtyBeforePurchases);
+  return Math.round((valueBeforePurchases / qtyBeforePurchases) * 100) / 100;
 }
 
 export async function getStoreLedger(

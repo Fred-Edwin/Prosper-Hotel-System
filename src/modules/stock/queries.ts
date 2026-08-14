@@ -27,13 +27,24 @@ type Db = PrismaClient | Prisma.TransactionClient;
 // Prisma returns Decimal fields as Decimal.js objects, not plain numbers —
 // converted here so the rest of the app (logic.ts, routes.ts, UI) keeps
 // working with plain numbers exactly as before the Int -> Decimal(10,2)
-// migration.
+// migrations.
 export function toStockMovement(row: PrismaStockMovement): StockMovement {
-  return { ...row, quantity: row.quantity.toNumber() };
+  return {
+    ...row,
+    quantity: row.quantity.toNumber(),
+    costBasisMinor: row.costBasisMinor?.toNumber() ?? null,
+    sellingValueMinor: row.sellingValueMinor?.toNumber() ?? null,
+  };
 }
 
 export function toIngredientMovement(row: PrismaIngredientMovement): IngredientMovement {
-  return { ...row, quantity: row.quantity.toNumber() };
+  return {
+    ...row,
+    quantity: row.quantity.toNumber(),
+    unitCostMinor: row.unitCostMinor?.toNumber() ?? null,
+    costBasisMinor: row.costBasisMinor?.toNumber() ?? null,
+    sellingValueMinor: row.sellingValueMinor?.toNumber() ?? null,
+  };
 }
 
 function toStockCount(row: PrismaStockCount & { lines: PrismaStockCountLine[] }): StockCount {
@@ -217,7 +228,7 @@ export async function findReceiptsAtLocation(db: PrismaClient, locationId: strin
     productIds.length > 0
       ? await db.product.findMany({ where: { id: { in: productIds } } })
       : [];
-  const productCostById = new Map(products.map((p) => [p.id, p.lastKnownCostMinor ?? 0]));
+  const productCostById = new Map(products.map((p) => [p.id, p.lastKnownCostMinor?.toNumber() ?? 0]));
 
   const byReceiptId = new Map<
     string,
@@ -226,7 +237,7 @@ export async function findReceiptsAtLocation(db: PrismaClient, locationId: strin
   for (const movement of ingredientMovements) {
     const receiptId = movement.receiptId as string;
     const group = byReceiptId.get(receiptId) ?? { occurredAt: movement.occurredAt, totalMinor: 0, lineCount: 0 };
-    group.totalMinor += movement.quantity.toNumber() * (movement.unitCostMinor ?? 0);
+    group.totalMinor += movement.quantity.toNumber() * (movement.unitCostMinor?.toNumber() ?? 0);
     group.lineCount += 1;
     byReceiptId.set(receiptId, group);
   }
@@ -341,7 +352,7 @@ export async function sumIngredientsBoughtMinorAtLocationInPeriod(
     },
     select: { quantity: true, unitCostMinor: true },
   });
-  return received.reduce((sum, r) => sum + r.quantity.toNumber() * (r.unitCostMinor ?? 0), 0);
+  return received.reduce((sum, r) => sum + r.quantity.toNumber() * (r.unitCostMinor?.toNumber() ?? 0), 0);
 }
 
 // Ticket 25: formulas.md §5's transfer rate needs "ingredients the
@@ -391,7 +402,7 @@ export async function sumIngredientsPurchasedByIngredientAtLocationInPeriod(
     const quantity = r.quantity.toNumber();
     const existing = byIngredient.get(r.ingredientId) ?? { quantity: 0, valueMinor: 0 };
     existing.quantity += quantity;
-    existing.valueMinor += quantity * (r.unitCostMinor ?? 0);
+    existing.valueMinor += quantity * (r.unitCostMinor?.toNumber() ?? 0);
     byIngredient.set(r.ingredientId, existing);
   }
   return Array.from(byIngredient.entries()).map(([ingredientId, v]) => ({ ingredientId, ...v }));
@@ -532,8 +543,8 @@ export async function findNonSalesMovementsAtLocationInPeriod(
       itemId: m.productId,
       quantity: m.quantity.toNumber(),
       reason: m.reason,
-      costBasisMinor: m.costBasisMinor,
-      sellingValueMinor: m.sellingValueMinor,
+      costBasisMinor: m.costBasisMinor?.toNumber() ?? null,
+      sellingValueMinor: m.sellingValueMinor?.toNumber() ?? null,
       isEstimated: m.isEstimated,
       staffMemberId: m.staffMemberId,
       occurredAt: m.occurredAt,
@@ -543,8 +554,8 @@ export async function findNonSalesMovementsAtLocationInPeriod(
       itemId: m.ingredientId,
       quantity: m.quantity.toNumber(),
       reason: m.reason,
-      costBasisMinor: m.costBasisMinor,
-      sellingValueMinor: m.sellingValueMinor,
+      costBasisMinor: m.costBasisMinor?.toNumber() ?? null,
+      sellingValueMinor: m.sellingValueMinor?.toNumber() ?? null,
       isEstimated: m.isEstimated,
       staffMemberId: m.staffMemberId,
       occurredAt: m.occurredAt,
@@ -607,8 +618,8 @@ export async function findAllNonSalesMovementsInPeriod(
       locationId: m.locationId,
       quantity: m.quantity.toNumber(),
       reason: m.reason,
-      costBasisMinor: m.costBasisMinor,
-      sellingValueMinor: m.sellingValueMinor,
+      costBasisMinor: m.costBasisMinor?.toNumber() ?? null,
+      sellingValueMinor: m.sellingValueMinor?.toNumber() ?? null,
       isEstimated: m.isEstimated,
       staffMemberId: m.staffMemberId,
       occurredAt: m.occurredAt,
@@ -619,8 +630,8 @@ export async function findAllNonSalesMovementsInPeriod(
       locationId: m.locationId,
       quantity: m.quantity.toNumber(),
       reason: m.reason,
-      costBasisMinor: m.costBasisMinor,
-      sellingValueMinor: m.sellingValueMinor,
+      costBasisMinor: m.costBasisMinor?.toNumber() ?? null,
+      sellingValueMinor: m.sellingValueMinor?.toNumber() ?? null,
       isEstimated: m.isEstimated,
       staffMemberId: m.staffMemberId,
       occurredAt: m.occurredAt,

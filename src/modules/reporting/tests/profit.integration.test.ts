@@ -147,9 +147,9 @@ describe("computeTransferCost — formulas.md §5", () => {
     const line = result.lines.find((l) => l.productId === chips.id);
     expect(line?.usedRecipeCost).toBe(true);
     expect(line?.isEstimated).toBe(false);
-    // 22.5/plate rounds to 23 (Math.round used in getCurrentRecipe) — assert against actual recipe cost.
-    expect(line?.costMinor).toBe(23 * 5);
-    expect(result.transferCostMinor).toBe(23 * 5);
+    // 22.5/plate, cent-precise (getCurrentRecipe rounds to 2dp, not whole shillings).
+    expect(line?.costMinor).toBe(22.5 * 5);
+    expect(result.transferCostMinor).toBe(22.5 * 5);
   });
 
   test("falls back to the 60%-of-selling-price estimate where the item has no recipe", async () => {
@@ -474,8 +474,8 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // per-unit recipe cost = round(50/40) = 1; 32 sold at cost 1/unit = 32.
-    expect(result.totalMinor).toBe(32);
+    // per-unit recipe cost = 50/40 = 1.25 (cent-precise); 32 sold at 1.25/unit = 40.
+    expect(result.totalMinor).toBe(40);
   });
 
   test("the canteen's own goods, sold: valued at purchase cost, exact — no rate, no estimate", async () => {

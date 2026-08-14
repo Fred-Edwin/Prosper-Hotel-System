@@ -106,7 +106,10 @@ export function resolveProductCostBasis(
     return { costBasisMinor: product.lastKnownCostMinor, isEstimated: false };
   }
   if (product.priceMinor != null) {
-    return { costBasisMinor: Math.round(product.priceMinor * ESTIMATED_COST_RATE), isEstimated: true };
+    return {
+      costBasisMinor: Math.round(product.priceMinor * ESTIMATED_COST_RATE * 100) / 100,
+      isEstimated: true,
+    };
   }
   return null;
 }

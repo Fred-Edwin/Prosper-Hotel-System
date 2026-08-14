@@ -118,6 +118,26 @@ describe("products", () => {
     expect(result.value.priceMinor).toBe(20000);
   });
 
+  // Real supplier/delivery prices are cent-precise (e.g. KSh 253.33) — the
+  // field must round-trip that exactly, not round to whole shillings.
+  test("a cent-precise price round-trips exactly", async () => {
+    const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const result = await updateProduct(testDb, owner, created.value.id, {
+      name: "Chips",
+      kind: "cooked_food",
+      priceMinor: 253.33,
+      locationId: "location-1",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.priceMinor).toBe(253.33);
+
+    const reread = await testDb.product.findUnique({ where: { id: created.value.id } });
+    expect(reread?.priceMinor?.toNumber()).toBe(253.33);
+  });
+
   test("owner can set and unset a product's low-stock level", async () => {
     const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");

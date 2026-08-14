@@ -227,7 +227,7 @@ describe("getStoreLedger", () => {
     const row = result.rows.find((r) => r.ingredientId === flour.id && r.locationId === restaurantId);
     expect(row).toBeDefined();
     expect(row!.unitCostMinor).toBe(79);
-    expect(row!.previousUnitCostMinor).toBe(74);
+    expect(row!.previousUnitCostMinor).toBe(73.64);
   });
 
   test("an ingredient with no purchases or movements this period, and no prior cost, shows no cost-move indicator", async () => {

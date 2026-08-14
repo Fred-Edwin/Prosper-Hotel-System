@@ -422,7 +422,10 @@ async function main() {
   });
 
   const todaysRestaurantSalesTotal =
-    saleCounterCash.totalMinor + saleSplit.totalMinor + saleCredit.totalMinor + saleDelivery.totalMinor;
+    saleCounterCash.totalMinor.toNumber() +
+    saleSplit.totalMinor.toNumber() +
+    saleCredit.totalMinor.toNumber() +
+    saleDelivery.totalMinor.toNumber();
   const todaysRestaurantCash = 320 + 250; // saleCounterCash + saleSplit's cash line
   const todaysRestaurantMpesa = 150 + 850; // saleSplit's mpesa line + saleDelivery
 

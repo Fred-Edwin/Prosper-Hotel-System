@@ -1,5 +1,13 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { PrismaClient, StaffMember as PrismaStaffMember } from "@/generated/prisma/client";
 import type { Customer, DaysWorked, Location, StaffMember } from "./schema";
+
+// Prisma returns Decimal fields as Decimal.js objects, not plain numbers —
+// converted here so the rest of the app (logic.ts, routes.ts, UI) keeps
+// working with plain numbers exactly as before the Int -> Decimal(10,2)
+// migration.
+function toStaffMember<T extends PrismaStaffMember>(row: T): T & { dailyRateMinor: number } {
+  return { ...row, dailyRateMinor: row.dailyRateMinor.toNumber() };
+}
 
 export async function findLocationByCode(
   db: PrismaClient,
@@ -25,39 +33,45 @@ export async function findStaffMemberByName(
   db: PrismaClient,
   name: string,
 ): Promise<(StaffMember & { pinHash: string }) | null> {
-  return db.staffMember.findUnique({ where: { name } });
+  const row = await db.staffMember.findUnique({ where: { name } });
+  return row && toStaffMember(row);
 }
 
 export async function findStaffMembersByIds(db: PrismaClient, ids: string[]): Promise<StaffMember[]> {
-  return db.staffMember.findMany({ where: { id: { in: ids } } });
+  const rows = await db.staffMember.findMany({ where: { id: { in: ids } } });
+  return rows.map(toStaffMember);
 }
 
 export async function listActiveStaffAtLocation(
   db: PrismaClient,
   locationId: string,
 ): Promise<StaffMember[]> {
-  return db.staffMember.findMany({
+  const rows = await db.staffMember.findMany({
     where: { locationId, active: true },
     orderBy: { name: "asc" },
   });
+  return rows.map(toStaffMember);
 }
 
 export async function listAllStaff(db: PrismaClient): Promise<StaffMember[]> {
-  return db.staffMember.findMany({ orderBy: { name: "asc" } });
+  const rows = await db.staffMember.findMany({ orderBy: { name: "asc" } });
+  return rows.map(toStaffMember);
 }
 
 export async function findStaffMemberById(
   db: PrismaClient,
   id: string,
 ): Promise<StaffMember | null> {
-  return db.staffMember.findUnique({ where: { id } });
+  const row = await db.staffMember.findUnique({ where: { id } });
+  return row && toStaffMember(row);
 }
 
 export async function findStaffMemberByPhone(
   db: PrismaClient,
   phone: string,
 ): Promise<StaffMember | null> {
-  return db.staffMember.findUnique({ where: { phone } });
+  const row = await db.staffMember.findUnique({ where: { phone } });
+  return row && toStaffMember(row);
 }
 
 export async function createStaffMemberRecord(
@@ -71,7 +85,8 @@ export async function createStaffMemberRecord(
     dailyRateMinor: number;
   },
 ): Promise<StaffMember> {
-  return db.staffMember.create({ data });
+  const row = await db.staffMember.create({ data });
+  return toStaffMember(row);
 }
 
 export async function updateStaffMemberRecord(
@@ -86,7 +101,8 @@ export async function updateStaffMemberRecord(
     dailyRateMinor: number;
   },
 ): Promise<StaffMember> {
-  return db.staffMember.update({ where: { id }, data });
+  const row = await db.staffMember.update({ where: { id }, data });
+  return toStaffMember(row);
 }
 
 export async function setStaffMemberActive(
@@ -94,7 +110,8 @@ export async function setStaffMemberActive(
   id: string,
   active: boolean,
 ): Promise<StaffMember> {
-  return db.staffMember.update({ where: { id }, data: { active } });
+  const row = await db.staffMember.update({ where: { id }, data: { active } });
+  return toStaffMember(row);
 }
 
 export async function createSession(
@@ -107,10 +124,12 @@ export async function createSession(
 }
 
 export async function findSessionByToken(db: PrismaClient, token: string) {
-  return db.session.findUnique({
+  const session = await db.session.findUnique({
     where: { token },
     include: { staffMember: { include: { location: true } } },
   });
+  if (!session) return null;
+  return { ...session, staffMember: toStaffMember(session.staffMember) };
 }
 
 export async function deleteSession(

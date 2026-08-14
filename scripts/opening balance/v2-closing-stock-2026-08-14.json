@@ -1,0 +1,1067 @@
+{
+  "as_of_date": "2026-08-14",
+  "source": "prime-hotel-demo (Supabase production) -- stock_entries / ingredient_entries (legacy tables; Phase 12 ledger not applied to production)",
+  "note": "Each row is that item/ingredient most recent entry on or before 2026-08-14, not necessarily dated today. Items never logged at all are absent entirely -- treat as unknown, not zero. stale=true means last entry was before 2026-08-10 and should be confirmed with staff before use.",
+  "items": [
+    {
+      "name": "#15 Canteen",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 40.0,
+      "closing_stock_value": 100.0,
+      "stale": false
+    },
+    {
+      "name": "#22 Canteen",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 7.0,
+      "closing_stock_value": 24.5,
+      "stale": false
+    },
+    {
+      "name": "#25",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 20.0,
+      "closing_stock_value": 160.0,
+      "stale": false
+    },
+    {
+      "name": "#44",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 10.0,
+      "closing_stock_value": 200.0,
+      "stale": false
+    },
+    {
+      "name": "A4 120pg",
+      "location": "canteen",
+      "last_entry_date": "2026-07-25",
+      "closing_stock": 6.0,
+      "closing_stock_value": 312.0,
+      "stale": true
+    },
+    {
+      "name": "A4 200pg",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "A4 80pg",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "A5 200pg",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "A5 80pg",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Avocados",
+      "location": "canteen",
+      "last_entry_date": "2026-08-04",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Bisc za 10/=",
+      "location": "canteen",
+      "last_entry_date": "2026-07-31",
+      "closing_stock": 94.0,
+      "closing_stock_value": 822.5,
+      "stale": true
+    },
+    {
+      "name": "Bisc za 15/=",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 180.0,
+      "closing_stock_value": 1620.0,
+      "stale": false
+    },
+    {
+      "name": "Bisc za 25/=",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Biscuits za 40",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 16.0,
+      "closing_stock_value": 416.0,
+      "stale": false
+    },
+    {
+      "name": "Bottles",
+      "location": "canteen",
+      "last_entry_date": "2026-07-31",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Dasani 1lit",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 5.0,
+      "closing_stock_value": 225.0,
+      "stale": false
+    },
+    {
+      "name": "Dasani 500ml",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 6.0,
+      "closing_stock_value": 120.0,
+      "stale": false
+    },
+    {
+      "name": "ENO Tabs",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 14.0,
+      "closing_stock_value": 136.5,
+      "stale": true
+    },
+    {
+      "name": "Envelops 10",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 7.0,
+      "closing_stock_value": 21.0,
+      "stale": false
+    },
+    {
+      "name": "Eraser",
+      "location": "canteen",
+      "last_entry_date": "2026-07-25",
+      "closing_stock": 57.0,
+      "closing_stock_value": 185.25,
+      "stale": true
+    },
+    {
+      "name": "Handkerchief 50",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 19.0,
+      "closing_stock_value": 617.5,
+      "stale": false
+    },
+    {
+      "name": "Kibuyu 2lit",
+      "location": "canteen",
+      "last_entry_date": "2026-07-31",
+      "closing_stock": 5.0,
+      "closing_stock_value": 25.0,
+      "stale": true
+    },
+    {
+      "name": "Logbook",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Logbook Industrial",
+      "location": "canteen",
+      "last_entry_date": "2026-07-30",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Lotta",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 10.0,
+      "closing_stock_value": 10.0,
+      "stale": false
+    },
+    {
+      "name": "Mangoes",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Mara Moja",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 27.0,
+      "closing_stock_value": 175.5,
+      "stale": false
+    },
+    {
+      "name": "Masks",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 31.0,
+      "closing_stock_value": 201.5,
+      "stale": false
+    },
+    {
+      "name": "Milk 200ml",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 50.0,
+      "closing_stock_value": 1250.0,
+      "stale": false
+    },
+    {
+      "name": "Milk 500ml",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 12.0,
+      "closing_stock_value": 660.0,
+      "stale": false
+    },
+    {
+      "name": "Mitungi 10lit",
+      "location": "canteen",
+      "last_entry_date": "2026-08-01",
+      "closing_stock": 10.0,
+      "closing_stock_value": 200.0,
+      "stale": true
+    },
+    {
+      "name": "Mitungi 20lit",
+      "location": "canteen",
+      "last_entry_date": "2026-07-24",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Nduma",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Obama",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 120.0,
+      "closing_stock_value": 780.0,
+      "stale": false
+    },
+    {
+      "name": "Panandol Extra",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 46.0,
+      "closing_stock_value": 598.0,
+      "stale": false
+    },
+    {
+      "name": "PawPaw",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Pencil",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 9.0,
+      "closing_stock_value": 87.75,
+      "stale": true
+    },
+    {
+      "name": "Pineaple",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Porridge ya 20",
+      "location": "canteen",
+      "last_entry_date": "2026-08-04",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Porridge ya 30",
+      "location": "canteen",
+      "last_entry_date": "2026-07-25",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Printing/Papers",
+      "location": "canteen",
+      "last_entry_date": "2026-07-31",
+      "closing_stock": 1053.0,
+      "closing_stock_value": 1053.0,
+      "stale": true
+    },
+    {
+      "name": "Research",
+      "location": "canteen",
+      "last_entry_date": "2026-07-31",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Sausage",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 44.0,
+      "closing_stock_value": 1232.0,
+      "stale": false
+    },
+    {
+      "name": "Serviettes",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 3.0,
+      "closing_stock_value": 210.0,
+      "stale": false
+    },
+    {
+      "name": "Sharpener",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Smokies",
+      "location": "canteen",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 242.0,
+      "closing_stock_value": 6292.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 300ml",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 350ml",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 23.0,
+      "closing_stock_value": 966.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 500ml",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 500ml TA",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 13.0,
+      "closing_stock_value": 390.0,
+      "stale": false
+    },
+    {
+      "name": "Spiral Binding",
+      "location": "canteen",
+      "last_entry_date": "2026-07-24",
+      "closing_stock": 73.0,
+      "closing_stock_value": 1788.5,
+      "stale": true
+    },
+    {
+      "name": "Spoons",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 46.0,
+      "closing_stock_value": 429.18,
+      "stale": false
+    },
+    {
+      "name": "Sunny Girl Pads",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Sweetpotatoes",
+      "location": "canteen",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 14.0,
+      "closing_stock_value": 252.0,
+      "stale": false
+    },
+    {
+      "name": "Sweets",
+      "location": "canteen",
+      "last_entry_date": "2026-07-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Toilex",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 3.0,
+      "closing_stock_value": 99.0,
+      "stale": false
+    },
+    {
+      "name": "Tropical",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 326.0,
+      "closing_stock_value": 815.0,
+      "stale": false
+    },
+    {
+      "name": "Yoghurt 500ml",
+      "location": "canteen",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 30.0,
+      "closing_stock_value": 2550.0,
+      "stale": false
+    },
+    {
+      "name": "African Tea",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-05",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Avocados",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Beef Stew",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-12",
+      "closing_stock": 2.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Black / White Milo",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-28",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Black Tea",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-06",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Bottles",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-20",
+      "closing_stock": 117.0,
+      "closing_stock_value": 2340.0,
+      "stale": true
+    },
+    {
+      "name": "Chicken Stew",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-01",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Chocolate Tea",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-03",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Dasani 500ml",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 10.0,
+      "closing_stock_value": 270.0,
+      "stale": false
+    },
+    {
+      "name": "Eggs Kienyenji",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 4.0,
+      "closing_stock_value": 64.0,
+      "stale": false
+    },
+    {
+      "name": "Envelops 10",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 7.0,
+      "closing_stock_value": 21.0,
+      "stale": false
+    },
+    {
+      "name": "Githeri Vegetables",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Githeri Vegetables (120)",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Kibuyu 2lit",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-20",
+      "closing_stock": 1.0,
+      "closing_stock_value": 5.0,
+      "stale": true
+    },
+    {
+      "name": "Logbook",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-17",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Logbook Assessment",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-30",
+      "closing_stock": 12.0,
+      "closing_stock_value": 1260.0,
+      "stale": true
+    },
+    {
+      "name": "Logbook Industrial",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 22.0,
+      "closing_stock_value": 440.0,
+      "stale": false
+    },
+    {
+      "name": "Mitungi 10lit",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-03",
+      "closing_stock": 2.0,
+      "closing_stock_value": 40.0,
+      "stale": true
+    },
+    {
+      "name": "Mitungi 20lit",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-24",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Mukimo Stew",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 2.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Mukimo Vegetables",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 5.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Paste",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-30",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Pilau Beef",
+      "location": "restaurant",
+      "last_entry_date": "2026-07-24",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Pilau Stew",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 2.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Pineaple",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 7.0,
+      "closing_stock_value": 77.0,
+      "stale": false
+    },
+    {
+      "name": "Porridge ya 20",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 1.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Porridge ya 30",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Printing/Papers",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-05",
+      "closing_stock": 286.0,
+      "closing_stock_value": 286.0,
+      "stale": true
+    },
+    {
+      "name": "Sausage",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 25.0,
+      "closing_stock_value": 700.0,
+      "stale": false
+    },
+    {
+      "name": "Smokies",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 113.0,
+      "closing_stock_value": 2938.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 300ml",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-12",
+      "closing_stock": 5.0,
+      "closing_stock_value": 165.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 350ml",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 29.0,
+      "closing_stock_value": 1218.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 500ml",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Soda 500ml TA",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-12",
+      "closing_stock": 1.0,
+      "closing_stock_value": 30.0,
+      "stale": false
+    },
+    {
+      "name": "Stew Minji & Vegetables",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 8.5,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Sweetpotatoes",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-12",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Take away Coffee cups",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 53.0,
+      "closing_stock_value": 516.75,
+      "stale": false
+    },
+    {
+      "name": "Take away dishes",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 42.0,
+      "closing_stock_value": 252.0,
+      "stale": false
+    },
+    {
+      "name": "Toast Mayai 2 4pcs",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Toast Siagi 4pcs",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Ugali Beef",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-05",
+      "closing_stock": 0.0,
+      "closing_stock_value": 0.0,
+      "stale": true
+    },
+    {
+      "name": "Yoghurt 500ml",
+      "location": "restaurant",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 2.0,
+      "closing_stock_value": 170.0,
+      "stale": false
+    }
+  ],
+  "ingredients": [
+    {
+      "name": "Baking Powder",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 10.0,
+      "stale": false
+    },
+    {
+      "name": "Bar Soap Menengai",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Beans",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 7.0,
+      "stale": false
+    },
+    {
+      "name": "Cabbage",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 1.0,
+      "stale": false
+    },
+    {
+      "name": "Carrots",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 1.0,
+      "stale": false
+    },
+    {
+      "name": "Cooking oil",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 3.0,
+      "stale": false
+    },
+    {
+      "name": "Dhania",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 45.0,
+      "stale": false
+    },
+    {
+      "name": "Garlic",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Ginger",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 3.5,
+      "stale": false
+    },
+    {
+      "name": "Githeri",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 3.0,
+      "stale": false
+    },
+    {
+      "name": "Godget",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 5.0,
+      "stale": false
+    },
+    {
+      "name": "Hoho",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Kanyuria",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Khaki 1/2",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 192.0,
+      "stale": false
+    },
+    {
+      "name": "Lemon",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 13.0,
+      "stale": false
+    },
+    {
+      "name": "Meat Stew",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 2.0,
+      "stale": false
+    },
+    {
+      "name": "Melon",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 4.0,
+      "stale": false
+    },
+    {
+      "name": "Milk",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 2.0,
+      "stale": false
+    },
+    {
+      "name": "Minced Meat",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Nescafe",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 23.0,
+      "stale": false
+    },
+    {
+      "name": "Onions",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 7.0,
+      "stale": false
+    },
+    {
+      "name": "Papers No.7",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 16.0,
+      "stale": false
+    },
+    {
+      "name": "Peas",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 6.0,
+      "stale": false
+    },
+    {
+      "name": "Pilipili",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 0.5,
+      "stale": false
+    },
+    {
+      "name": "Pineaple",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 2.0,
+      "stale": false
+    },
+    {
+      "name": "Porridge Floor",
+      "last_entry_date": "2026-08-12",
+      "closing_stock": 1.5,
+      "stale": false
+    },
+    {
+      "name": "Potatoes",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 6.25,
+      "stale": false
+    },
+    {
+      "name": "Powder soap",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Printing Papers 30",
+      "last_entry_date": "2026-08-05",
+      "closing_stock": 477.0,
+      "stale": true
+    },
+    {
+      "name": "Rice",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Royco Cubes",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 31.0,
+      "stale": false
+    },
+    {
+      "name": "Salt",
+      "last_entry_date": "2026-08-10",
+      "closing_stock": 3.0,
+      "stale": false
+    },
+    {
+      "name": "Salt Takeaway",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 119.0,
+      "stale": false
+    },
+    {
+      "name": "Serviettes",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Smokies",
+      "last_entry_date": "2026-07-22",
+      "closing_stock": 5.0,
+      "stale": true
+    },
+    {
+      "name": "Spinach",
+      "last_entry_date": "2026-08-12",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Sugar",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 0.0,
+      "stale": false
+    },
+    {
+      "name": "Token Rm 5",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 31.0,
+      "stale": false
+    },
+    {
+      "name": "Tomato sauce",
+      "last_entry_date": "2026-08-11",
+      "closing_stock": 7.25,
+      "stale": false
+    },
+    {
+      "name": "Tomato sauce Takeaway",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 15.0,
+      "stale": false
+    },
+    {
+      "name": "Tomatoes",
+      "last_entry_date": "2026-08-14",
+      "closing_stock": 0.5,
+      "stale": false
+    },
+    {
+      "name": "Wheat flour",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 3.0,
+      "stale": false
+    },
+    {
+      "name": "Wheat Flour Samosa",
+      "last_entry_date": "2026-08-13",
+      "closing_stock": 1.0,
+      "stale": false
+    }
+  ]
+}

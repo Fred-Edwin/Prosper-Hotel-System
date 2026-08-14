@@ -62,7 +62,7 @@ export function RecipeBuilder({
     return ing?.lastKnownCostMinor == null;
   });
   const anyZeroQuantity = lines.some((l) => l.quantity <= 0);
-  const perUnitMinor = y > 0 && !anyUnknownCost ? Math.round(batchMinor / y) : null;
+  const perUnitMinor = y > 0 && !anyUnknownCost ? Math.round((batchMinor / y) * 100) / 100 : null;
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
