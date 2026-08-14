@@ -105,6 +105,15 @@ beforeEach(async () => {
 
   const soda = await testDb.product.create({ data: { name: "Soda 500ml", kind: "goods", priceMinor: 80, locationId: restaurantId } });
   sodaId = soda.id;
+
+  // BUG-15's hard guard now rejects a sale line that exceeds on-hand
+  // stock, so tests selling sodaId need real stock to sell from first.
+  await testDb.stockMovement.create({
+    data: { productId: sodaId, locationId: restaurantId, quantity: 100, reason: "received", staffMemberId: cashierId },
+  });
+  await testDb.stockMovement.create({
+    data: { productId: sodaId, locationId: canteenId, quantity: 100, reason: "received", staffMemberId: attendantId },
+  });
 });
 
 afterAll(async () => {

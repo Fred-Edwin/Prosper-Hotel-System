@@ -94,6 +94,12 @@ beforeAll(async () => {
   photocopyId = photocopy.id;
 });
 
+// BUG-15's hard guard now rejects a sale line that exceeds on-hand stock,
+// so every test that sells sodaId needs real stock to sell from first —
+// generous enough that no individual test (max line quantity used anywhere
+// below is 5) runs it out.
+const SEEDED_STOCK = 100;
+
 beforeEach(async () => {
   await testDb.repayment.deleteMany({});
   await testDb.paymentLine.deleteMany({});
@@ -101,6 +107,13 @@ beforeEach(async () => {
   await testDb.sale.deleteMany({});
   await testDb.stockMovement.deleteMany({});
   await testDb.customer.deleteMany({});
+
+  await testDb.stockMovement.create({
+    data: { productId: sodaId, locationId: restaurantId, quantity: SEEDED_STOCK, reason: "received", staffMemberId: "staff-1" },
+  });
+  await testDb.stockMovement.create({
+    data: { productId: sodaId, locationId: canteenId, quantity: SEEDED_STOCK, reason: "received", staffMemberId: "staff-1" },
+  });
 });
 
 afterAll(async () => {
@@ -190,7 +203,7 @@ describe("recordCounterSale", () => {
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
     expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: -3 }),
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 3 }),
     ]);
   });
 
@@ -207,7 +220,9 @@ describe("recordCounterSale", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([]);
+    expect(stock.levels).toEqual([
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+    ]);
   });
 
   test("a sale is recorded at the staff member's own session location, ignoring any other location requested", async () => {
@@ -232,6 +247,77 @@ describe("recordCounterSale", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.sale.locationId).toBe(canteenId);
+  });
+});
+
+// BUG-15: nothing prevented overselling — no backend check compared a sale
+// line's quantity to on-hand stock. Mirrors recordTransfer's existing
+// insufficient_stock guard (stock/tests) — sum first, reject before writing
+// anything, wrapped in the same transaction as the sale + stock decrement.
+describe("recordCounterSale — insufficient stock", () => {
+  test("rejects a line that exceeds on-hand stock, naming the product and quantity available", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: SEEDED_STOCK + 1 }],
+      paymentLines: [{ method: "cash", amountMinor: (SEEDED_STOCK + 1) * 80 }],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "insufficient_stock",
+      productId: sodaId,
+      available: SEEDED_STOCK,
+    });
+  });
+
+  test("rejects overselling a product already at zero stock", async () => {
+    const outOfStock = await testDb.product.create({
+      data: { name: "Discontinued cake", kind: "goods", priceMinor: 200, locationId: restaurantId },
+    });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: outOfStock.id, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 200 }],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "insufficient_stock",
+      productId: outOfStock.id,
+      available: 0,
+    });
+  });
+
+  test("writes nothing — no Sale and no stock movement — when a line is rejected for insufficient stock", async () => {
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: SEEDED_STOCK + 1 }],
+      paymentLines: [{ method: "cash", amountMinor: (SEEDED_STOCK + 1) * 80 }],
+    });
+
+    const salesToday = await listTodaysSalesForStaff(testDb, staffAt("cashier", restaurantId));
+    expect(salesToday.ok).toBe(true);
+    if (!salesToday.ok) return;
+    expect(salesToday.sales).toEqual([]);
+
+    const stock = await getCurrentStockAtLocation(testDb, staffAt("cashier", restaurantId), restaurantId);
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual([
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+    ]);
+  });
+
+  test("a sale within stock succeeds even when another line in the same sale would have failed alone", async () => {
+    // Sanity check that the guard checks each line independently against
+    // its own product's stock, not some combined/aggregate figure.
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [
+        { productId: sodaId, quantity: 2 },
+        { productId: photocopyId, quantity: 100 },
+      ],
+      paymentLines: [{ method: "cash", amountMinor: 660 }],
+    });
+
+    expect(result.ok).toBe(true);
   });
 });
 
@@ -452,7 +538,7 @@ describe("recordCounterSale — delivery", () => {
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
     expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: -2 }),
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 2 }),
     ]);
   });
 });
@@ -585,7 +671,7 @@ describe("voidSale", () => {
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
     expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: 0 }),
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
     ]);
   });
 
@@ -616,7 +702,7 @@ describe("voidSale", () => {
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
     expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: 0 }),
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
     ]);
   });
 
@@ -638,7 +724,9 @@ describe("voidSale", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([]);
+    expect(stock.levels).toEqual([
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+    ]);
   });
 
   test("voiding an already-void sale is rejected", async () => {
@@ -1020,7 +1108,7 @@ describe("recordSaleCorrection", () => {
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
     expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: -2 }),
+      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 2 }),
     ]);
   });
 

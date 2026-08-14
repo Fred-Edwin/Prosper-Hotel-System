@@ -39,7 +39,8 @@ export type RecordSaleResult =
         | "customer_not_found"
         | "unpaid_sale_not_allowed"
         | "not_found";
-    };
+    }
+  | { ok: false; reason: "insufficient_stock"; productId: string; available: number };
 
 type PriceAndCreateSaleResult =
   | { ok: true; sale: Sale }
@@ -52,7 +53,8 @@ type PriceAndCreateSaleResult =
         | "credit_requires_customer"
         | "delivery_requires_customer"
         | "customer_not_found";
-    };
+    }
+  | { ok: false; reason: "insufficient_stock"; productId: string; available: number };
 
 // Shared by recordCounterSale and recordSaleCorrection (ticket 45) — an
 // ordinary sale and a backdated correction price, validate and decrement
@@ -134,32 +136,51 @@ async function priceAndCreateSale(
     return { ok: false, reason: "payment_mismatch" };
   }
 
-  const sale = await createSaleRecord(db, {
-    locationId,
-    staffMemberId: saleAttribution.staffMemberId,
-    fulfilment,
-    customerId: input.customerId ?? null,
-    totalMinor,
-    deliveryFeeMinor,
-    lines: saleLines,
-    paymentLines: input.paymentLines,
-    occurredAt: saleAttribution.occurredAt,
-    effectiveAt: saleAttribution.effectiveAt,
-    isCorrection: saleAttribution.isCorrection,
-    correctionReason: saleAttribution.correctionReason,
-  });
+  // BUG-15: reject a line that oversells before writing anything, same
+  // db.$transaction/sum-first/write-only-if-sufficient shape as
+  // recordTransfer's insufficient_stock guard (stock/logic.ts). Sale
+  // creation and stock decrement now happen in the one transaction, so a
+  // failure partway through can't leave a Sale with no matching movement.
+  return db.$transaction(async (tx) => {
+    for (const { line, product } of priced) {
+      if (product!.kind === "service") continue;
+      const stock = await tx.stockMovement.aggregate({
+        where: { productId: line.productId, locationId },
+        _sum: { quantity: true },
+      });
+      const available = stock._sum.quantity ?? 0;
+      if (available < line.quantity) {
+        return { ok: false, reason: "insufficient_stock", productId: line.productId, available } as const;
+      }
+    }
 
-  for (const { line, product } of priced) {
-    if (product!.kind === "service") continue;
-    await recordStockMovement(db, requester, {
-      productId: line.productId,
+    const sale = await createSaleRecord(tx, {
       locationId,
-      quantity: -line.quantity,
-      reason: "sold",
+      staffMemberId: saleAttribution.staffMemberId,
+      fulfilment,
+      customerId: input.customerId ?? null,
+      totalMinor,
+      deliveryFeeMinor,
+      lines: saleLines,
+      paymentLines: input.paymentLines,
+      occurredAt: saleAttribution.occurredAt,
+      effectiveAt: saleAttribution.effectiveAt,
+      isCorrection: saleAttribution.isCorrection,
+      correctionReason: saleAttribution.correctionReason,
     });
-  }
 
-  return { ok: true, sale };
+    for (const { line, product } of priced) {
+      if (product!.kind === "service") continue;
+      await recordStockMovement(tx, requester, {
+        productId: line.productId,
+        locationId,
+        quantity: -line.quantity,
+        reason: "sold",
+      });
+    }
+
+    return { ok: true, sale };
+  });
 }
 
 export async function recordCounterSale(
@@ -217,7 +238,8 @@ export type RecordSaleCorrectionResult =
         | "credit_requires_customer"
         | "delivery_requires_customer"
         | "customer_not_found";
-    };
+    }
+  | { ok: false; reason: "insufficient_stock"; productId: string; available: number };
 
 // architecture.md's "Changing a closed day": the owner does not edit a
 // closed figure, she records a new entry with occurredAt = now and

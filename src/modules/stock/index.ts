@@ -46,6 +46,7 @@ export type {
   ProductCostBasis,
   StockAccessResult,
   SellableProductsResult,
+  SellableProduct,
   RecordTransferResult,
   RecordTransfersResult,
   ConfirmTransferResult,

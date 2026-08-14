@@ -1,4 +1,9 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+
+// recordStockMovement is called both with the ordinary db handle and, from
+// sales/logic.ts's BUG-15 fix, from inside a db.$transaction callback —
+// Prisma's transaction client is a distinct (near-identical) type.
+type Db = PrismaClient | Prisma.TransactionClient;
 import {
   canAccessLocation,
   findLocationById,
@@ -110,7 +115,7 @@ export type RecordMovementResult =
 // this function does not infer sign from reason, so reversals (ticket 09)
 // can reuse it unchanged.
 export async function recordStockMovement(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: {
     productId: string;
@@ -353,8 +358,10 @@ export async function getTransferableItems(
   };
 }
 
+export type SellableProduct = Product & { onHand: number };
+
 export type SellableProductsResult =
-  | { ok: true; products: Product[] }
+  | { ok: true; products: SellableProduct[] }
   | { ok: false; reason: "forbidden" | "not_found" };
 
 // docs/architecture.md's "Product home location" note: sellable-at-a-location
@@ -362,6 +369,9 @@ export type SellableProductsResult =
 // here OR positive current stock here per the movement ledger (transferred
 // in and reflected). Mirrors getTransferableItems' shape above, but keyed
 // off Product.locationId instead of a location-agnostic active-item list.
+//
+// BUG-15's soft guardrail: each product carries onHand so New Sale can show
+// it per tile and cap the basket stepper, without a second round-trip.
 export async function getSellableProductsAtLocation(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -375,6 +385,7 @@ export async function getSellableProductsAtLocation(
   if (!location) return { ok: false, reason: "not_found" };
 
   const sums = await sumMovementsByProductAtLocation(db, locationId);
+  const onHandByProductId = new Map(sums.map((sum) => [sum.productId, sum.quantityOnHand]));
   const productIdsWithStock = sums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.productId);
 
   const [homeProducts, stockedProducts] = await Promise.all([
@@ -389,7 +400,9 @@ export async function getSellableProductsAtLocation(
 
   return {
     ok: true,
-    products: [...byId.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    products: [...byId.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((product) => ({ ...product, onHand: onHandByProductId.get(product.id) ?? 0 })),
   };
 }
 

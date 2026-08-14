@@ -95,6 +95,10 @@ beforeAll(async () => {
   sodaId = soda.id;
 });
 
+// BUG-15's hard guard now rejects a sale line that exceeds on-hand stock,
+// so tests selling sodaId need real stock to sell from first.
+const SEEDED_STOCK = 100;
+
 beforeEach(async () => {
   await testDb.handover.deleteMany({});
   await testDb.paymentLine.deleteMany({});
@@ -102,6 +106,13 @@ beforeEach(async () => {
   await testDb.sale.deleteMany({});
   await testDb.stockMovement.deleteMany({});
   await testDb.customer.deleteMany({});
+
+  await testDb.stockMovement.create({
+    data: { productId: sodaId, locationId: restaurantId, quantity: SEEDED_STOCK, reason: "received", staffMemberId: "staff-1" },
+  });
+  await testDb.stockMovement.create({
+    data: { productId: sodaId, locationId: canteenId, quantity: SEEDED_STOCK, reason: "received", staffMemberId: "staff-1" },
+  });
 });
 
 afterAll(async () => {

@@ -31,6 +31,12 @@ export async function recordCounterSaleRoute(request: Request): Promise<Response
     paymentLines: body.paymentLines,
   });
   if (!result.ok) {
+    if (result.reason === "insufficient_stock") {
+      return Response.json(
+        { error: result.reason, productId: result.productId, available: result.available },
+        { status: 409 },
+      );
+    }
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
   return Response.json({ sale: result.sale });
@@ -165,6 +171,12 @@ export async function recordSaleCorrectionRoute(request: Request): Promise<Respo
     paymentLines: body.paymentLines,
   });
   if (!result.ok) {
+    if (result.reason === "insufficient_stock") {
+      return Response.json(
+        { error: result.reason, productId: result.productId, available: result.available },
+        { status: 409 },
+      );
+    }
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
   return Response.json({ sale: result.sale });

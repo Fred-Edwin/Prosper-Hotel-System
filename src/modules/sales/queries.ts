@@ -1,5 +1,10 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { PaymentLine, PaymentMethod, Repayment, Sale, SaleFulfilment } from "./schema";
+
+// createSaleRecord is called from inside a db.$transaction for BUG-15's
+// overselling guard (sales/logic.ts), so this needs to accept a
+// transaction client, not just the top-level PrismaClient.
+type Db = PrismaClient | Prisma.TransactionClient;
 
 export async function findSaleById(db: PrismaClient, saleId: string): Promise<Sale | null> {
   return db.sale.findUnique({
@@ -21,7 +26,7 @@ export async function markSaleVoided(
 }
 
 export async function createSaleRecord(
-  db: PrismaClient,
+  db: Db,
   data: {
     locationId: string;
     staffMemberId: string;

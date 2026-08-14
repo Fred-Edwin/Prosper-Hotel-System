@@ -46,7 +46,7 @@ import {
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyFirstUse, ErrorState } from "@/components/patterns/states";
-import { Minus, Plus, Search, Trash2, X, ShoppingCart, Check, UserPlus, Store, Truck } from "lucide-react";
+import { Minus, Plus, Search, Trash2, X, ShoppingCart, Check, UserPlus, Store, Truck, TriangleAlert } from "lucide-react";
 import { money } from "@/shared/money";
 import type { StaffRole } from "@/components/layout/staff-nav";
 
@@ -57,7 +57,19 @@ type Product = {
   priceMinor: number | null;
   active: boolean;
   locationId: string;
+  onHand: number;
 };
+
+// BUG-15's soft guardrail. A "service" line (e.g. delivery) has no stock
+// concept at all — recordCounterSale never decrements it — so it's never
+// treated as low/out of stock regardless of its onHand value.
+const LOW_STOCK_THRESHOLD = 5;
+function stockStatus(product: Product): "ok" | "low" | "out" {
+  if (product.kind === "service") return "ok";
+  if (product.onHand <= 0) return "out";
+  if (product.onHand <= LOW_STOCK_THRESHOLD) return "low";
+  return "ok";
+}
 
 type Customer = { id: string; name: string; phone: string | null };
 
@@ -125,13 +137,17 @@ async function createCustomer(input: {
   }
 }
 
+export type SubmitSaleResult =
+  | { ok: true }
+  | { ok: false; error: string; productId?: string; available?: number };
+
 async function submitSale(input: {
   fulfilment: Fulfilment;
   customerId?: string;
   deliveryFeeMinor?: number;
   lines: { productId: string; quantity: number }[];
   paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string }[];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<SubmitSaleResult> {
   try {
     const response = await fetch("/api/sales", {
       method: "POST",
@@ -140,7 +156,12 @@ async function submitSale(input: {
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      return { ok: false, error: body?.error ?? "unknown" };
+      return {
+        ok: false,
+        error: body?.error ?? "unknown",
+        productId: body?.productId,
+        available: body?.available,
+      };
     }
     return { ok: true };
   } catch {
@@ -253,7 +274,15 @@ export function NewSaleView({
 
 /** One tap-target product tile — shared between the flat grid (no
  * locationId known, e.g. Storybook without it) and the grouped own/
- * transferred-in sections below. */
+ * transferred-in sections below.
+ *
+ * BUG-15's soft guardrail: out of stock disables the tile entirely (tapping
+ * it can't add a line that the hard backend guard would only reject anyway);
+ * low stock shows a warning badge, reusing admin-stock-table.tsx's isLow/
+ * TriangleAlert pattern rather than inventing new visual language. Once the
+ * basket already holds everything on hand, the tile disables too — the
+ * stepper in the basket below is the only way past that point, and it's
+ * capped at onHand the same way. */
 function ProductTile({
   product,
   inBasket,
@@ -267,12 +296,17 @@ function ProductTile({
   badge?: string;
   testId?: string;
 }) {
+  const status = stockStatus(product);
+  const atLimit = product.kind !== "service" && (inBasket?.qty ?? 0) >= product.onHand;
+  const disabled = status === "out" || atLimit;
+
   return (
     <button
       onClick={onAdd}
-      title={product.name}
+      disabled={disabled}
+      title={status === "out" ? `${product.name} — out of stock` : product.name}
       data-testid={testId}
-      className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 active:bg-accent ${
+      className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 active:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:active:bg-card ${
         inBasket ? "border-neutral-400" : ""
       }`}
     >
@@ -281,11 +315,28 @@ function ProductTile({
         <span className="text-[11px] text-muted-foreground tabular-nums">
           {money(product.priceMinor ?? 0)}
         </span>
-        {badge && (
-          <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-            {badge}
-          </Badge>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {status === "out" && (
+            <Badge variant="destructive" className="text-[10px] font-normal" data-testid="till-tile-out-of-stock">
+              Out of stock
+            </Badge>
+          )}
+          {status === "low" && (
+            <Badge
+              variant="outline"
+              className="items-center gap-0.5 border-warning text-[10px] font-normal text-warning"
+              data-testid="till-tile-low-stock"
+            >
+              <TriangleAlert className="size-2.5" />
+              {product.onHand} left
+            </Badge>
+          )}
+          {status === "ok" && badge && (
+            <Badge variant="outline" className="text-[10px] font-normal">
+              {badge}
+            </Badge>
+          )}
+        </div>
       </div>
       {inBasket && (
         <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-[11px] font-semibold text-white tabular-nums">
@@ -383,6 +434,9 @@ function Till({
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [stockOutDetail, setStockOutDetail] = useState<{ productName: string; available: number } | null>(
+    null,
+  );
   const [confirmed, setConfirmed] = useState<{
     lines: Line[];
     total: number;
@@ -515,6 +569,7 @@ function Till({
   const complete = async () => {
     setSubmitting(true);
     setSubmitError(null);
+    setStockOutDetail(null);
     const result = await onSubmit({
       fulfilment,
       ...(fulfilment === "delivery" && deliveryCustomer ? { customerId: deliveryCustomer.id } : {}),
@@ -529,6 +584,18 @@ function Till({
     setSubmitting(false);
     if (!result.ok) {
       setSubmitError(result.error);
+      // BUG-15: name the item and quantity available, not a generic
+      // failure — the whole point of the hard guard is that stock can go
+      // stale between this screen loading and the tap on Complete sale
+      // (another staff member's sale, a race), so the message has to tell
+      // the cashier what actually happened, not just that it failed.
+      if (result.error === "insufficient_stock" && result.productId) {
+        const product = lines.find((l) => l.product.id === result.productId)?.product;
+        setStockOutDetail({
+          productName: product?.name ?? "an item",
+          available: result.available ?? 0,
+        });
+      }
       return;
     }
     setConfirmed({ lines, total, pays, fulfilment, deliveryCustomer, deliveryFeeMinor });
@@ -707,7 +774,13 @@ function Till({
                   variant="outline"
                   className="size-8 shrink-0"
                   onClick={() => bump(l.product.id, 1)}
+                  disabled={l.product.kind !== "service" && l.qty >= l.product.onHand}
                   aria-label={`One more ${l.product.name}`}
+                  title={
+                    l.product.kind !== "service" && l.qty >= l.product.onHand
+                      ? `Only ${l.product.onHand} in stock`
+                      : undefined
+                  }
                 >
                   <Plus className="size-3.5" />
                 </Button>
@@ -857,10 +930,14 @@ function Till({
           </div>
 
           {submitError && (
-            <p className="text-[11px] text-destructive">
-              {submitError === "forbidden" && fulfilment === "counter"
-                ? "Store managers record delivery orders, not counter sales."
-                : "Couldn't complete the sale. Nothing was lost — check payment and try again."}
+            <p className="text-[11px] text-destructive" data-testid="till-submit-error">
+              {submitError === "insufficient_stock" && stockOutDetail
+                ? stockOutDetail.available > 0
+                  ? `Only ${stockOutDetail.available} of ${stockOutDetail.productName} left — lower the quantity and try again.`
+                  : `${stockOutDetail.productName} is out of stock — remove it and try again.`
+                : submitError === "forbidden" && fulfilment === "counter"
+                  ? "Store managers record delivery orders, not counter sales."
+                  : "Couldn't complete the sale. Nothing was lost — check payment and try again."}
             </p>
           )}
 
