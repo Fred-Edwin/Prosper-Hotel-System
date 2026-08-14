@@ -287,7 +287,7 @@ async function main() {
       const row = closingByNameLocation.get(`${spec.name}::${locationCode}`);
       const unitCostMinor =
         row && row.closing_stock > 0 && row.closing_stock_value > 0
-          ? Math.round(row.closing_stock_value / row.closing_stock)
+          ? Math.round((row.closing_stock_value / row.closing_stock) * 100) / 100
           : null;
 
       if (dryRun) {
