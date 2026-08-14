@@ -34,6 +34,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,22 @@ export type LoadState =
 
 type PeriodPreset = "day" | "week" | "month" | "custom";
 
+const subLedgerKeys = ["products", "store", "nonsales", "cash"] as const;
+type SubLedgerKey = (typeof subLedgerKeys)[number];
+const periodPresets = ["day", "week", "month", "custom"] as const;
+
+function isSubLedgerKey(v: string | null): v is SubLedgerKey {
+  return !!v && (subLedgerKeys as readonly string[]).includes(v);
+}
+
+function isPeriodPreset(v: string | null): v is PeriodPreset {
+  return !!v && (periodPresets as readonly string[]).includes(v);
+}
+
+function isIsoDate(v: string | null): v is string {
+  return !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -108,10 +125,25 @@ async function fetchLedgerSummary(periodStart: string, periodEnd: string): Promi
 }
 
 export function LedgerShell() {
-  const [preset, setPreset] = useState<PeriodPreset>("week");
-  const [customStart, setCustomStart] = useState(daysAgoIso(7));
-  const [customEnd, setCustomEnd] = useState(todayIso());
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const preset = isPeriodPreset(searchParams.get("period")) ? (searchParams.get("period") as PeriodPreset) : "day";
+  const customStart = isIsoDate(searchParams.get("start")) ? (searchParams.get("start") as string) : daysAgoIso(7);
+  const customEnd = isIsoDate(searchParams.get("end")) ? (searchParams.get("end") as string) : todayIso();
+  const activeTab = isSubLedgerKey(searchParams.get("tab")) ? (searchParams.get("tab") as SubLedgerKey) : "products";
+
   const [attempt, setAttempt] = useState(0);
+
+  const updateParams = (updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   const { periodStart, periodEnd } = boundsForPreset(preset, customStart, customEnd);
 
@@ -121,12 +153,20 @@ export function LedgerShell() {
       periodStart={periodStart}
       periodEnd={periodEnd}
       preset={preset}
-      onPresetChange={setPreset}
+      onPresetChange={(p) =>
+        updateParams(
+          p === "custom"
+            ? { period: p, start: customStart, end: customEnd }
+            : { period: p, start: null, end: null }
+        )
+      }
       customStart={customStart}
       customEnd={customEnd}
-      onCustomStartChange={setCustomStart}
-      onCustomEndChange={setCustomEnd}
+      onCustomStartChange={(v) => updateParams({ period: "custom", start: v })}
+      onCustomEndChange={(v) => updateParams({ period: "custom", end: v })}
       onRetry={() => setAttempt((a) => a + 1)}
+      activeTab={activeTab}
+      onActiveTabChange={(tab) => updateParams({ tab })}
     />
   );
 }
@@ -166,7 +206,7 @@ function LedgerShellForPeriod({
 
 type StatTerm = "opening" | "purchases" | "closing" | "cogs";
 
-const subLedgers = [
+const subLedgers: { key: SubLedgerKey; label: string; hint: string }[] = [
   { key: "products", label: "Product ledger", hint: "What was sold, and what it earned" },
   { key: "store", label: "Store ledger", hint: "Ingredients in, and out to the kitchen" },
   { key: "nonsales", label: "Non-sales ledger", hint: "Wastage, staff meals, complimentary" },
@@ -187,6 +227,8 @@ export function LedgerShellView({
   storeLedgerSlot,
   nonSalesLedgerSlot,
   cashLedgerSlot,
+  activeTab,
+  onActiveTabChange,
 }: {
   state: LoadState;
   preset: PeriodPreset;
@@ -196,6 +238,8 @@ export function LedgerShellView({
   onCustomStartChange: (v: string) => void;
   onCustomEndChange: (v: string) => void;
   onRetry?: () => void;
+  activeTab?: SubLedgerKey;
+  onActiveTabChange?: (tab: SubLedgerKey) => void;
   /** Real fetching Product/Store/Non-sales/Cash ledgers, supplied by the
    * page composition only — never by Storybook, which stories each view
    * in isolation instead (same split as `dashboard-body.tsx` mounting
@@ -206,9 +250,12 @@ export function LedgerShellView({
   nonSalesLedgerSlot?: React.ReactNode;
   cashLedgerSlot?: React.ReactNode;
 }) {
-  const [active, setActive] = useState("products");
+  const [localActive, setLocalActive] = useState<SubLedgerKey>("products");
   const [statTerm, setStatTerm] = useState<StatTerm | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const active = activeTab ?? localActive;
+  const setActive = onActiveTabChange ?? setLocalActive;
 
   const selectTerm = (t: StatTerm) => {
     setStatTerm(statTerm === t ? null : t);
@@ -267,7 +314,7 @@ export function LedgerShellView({
         <LedgerWaterfall state={state} active={statTerm} onSelect={selectTerm} onRetry={onRetry} />
       </div>
 
-      <Tabs value={active} onValueChange={setActive}>
+      <Tabs value={active} onValueChange={(v) => setActive(v as SubLedgerKey)}>
         <TabsList className="mb-3 flex-wrap">
           {subLedgers.map((l) => (
             <TabsTrigger key={l.key} value={l.key} data-testid={`ledger-tab-${l.key}`}>
