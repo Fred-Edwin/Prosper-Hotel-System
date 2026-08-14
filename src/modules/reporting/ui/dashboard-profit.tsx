@@ -35,6 +35,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight } from "lucide-react";
 import { money } from "@/shared/money";
+import { isOpeningBalanceLoadDay } from "./opening-balance";
 
 export type DashboardProfitLocationBreakdown = {
   revenueMinor: number;
@@ -91,7 +92,27 @@ function periodBounds(period: Period, now: Date): { periodStart: Date; periodEnd
   return { periodStart: start, periodEnd: end };
 }
 
+const zeroDashboardProfitData: DashboardProfitData = {
+  revenue: { restaurant: 0, canteen: 0, total: 0 },
+  costOfGoods: { restaurant: 0, canteen: 0, total: 0 },
+  runningCostsMinor: 0,
+  grossProfitMinor: 0,
+  netProfitMinor: 0,
+  byLocation: {
+    restaurant: { revenueMinor: 0, costOfGoodsMinor: 0, grossProfitMinor: 0, runningCostsMinor: 0, netProfitMinor: 0 },
+    canteen: { revenueMinor: 0, costOfGoodsMinor: 0, grossProfitMinor: 0, runningCostsMinor: 0, netProfitMinor: 0 },
+  },
+};
+
 async function fetchDashboardProfit(period: Period): Promise<LoadState> {
+  // 2026-08-14's opening-balance stock load produces a large negative
+  // cost-of-goods-sold (see opening-balance.ts) — real trading hasn't
+  // started, so there's nothing real to show yet. Skip the fetch and show
+  // a quiet zero day instead of that artifact.
+  const now = new Date();
+  if (period === "day" && isOpeningBalanceLoadDay(now)) {
+    return { status: "ready", data: zeroDashboardProfitData };
+  }
   try {
     const { periodStart, periodEnd } = periodBounds(period, new Date());
     const params = new URLSearchParams({

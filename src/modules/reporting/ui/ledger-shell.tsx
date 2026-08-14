@@ -53,6 +53,7 @@ import { ProductLedger } from "./product-ledger";
 import { StoreLedger } from "./store-ledger";
 import { NonSalesLedger } from "./non-sales-ledger";
 import { CashLedger } from "./cash-ledger";
+import { isOpeningBalanceLoadDay } from "./opening-balance";
 
 export type LedgerSummaryData = {
   openingMinor: number;
@@ -106,7 +107,30 @@ function boundsForPreset(preset: PeriodPreset, customStart: string, customEnd: s
   return { periodStart: customStart, periodEnd: customEnd };
 }
 
-async function fetchLedgerSummary(periodStart: string, periodEnd: string): Promise<LoadState> {
+const zeroLedgerSummaryData: LedgerSummaryData = {
+  openingMinor: 0,
+  purchasesMinor: 0,
+  closingMinor: 0,
+  costOfGoodsSoldMinor: 0,
+  salesValueMinor: 0,
+  grossProfitMinor: 0,
+  nonSalesAtCostMinor: 0,
+  nonSalesAtPriceMinor: 0,
+};
+
+async function fetchLedgerSummary(
+  preset: PeriodPreset,
+  periodStart: string,
+  periodEnd: string
+): Promise<LoadState> {
+  // 2026-08-14's opening-balance stock load produces a large negative
+  // cost-of-goods-sold (see opening-balance.ts) — real trading hasn't
+  // started, so there's nothing real to show yet when "Today" lands there.
+  // Only suppresses the "Today" default — picking 8/14 explicitly via
+  // Custom range still shows the real figures.
+  if (preset === "day" && isOpeningBalanceLoadDay(new Date(`${periodStart}T00:00:00`))) {
+    return { status: "ready", data: zeroLedgerSummaryData };
+  }
   try {
     const start = new Date(`${periodStart}T00:00:00`);
     const end = new Date(`${periodEnd}T23:59:59.999`);
@@ -172,10 +196,12 @@ export function LedgerShell() {
 }
 
 function LedgerShellForPeriod({
+  preset,
   periodStart,
   periodEnd,
   ...viewProps
 }: {
+  preset: PeriodPreset;
   periodStart: string;
   periodEnd: string;
 } & Omit<React.ComponentProps<typeof LedgerShellView>, "state">) {
@@ -184,17 +210,18 @@ function LedgerShellForPeriod({
 
   useEffect(() => {
     cancelledRef.current = false;
-    fetchLedgerSummary(periodStart, periodEnd).then((result) => {
+    fetchLedgerSummary(preset, periodStart, periodEnd).then((result) => {
       if (!cancelledRef.current) setState(result);
     });
     return () => {
       cancelledRef.current = true;
     };
-  }, [periodStart, periodEnd]);
+  }, [preset, periodStart, periodEnd]);
 
   return (
     <LedgerShellView
       state={state}
+      preset={preset}
       {...viewProps}
       productLedgerSlot={<ProductLedger periodStart={periodStart} periodEnd={periodEnd} />}
       storeLedgerSlot={<StoreLedger periodStart={periodStart} periodEnd={periodEnd} />}
