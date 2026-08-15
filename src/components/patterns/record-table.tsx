@@ -37,7 +37,7 @@ import { ChevronRight, ArrowDownUp } from "lucide-react";
 
 /** Frozen first column: identity survives horizontal scrolling. */
 const FROZEN = "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
-const FROZEN_HEAD = "sticky left-0 z-30 bg-muted/60 border-r";
+const FROZEN_HEAD = "sticky left-0 z-30 bg-muted border-r";
 const CHILD_ROW = "bg-muted/25 text-[12px]";
 const CHILD_FROZEN = "sticky left-0 z-20 bg-muted/25 border-r";
 const CHILD_LAST = "border-b-2 border-b-neutral-300";
@@ -181,15 +181,26 @@ export function RecordTable<T>({
     return <div className="overflow-hidden rounded-lg border bg-card">{empty}</div>;
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
-      <div className="overflow-x-auto">
-        <table
-          className="w-full text-[13px]"
-          style={minWidth ? { minWidth } : undefined}
-        >
+    <div className="rounded-lg border bg-card">
+      {/* No overflow-x-auto wrapper here on purpose. A container can't
+          scroll one axis while staying overflow:visible on the other —
+          browsers force both axes into the same scrolling behaviour once
+          either is non-visible (CSS Overflow §3), so a horizontally
+          scrolling wrapper would also become the sticky positioning
+          context for the thead below, and a box that's always exactly as
+          tall as its own content has nothing for "sticky" to stick to.
+          Letting a wide table widen the page instead keeps the thead
+          sticky against the real (page-level) scroll container. Was also
+          overflow-hidden, to clip the thead's square corners to this
+          card's rounded-lg — dropped for the same reason; see the thead's
+          own rounded-t-lg below instead. */}
+      <table
+        className="w-full text-[13px]"
+        style={minWidth ? { minWidth } : undefined}
+      >
           <thead className="sticky top-0 z-10">
             {groups && (
-              <tr className="border-b bg-muted/60 text-[11px] text-muted-foreground">
+              <tr className="border-b bg-muted text-[11px] text-muted-foreground">
                 {wide && (
                   <th className={`${FROZEN_HEAD} px-3 py-1.5 text-left font-medium`} />
                 )}
@@ -206,7 +217,7 @@ export function RecordTable<T>({
                 ))}
               </tr>
             )}
-            <tr className="border-b bg-muted/60 text-[11px] text-muted-foreground">
+            <tr className="border-b bg-muted text-[11px] text-muted-foreground">
               {columns.map((c, i) => {
                 const align = c.align ?? "right";
                 const frozen = wide && i === 0;
@@ -296,7 +307,6 @@ export function RecordTable<T>({
             {footer}
           </tbody>
         </table>
-      </div>
 
       {footnote && (
         <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">

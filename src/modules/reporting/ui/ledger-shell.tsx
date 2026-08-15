@@ -32,18 +32,21 @@
  * exists in the response; the waterfall's "partly provisional" badge is
  * gone along with it.
  *
- * 2026-08-15: an All/Restaurant/Canteen toggle in the waterfall card's
- * header switches which location's figures the tiles and bottom row show.
- * "All" is the business-wide total from before. "Restaurant" reuses the
- * same four tiles scoped to the restaurant's own opening/purchases/closing/
- * cost-of-goods-sold. "Canteen" drops the opening/purchases/closing tiles
- * entirely — the canteen has no ingredient stock waterfall of its own
- * (formulas.md §6/§7 — its cost of goods comes from recorded sales, not a
- * stock balance) — and shows a single cost-of-goods-sold tile plus the same
- * sales/gross-profit/non-sales bottom row, scoped to the canteen. Purely a
- * client-side slice of one fetch; getLedgerSummary already returns
- * `restaurant`/`canteen` breakdowns of every figure the totals are summed
- * from, so switching tabs needs no new request.
+ * 2026-08-15: a Restaurant/Canteen toggle in the waterfall card's header
+ * switches which location's figures the tiles and bottom row show,
+ * defaulting to Restaurant. An earlier version also had an "All" tab
+ * showing the business-wide total, removed the same day — it silently
+ * mixed scopes in one row (opening/purchases/closing were always
+ * restaurant-only, while cost of goods sold/sales/gross profit were
+ * business-wide), which read as a bug rather than a feature. Every
+ * remaining tab now shows tiles from one consistent scope. "Restaurant"
+ * shows the real opening/purchases/closing/cost-of-goods-sold ingredient
+ * waterfall. "Canteen" shows sales/cost of goods sold/gross profit/
+ * non-sales as four tiles instead — the canteen has no ingredient stock
+ * waterfall of its own (formulas.md §6/§7 — its cost of goods comes from
+ * recorded sales, not a stock balance). Purely a client-side slice of one
+ * fetch; getLedgerSummary already returns `restaurant`/`canteen`
+ * breakdowns of every figure, so switching tabs needs no new request.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -265,8 +268,8 @@ function LedgerShellForPeriod({
 }
 
 type StatTerm = "opening" | "purchases" | "closing" | "cogs" | "sales" | "grossProfit" | "nonSales";
-type WaterfallLocation = "all" | "restaurant" | "canteen";
-const waterfallLocations = ["all", "restaurant", "canteen"] as const;
+type WaterfallLocation = "restaurant" | "canteen";
+const waterfallLocations = ["restaurant", "canteen"] as const;
 
 const subLedgers: { key: SubLedgerKey; label: string; hint: string }[] = [
   { key: "products", label: "Product ledger", hint: "What was sold, and what it earned" },
@@ -315,7 +318,7 @@ export function LedgerShellView({
   const [localActive, setLocalActive] = useState<SubLedgerKey>("products");
   const [statTerm, setStatTerm] = useState<StatTerm | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [waterfallLocation, setWaterfallLocation] = useState<WaterfallLocation>("all");
+  const [waterfallLocation, setWaterfallLocation] = useState<WaterfallLocation>("restaurant");
 
   const active = activeTab ?? localActive;
   const setActive = onActiveTabChange ?? setLocalActive;
@@ -614,19 +617,18 @@ function LedgerWaterfall({
           {
             key: "cogs",
             label: "Cost of goods sold",
-            sublabel: location === "restaurant" ? "Restaurant" : undefined,
-            value: location === "restaurant" ? data.restaurant.costOfGoodsSoldMinor : data.costOfGoodsSoldMinor,
+            sublabel: "Restaurant",
+            value: data.restaurant.costOfGoodsSoldMinor,
             operator: "=",
             colour: "var(--color-danger)",
           },
         ];
   const max = Math.max(...terms.map((t) => t.value), 1);
-  const locationSummary =
-    location === "restaurant" ? data.restaurant : location === "canteen" ? data.canteen : null;
-  const salesValueMinor = locationSummary ? locationSummary.salesValueMinor : data.salesValueMinor;
-  const grossProfitMinor = locationSummary ? locationSummary.grossProfitMinor : data.grossProfitMinor;
-  const nonSalesAtCostMinor = locationSummary ? locationSummary.nonSalesAtCostMinor : data.nonSalesAtCostMinor;
-  const nonSalesAtPriceMinor = locationSummary ? locationSummary.nonSalesAtPriceMinor : data.nonSalesAtPriceMinor;
+  const locationSummary = location === "restaurant" ? data.restaurant : data.canteen;
+  const salesValueMinor = locationSummary.salesValueMinor;
+  const grossProfitMinor = locationSummary.grossProfitMinor;
+  const nonSalesAtCostMinor = locationSummary.nonSalesAtCostMinor;
+  const nonSalesAtPriceMinor = locationSummary.nonSalesAtPriceMinor;
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm" data-testid="ledger-waterfall">

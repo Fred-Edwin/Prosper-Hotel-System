@@ -122,7 +122,7 @@ function CashLedgerForAttempt({
 }
 
 const FROZEN = "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
-const FROZEN_HEAD = "sticky left-0 z-30 bg-muted/60 border-r";
+const FROZEN_HEAD = "sticky left-0 z-30 bg-muted border-r";
 const CHILD_ROW = "bg-muted/25 text-[12px]";
 const CHILD_FROZEN = "sticky left-0 z-20 bg-muted/25 border-r";
 const CHILD_LAST = "border-b-2 border-b-neutral-300";
@@ -258,7 +258,7 @@ export function CashLedgerView({
   );
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card" data-testid="cash-ledger">
+    <div className="rounded-lg border bg-card" data-testid="cash-ledger">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="relative min-w-48 flex-1">
           <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -306,17 +306,19 @@ export function CashLedgerView({
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        // No overflow-x-auto wrapper — see record-table.tsx's comment on
+        // why that would break the thead's sticky positioning.
+        <>
           <table className="w-full min-w-[1180px] text-[13px]">
-            <thead>
-              <tr className="border-b bg-muted/60 text-[11px] text-muted-foreground">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b bg-muted text-[11px] text-muted-foreground">
                 <th className={`${FROZEN_HEAD} px-3 py-1.5 text-left font-medium`}>Day</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={2}>Opening</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={2}>In</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={4}>Out</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={2}>Closing</th>
               </tr>
-              <tr className="border-b text-[11px] text-muted-foreground">
+              <tr className="border-b bg-muted text-[11px] text-muted-foreground">
                 <th className={`${FROZEN_HEAD} px-3 py-2 text-left font-medium`}>Date</th>
                 <Th border>Cash</Th>
                 <Th>M-Pesa</Th>
@@ -421,7 +423,7 @@ export function CashLedgerView({
               </tr>
             </tbody>
           </table>
-        </div>
+        </>
       )}
     </div>
   );

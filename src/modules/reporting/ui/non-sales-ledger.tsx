@@ -109,7 +109,7 @@ function NonSalesLedgerForAttempt({
 }
 
 const FROZEN = "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
-const FROZEN_HEAD = "sticky left-0 z-30 bg-muted/60 border-r";
+const FROZEN_HEAD = "sticky left-0 z-30 bg-muted border-r";
 
 function Num({ value, asMoney, muted }: { value: number; asMoney?: boolean; muted?: boolean }) {
   if (value === 0 && muted) return <span className="text-muted-foreground">—</span>;
@@ -209,7 +209,7 @@ export function NonSalesLedgerView({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card" data-testid="non-sales-ledger">
+    <div className="rounded-lg border bg-card" data-testid="non-sales-ledger">
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="relative min-w-48 flex-1">
           <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -255,10 +255,12 @@ export function NonSalesLedgerView({
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        // No overflow-x-auto wrapper — see record-table.tsx's comment on
+        // why that would break the thead's sticky positioning.
+        <>
           <table className="w-full min-w-[720px] text-[13px]">
-            <thead>
-              <tr className="border-b bg-muted/60 text-[11px] text-muted-foreground">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b bg-muted text-[11px] text-muted-foreground">
                 <th className={`${FROZEN_HEAD} px-3 py-2 text-left font-medium`}>Item</th>
                 <Th align="left">Date</Th>
                 <Th align="left">Location</Th>
@@ -333,7 +335,7 @@ export function NonSalesLedgerView({
               </tr>
             </tbody>
           </table>
-        </div>
+        </>
       )}
       <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">
         These amounts are not deducted from profit a second time — stock no longer present is already
