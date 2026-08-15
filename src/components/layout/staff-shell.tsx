@@ -63,7 +63,15 @@ export function StaffShellHome({
   const router = useRouter();
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    // h-dvh, not min-h-dvh: min- only sets a floor, so a task with enough
+    // content (record-stock-count.tsx's item grid, for one) grows this
+    // column past the viewport instead of being capped by it — main's
+    // flex-1 then has nothing bounded to shrink against, its own
+    // overflow-y-auto never engages, and any sticky-positioned footer
+    // inside a task sticks to the bottom of the overgrown column rather
+    // than the visible viewport. h-dvh caps it, so main actually becomes
+    // the one scrolling element and sticky children behave.
+    <div className="flex h-dvh flex-col bg-background">
       <header className="flex shrink-0 items-center gap-2 border-b bg-card px-2 py-2.5">
         {inTask ? (
           <>

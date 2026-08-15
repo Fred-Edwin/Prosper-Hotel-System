@@ -28,7 +28,7 @@ export function StockCountPageClient({ staffName }: { staffName: string }) {
       subtitle="Count what is physically on hand"
       trail={[{ label: "Stock", href: "/stock" }]}
     >
-      <div className="mx-auto max-w-sm overflow-hidden rounded-lg border bg-card">
+      <div className="mx-auto flex h-[calc(100dvh-12rem)] max-w-sm flex-col overflow-hidden rounded-lg border bg-card">
         <RecordStockCount onRecorded={() => router.push("/stock")} />
       </div>
     </AdminShell>

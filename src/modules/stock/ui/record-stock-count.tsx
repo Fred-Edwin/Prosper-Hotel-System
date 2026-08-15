@@ -74,14 +74,22 @@ export type LoadState =
 
 async function fetchCountableItems(locationId: string, isCanteen: boolean): Promise<LoadState> {
   try {
+    // The canteen sells products only — no ingredients of its own, and it
+    // never counts the restaurant's kitchen ingredients either (Edwinfred,
+    // 2026-08-15: canteen count screen was showing every restaurant
+    // ingredient, e.g. Cabbage, Cooking oil, with no expected quantity for
+    // any of them since that concept doesn't apply to ingredients at all).
     const [productsRes, ingredientsRes] = await Promise.all([
       fetch(`/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`),
-      fetch("/api/catalogue/ingredients/active"),
+      isCanteen ? null : fetch("/api/catalogue/ingredients/active"),
     ]);
-    if (!productsRes.ok || !ingredientsRes.ok) return { status: "error" };
+    if (!productsRes.ok || (ingredientsRes && !ingredientsRes.ok)) return { status: "error" };
     const productsBody = await productsRes.json();
-    const ingredientsBody = await ingredientsRes.json();
-    if (!Array.isArray(productsBody?.products) || !Array.isArray(ingredientsBody?.ingredients)) {
+    const ingredientsBody = ingredientsRes ? await ingredientsRes.json() : { ingredients: [] };
+    if (
+      !Array.isArray(productsBody?.products) ||
+      !Array.isArray(ingredientsBody?.ingredients)
+    ) {
       return { status: "error" };
     }
     const items: Item[] = [
@@ -478,7 +486,15 @@ function Counting({
   const setQuantity = (id: string, quantity: string) =>
     setLines((ls) => ls.map((l) => (l.item.id === id ? { ...l, quantity } : l)));
 
-  const linesComplete = lines.length > 0 && lines.every((l) => Number(l.quantity) >= 0 && l.quantity !== "");
+  // A canteen count records what's left after sales, not a restock — a
+  // counted quantity above what was on hand can't be a valid count, so it
+  // blocks submit the same way an empty or negative line does, rather than
+  // just warning and letting her submit anyway.
+  const isOverExpected = (l: Line) =>
+    isCanteen && l.item.expectedQuantity != null && Number(l.quantity) > l.item.expectedQuantity;
+  const linesComplete =
+    lines.length > 0 &&
+    lines.every((l) => Number(l.quantity) >= 0 && l.quantity !== "" && !isOverExpected(l));
   const canComplete = linesComplete && !submitting;
 
   const complete = async () => {
@@ -509,7 +525,13 @@ function Counting({
   }
 
   return (
-    <div className="flex min-h-full flex-col">
+    // min-h-0 (not just min-h-full) matters here: as a flex item of the
+    // shell's <main>, this column's default min-height is auto, so without
+    // an explicit floor of 0 it refuses to shrink to the viewport and grows
+    // to fit the whole item grid instead — main ends up scrolling that
+    // oversized column, the search bar and sticky footer drift off-screen
+    // with it, and "sticky" has nothing correctly-bounded to stick within.
+    <div className="flex h-full min-h-0 flex-col">
       {picker}
       <div className="border-b bg-card px-3 pt-2 pb-2">
         <div className="relative">
@@ -593,7 +615,7 @@ function Counting({
         )}
       </div>
 
-      <div className="border-t bg-card">
+      <div className="sticky bottom-0 border-t bg-card">
         {lines.length > 0 && (
           // Quantity is typed on the tile itself now (CountTile, above) —
           // scrolling down to a separate panel to find the input she just
@@ -608,7 +630,9 @@ function Counting({
               >
                 <span className="min-w-0 truncate font-medium">{l.item.name}</span>
                 <div className="flex shrink-0 items-center gap-1.5">
-                  <span className="tabular-nums text-muted-foreground">
+                  <span
+                    className={`tabular-nums ${isOverExpected(l) ? "font-medium text-destructive" : "text-muted-foreground"}`}
+                  >
                     {l.quantity === "" ? "—" : l.quantity}
                   </span>
                   <Button
@@ -630,6 +654,13 @@ function Counting({
           {submitError && (
             <p className="text-[11px] text-destructive">
               Couldn&apos;t record the count. Nothing was lost — check the lines and try again.
+            </p>
+          )}
+
+          {!submitError && lines.some(isOverExpected) && (
+            <p className="text-[11px] text-destructive">
+              One or more lines exceed what was expected — scroll up and fix the highlighted item
+              {lines.filter(isOverExpected).length > 1 ? "s" : ""} before recording.
             </p>
           )}
 
@@ -675,6 +706,13 @@ function CountTile({
         ? `${item.expectedQuantity} expected`
         : "product";
 
+  const overExpected =
+    isCanteen &&
+    line != null &&
+    item.expectedQuantity != null &&
+    line.quantity !== "" &&
+    Number(line.quantity) > item.expectedQuantity;
+
   if (!line) {
     return (
       <button
@@ -691,7 +729,9 @@ function CountTile({
 
   return (
     <div
-      className="relative flex flex-col gap-1.5 rounded-lg border border-neutral-400 bg-card p-2"
+      className={`relative flex flex-col gap-1.5 rounded-lg border p-2 ${
+        overExpected ? "border-destructive bg-destructive/5" : "border-neutral-400 bg-card"
+      }`}
       data-testid="count-item-tile-selected"
     >
       <button
@@ -712,14 +752,21 @@ function CountTile({
           placeholder="Qty"
           value={line.quantity}
           onChange={(e) => onQuantityChange(e.target.value)}
-          className="h-8 text-[13px]"
+          className={`h-8 text-[13px] ${overExpected ? "border-destructive text-destructive" : ""}`}
           autoFocus
+          aria-invalid={overExpected}
           data-testid={`count-quantity-${item.id}`}
         />
         <span className="shrink-0 text-[11px] text-muted-foreground">
           {item.itemType === "ingredient" ? item.unit : "units"}
         </span>
       </div>
+      {overExpected && (
+        <p className="text-[11px] text-destructive" data-testid={`count-quantity-error-${item.id}`}>
+          Can&apos;t exceed the {item.expectedQuantity} expected — a count records what&apos;s left, not a
+          restock.
+        </p>
+      )}
     </div>
   );
 }

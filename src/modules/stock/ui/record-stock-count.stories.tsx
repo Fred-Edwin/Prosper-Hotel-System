@@ -105,6 +105,25 @@ const stubSubmitCanteenNoShortfall = async () => ({
   ],
 });
 
+// A real canteen catalogue is large enough that the grid runs well past
+// one screen — this reproduces that so the sticky search bar / sticky
+// footer can be checked against genuine scroll, not a handful of tiles
+// that never overflow the viewport in the first place.
+const manyCanteenItems = [
+  "Soda 500ml", "Soda 300ml", "Water 500ml", "Water 1L", "Samosa", "Sausage",
+  "Smokie", "Mandazi", "Chapati", "Boiled egg", "Exercise book", "Biro pen",
+  "Pencil", "Ruler", "Eraser", "Sharpener", "Cakes", "Bread", "Milk 500ml",
+  "Yoghurt", "Juice box", "Crisps", "Biscuits", "Sweets", "Gum", "Sugar 1kg",
+  "Tea leaves", "Coffee sachet", "Matchbox", "Candle",
+].map((name, i) => ({
+  id: `p${i + 1}`,
+  name,
+  itemType: "product" as const,
+  unit: "unit",
+  expectedQuantity: 20 + i,
+  priceMinor: 5000 + i * 100,
+}));
+
 const locations = [
   { id: "loc-restaurant", code: "restaurant", name: "Prosper Restaurant" },
   { id: "loc-canteen", code: "canteen", name: "Prosper Canteen" },
@@ -149,6 +168,17 @@ export const CanteenNoShortfall: Story = {
     locationId: "loc-canteen",
     isCanteen: true,
     onSubmit: stubSubmitCanteenNoShortfall,
+  },
+};
+
+export const CanteenLongCatalogue: Story = {
+  name: "Canteen — long catalogue, check sticky search bar and footer",
+  args: {
+    state: { status: "ready", items: manyCanteenItems },
+    locations,
+    locationId: "loc-canteen",
+    isCanteen: true,
+    onSubmit: stubSubmit,
   },
 };
 
