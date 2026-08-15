@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { recordCounterSale, voidSale } from "@/modules/sales";
+import { recordStockCount } from "@/modules/stock";
 import {
   getTodaysHandoverForStaff,
   getTodaysHandovers,
@@ -100,10 +101,16 @@ beforeAll(async () => {
 const SEEDED_STOCK = 100;
 
 beforeEach(async () => {
+  // Canteen tests now seed sales via recordStockCount, which writes real
+  // StockCount/StockCountLine rows (docs/scope.md's 2026-08-15 entry) —
+  // clear those before staffMember/location, which they reference via
+  // RESTRICT foreign keys.
   await testDb.handover.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
+  await testDb.stockCountLine.deleteMany({});
+  await testDb.stockCount.deleteMany({});
   await testDb.stockMovement.deleteMany({});
   await testDb.customer.deleteMany({});
 
@@ -120,6 +127,8 @@ afterAll(async () => {
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
   await testDb.sale.deleteMany({});
+  await testDb.stockCountLine.deleteMany({});
+  await testDb.stockCount.deleteMany({});
   await testDb.stockMovement.deleteMany({});
   await testDb.customer.deleteMany({});
   await testDb.product.deleteMany({});
@@ -286,20 +295,24 @@ describe("recordHandover", () => {
   });
 });
 
-// 2026-08-13 revision: the canteen records real sales the same as the
-// restaurant (docs/proposal.md §4), with no payment line at entry — the
-// expected figure is the combined total of those sales, and
-// expectedMpesaMinor is null (see Handover.expectedMpesaMinor's schema
-// comment) rather than a separately declared Takings total.
+// Revised 2026-08-15: the canteen no longer records individual sales —
+// recordCounterSale rejects a canteen location outright (docs/scope.md's
+// "Canteen: count-derived sales" entry). Canteen sales now come from a
+// stock count (recordStockCount), so these tests seed via a count against
+// the 100-unit stock seeded in beforeEach, not via recordCounterSale.
+// The expected figure is still the combined total of those (now
+// count-derived) sales, and expectedMpesaMinor is still null (see
+// Handover.expectedMpesaMinor's schema comment).
 describe("recordHandover — canteen", () => {
   function attendant(): AuthenticatedStaff {
     return staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
   }
 
-  test("expected is the combined total of today's recorded sales, with no separate M-Pesa split", async () => {
-    await recordCounterSale(testDb, attendant(), {
-      lines: [{ productId: sodaId, quantity: 2 }],
-      paymentLines: [],
+  test("expected is the combined total of today's count-derived sales, with no separate M-Pesa split", async () => {
+    // 100 seeded, counted down to 98 -> 2 sodas sold at 80 each = 160.
+    await recordStockCount(testDb, attendant(), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: sodaId, countedQuantity: 98 }],
     });
 
     const result = await recordHandover(testDb, attendant(), {
@@ -314,9 +327,9 @@ describe("recordHandover — canteen", () => {
   });
 
   test("a mismatch between the combined actual and expected does not block recording", async () => {
-    await recordCounterSale(testDb, attendant(), {
-      lines: [{ productId: sodaId, quantity: 2 }],
-      paymentLines: [],
+    await recordStockCount(testDb, attendant(), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: sodaId, countedQuantity: 98 }],
     });
 
     const result = await recordHandover(testDb, attendant(), {
@@ -338,12 +351,14 @@ describe("recordHandover — canteen", () => {
     expect(result.handover.expectedCashMinor).toBe(0);
   });
 
-  test("a credit sale is excluded from the expected total", async () => {
-    const customer = await testDb.customer.create({ data: { name: "Jane Wanjiru" } });
-    await recordCounterSale(testDb, attendant(), {
-      lines: [{ productId: sodaId, quantity: 1 }],
-      customerId: customer.id,
-      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+  test("a count with no shortfall (nothing sold) leaves the expected total at zero", async () => {
+    // Credit sales are dropped entirely for the canteen (docs/scope.md's
+    // 2026-08-15 entry) — there is no longer a canteen credit path to
+    // exclude from the expected total. What replaces that concern: a
+    // count that finds no shortfall infers no sale at all.
+    await recordStockCount(testDb, attendant(), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: sodaId, countedQuantity: 100 }],
     });
 
     const result = await recordHandover(testDb, attendant(), { cashMinor: 0, mpesaMinor: 0 });
@@ -354,9 +369,9 @@ describe("recordHandover — canteen", () => {
   });
 
   test("a second attempt the same day at the canteen is rejected once the day is closed", async () => {
-    await recordCounterSale(testDb, attendant(), {
-      lines: [{ productId: sodaId, quantity: 2 }],
-      paymentLines: [],
+    await recordStockCount(testDb, attendant(), {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: sodaId, countedQuantity: 98 }],
     });
 
     const first = await recordHandover(testDb, attendant(), { cashMinor: 160, mpesaMinor: 0 });
@@ -372,11 +387,28 @@ describe("recordHandover — canteen", () => {
   });
 });
 
+// recordCounterSale itself is restaurant-only now — kept here as a direct
+// regression check alongside sales/tests' own coverage, since a handover
+// test file exercising the canteen is exactly where a stale caller would
+// have silently no-opped if this gate weren't enforced.
+describe("recordCounterSale — canteen (rejected)", () => {
+  test("a canteen attendant cannot record an individual sale, even unpaid", async () => {
+    const attendant = staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
+
+    const result = await recordCounterSale(testDb, attendant, {
+      lines: [{ productId: sodaId, quantity: 2 }],
+      paymentLines: [],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
 describe("getTodaysHandoverForStaff", () => {
   test("returns null when nothing has been recorded today", async () => {
     const result = await getTodaysHandoverForStaff(testDb, staffAt("cashier", restaurantId));
 
-    expect(result).toEqual({ ok: true, handover: null });
+    expect(result).toEqual({ ok: true, handover: null, canteenAwaitingTodaysCount: false });
   });
 
   test("returns the requester's own handover for today after recording", async () => {
@@ -402,7 +434,7 @@ describe("getTodaysHandoverForStaff", () => {
 
     const result = await getTodaysHandoverForStaff(testDb, staffAt("cashier", restaurantId));
 
-    expect(result).toEqual({ ok: true, handover: null });
+    expect(result).toEqual({ ok: true, handover: null, canteenAwaitingTodaysCount: false });
   });
 
   test("at the canteen, returns null with no blocking state when nothing has been recorded today", async () => {
@@ -410,7 +442,21 @@ describe("getTodaysHandoverForStaff", () => {
 
     const result = await getTodaysHandoverForStaff(testDb, attendant);
 
-    expect(result).toEqual({ ok: true, handover: null });
+    // No stock count has ever been taken at this canteen — formulas.md
+    // §10's gap applies from the start, not just once a count exists but
+    // falls on an earlier day.
+    expect(result).toEqual({ ok: true, handover: null, canteenAwaitingTodaysCount: true });
+  });
+
+  test("at the canteen, false once today's own count has landed", async () => {
+    const attendant = staffMemberAt("staff-3", "Test Attendant", "attendant", canteenId, "canteen");
+    await testDb.stockCount.create({
+      data: { locationId: canteenId, staffMemberId: "staff-3", lines: { create: [] } },
+    });
+
+    const result = await getTodaysHandoverForStaff(testDb, attendant);
+
+    expect(result).toEqual({ ok: true, handover: null, canteenAwaitingTodaysCount: false });
   });
 });
 

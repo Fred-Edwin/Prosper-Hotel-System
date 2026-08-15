@@ -226,27 +226,91 @@ describe("recordCounterSale", () => {
   });
 
   test("a sale is recorded at the staff member's own session location, ignoring any other location requested", async () => {
-    const cashierAtCanteen: AuthenticatedStaff = {
+    // Session location must be the restaurant, not the canteen — since
+    // 2026-08-15 recordCounterSale rejects a canteen location outright
+    // (see "recordCounterSale — canteen" below), so this test's own
+    // concern (session location wins over any location argument) needs a
+    // location where the sale can actually succeed.
+    const otherRestaurantCashier: AuthenticatedStaff = {
       staff: {
-        id: "staff-1",
-        name: "Test Cashier",
-        phone: "+254700111334",
+        id: "staff-2",
+        name: "Other Cashier",
+        phone: "+254700111335",
         role: "cashier",
-        locationId: canteenId,
+        locationId: restaurantId,
         dailyRateMinor: 0,
         active: true,
       },
-      location: { id: canteenId, code: "canteen", name: "Test Canteen" },
+      location: { id: restaurantId, code: "restaurant", name: "Test Restaurant" },
     };
 
-    const result = await recordCounterSale(testDb, cashierAtCanteen, {
+    const result = await recordCounterSale(testDb, otherRestaurantCashier, {
       lines: [{ productId: sodaId, quantity: 1 }],
       paymentLines: [{ method: "cash", amountMinor: 80 }],
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.sale.locationId).toBe(canteenId);
+    expect(result.sale.locationId).toBe(restaurantId);
+  });
+});
+
+// docs/scope.md's 2026-08-15 "Canteen: count-derived sales" entry — the
+// canteen no longer records individual sales through any path. A stock
+// count infers sales instead (stock/tests/count.integration.test.ts).
+describe("recordCounterSale — canteen", () => {
+  test("rejects a canteen sale with payment lines", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", canteenId, "canteen"), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("rejects a canteen sale with no payment lines (the old canteen shape)", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", canteenId, "canteen"), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("rejects a canteen credit sale", async () => {
+    const customer = await testDb.customer.create({ data: { name: "Test Customer" } });
+
+    const result = await recordCounterSale(testDb, staffAt("cashier", canteenId, "canteen"), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "credit", amountMinor: 80, customerId: customer.id }],
+    });
+
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+
+  test("does not write a Sale or decrement stock when rejected", async () => {
+    await recordCounterSale(testDb, staffAt("cashier", canteenId, "canteen"), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    const sales = await testDb.sale.findMany({ where: { locationId: canteenId } });
+    expect(sales).toHaveLength(0);
+
+    const stock = await testDb.stockMovement.aggregate({
+      where: { productId: sodaId, locationId: canteenId },
+      _sum: { quantity: true },
+    });
+    expect(stock._sum.quantity?.toNumber()).toBe(SEEDED_STOCK);
+  });
+
+  test("the restaurant is unaffected by the canteen gate", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: sodaId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 80 }],
+    });
+
+    expect(result.ok).toBe(true);
   });
 });
 

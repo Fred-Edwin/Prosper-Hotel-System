@@ -403,3 +403,21 @@ work around it by defining fractional-prone ingredients in a smaller
 whole unit (e.g. "Potatoes" in units of 100g rather than kg, so 0.25 kg
 becomes `25`) rather than trying to force a decimal into these fields.
 **Added:** 2026-08-13
+
+## Canteen "no count yet today" gap — owner's Dashboard not covered yet
+
+**Deliberately deferred, not forgotten.** `docs/formulas.md` §10's gap
+(handover checked on a day with no covering canteen count reads as a false
+shortfall) was resolved for the attendant's own handover screen
+(`cash/ui/handover.tsx`'s `NoCountYetBanner`, backed by
+`stock/logic.ts`'s `getLatestStockCountDate`) — she sees it on the count
+step, the confirm step, and the already-recorded state. It was **not**
+added to the owner's Dashboard Handover section
+(`cash/ui/dashboard-handovers.tsx`), where she reviews expected-vs-actual
+across all staff — she already sees the real expected figure there
+(unlike the attendant's blind count), so she can reason about a low number
+herself, but an explicit "no count yet" flag on that row would still be a
+real improvement. Scoped out of the 2026-08-15 canteen count-derived-sales
+UI pass as a different screen than the one item 3 named; pick up as its
+own small ticket if the owner finds herself second-guessing a canteen row.
+**Added:** 2026-08-15

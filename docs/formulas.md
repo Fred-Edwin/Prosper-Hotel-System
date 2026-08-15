@@ -35,6 +35,12 @@ correction is a new entry carrying a past date, not an edit.
 40 + 24 − 30 − 1 = 33 expected
 ```
 
+*Revised 2026-08-15.* At the restaurant, "sold" here means individually recorded sales, as
+always. At the canteen, "sold" is not recorded separately from breakage or any other shrinkage
+— see §2. The formula above still describes what the restaurant's daily count checks against;
+the canteen no longer has a same-day "expected" to check, since a count there **produces** the
+sold figure rather than being compared against one — see §2's revision.
+
 ---
 
 ## 2. Stock count
@@ -48,13 +54,36 @@ difference = counted − expected
 Negative means short. The count never changes the record on its own — it records what was
 counted and shows the gap. Only the owner may correct.
 
-**Example.** 33 expected, 31 counted. Short by 2.
+**Example, restaurant.** 33 expected, 31 counted. Short by 2.
 
-*Revised 2026-08-13 — the canteen now records individual sales, the same as the restaurant.
-The count is a shrinkage check at both locations: the formula above (`difference = counted −
-expected`) is the whole of it. What sold is no longer worked out from a count — it is the sum
-of the day's recorded sales, same as §1's "sold" term. A consistent shortfall at a count still
-means something worth investigating; it is no longer how the system learns what sold.*
+*Revised 2026-08-13, revised again 2026-08-15.* At the **restaurant**, the 2026-08-13 wording
+still holds unchanged: the count is a pure shrinkage check, `difference = counted − expected`,
+and has no bearing on what sold — that comes from individually recorded sales.
+
+**At the canteen**, this section no longer applies as written. A count is how the system learns
+what sold, not a check against an independent sales figure:
+
+```
+sold = expected − counted   (only where counted is short of expected)
+```
+
+There is no separate "difference" to report at the canteen — the shortfall itself *is* the
+sold quantity, written as a real `sold` movement (§1). A shortfall no longer means "investigate
+a possible loss"; it means "this is what sold since the last count," the same reading the
+client's own manual process always gave it. A **surplus** (counted above expected) produces no
+sale and is not itself explained — treated the same as any other unexplained gap, resolved by
+the owner if it recurs, not by this formula.
+
+**Example, canteen.** 40 expected, 33 counted.
+
+```
+40 − 33 = 7 sold
+```
+
+**Booked on the count's own date.** Whatever a count implies about the days since the previous
+one is recorded entirely on the day the count was taken — not spread across the intervening
+days, which show no canteen sales until that count lands. See `docs/scope.md`'s 2026-08-15
+entry.
 
 ---
 
@@ -191,9 +220,13 @@ The kitchen already records what it consumed daily, so this needs no recipes and
 
 ### The canteen — same formula as the restaurant
 
-*Revised 2026-08-13.* Previously split into an exact part and a part estimated from a rate
-measured at the last count, because the canteen's own goods sold without an individual record.
-Now every canteen sale is recorded — see §1's `sold` term and `docs/proposal.md` §4 — so the
+*Revised 2026-08-13, unaffected by the 2026-08-15 return to count-derived canteen sales.* This
+formula was previously split into an exact part and a part estimated from a rate measured at
+the last count, because the canteen's own goods sold without any record at all. That gap is
+what changed on 2026-08-13 and what remains changed now: every canteen sale is a real `sold`
+movement, whether it was recorded individually (as it briefly was) or is inferred from a count
+(as it is again — see §1/§2). This formula reads `sold` movements directly regardless of which
+produced them, so the canteen's return to count-derived sales required no change here — the
 same stock formula applies to both kinds of canteen stock, exactly as it does at the
 restaurant:
 
@@ -229,15 +262,22 @@ how the item arrived: a product that reached the canteen via a transfer from the
 restaurant-supplied; a product received directly from a supplier is the canteen's own goods. A
 product can be either at different times depending on how a given batch arrived.
 
-### The count is now a shrinkage check only
+### What a count does now differs by location
 
-A count no longer corrects an estimate — there is no estimate to correct. It compares counted
-stock against what the movements say should be there, exactly as §2 describes, and any
-difference is reported as a variance to look into, not applied to a past figure.
+*Revised 2026-08-13, revised again 2026-08-15.* At the **restaurant**, a count still corrects
+nothing — there is no estimate to correct. It compares counted stock against what the movements
+say should be there, exactly as §2 describes, and any difference is reported as a variance to
+look into.
 
-**Counting is an event, not a timetable.** It can happen any day. Weekly is the habit for the
-canteen's own goods; the restaurant's daily count and the canteen's daily cooked-food count
-continue as before.
+At the **canteen**, a count is no longer only a shrinkage check — see §2's revision. It is how
+that day's canteen sales come to exist at all; a shortfall against expected stock is booked
+directly as the sold quantity, not reported as a variance for the owner to investigate
+separately.
+
+**Counting is an event, not a timetable, at both locations.** It can happen any day. Weekly is
+the habit for the canteen's own goods; the restaurant's daily count and the canteen's daily
+cooked-food count continue as before. A canteen count's cadence is independent of Handover's —
+see §10.
 
 ### For the business
 
@@ -283,13 +323,22 @@ Net profit                       KSh  8,470
 - **Stock not sold** (wastage, staff meals, complimentary, corrections) — already inside cost
   of goods sold. See §8.
 
-### Nothing here waits on a count
+### Whether profit waits on a count differs by location
 
-*Revised 2026-08-13.* Profit at both locations, and for the business as a whole, no longer has
-a portion awaiting correction at a count. One estimate remains, but it is not count-related:
-transferred food without a recorded recipe still uses the §5/§8 60% estimate, same as any
-cooked food without a recipe — labelled as such and replaced the moment a recipe is recorded.
-The count remains as a shrinkage check (§6), separate from profit.
+*Revised 2026-08-13, revised again 2026-08-15.* At the **restaurant**, profit never has a
+portion awaiting correction at a count — sales are individually recorded, and the count is a
+pure shrinkage check (§2), separate from profit.
+
+At the **canteen**, profit is final for any day already covered by a count, and simply unknown
+— not provisional, not estimated, genuinely not yet computable — for days since the last one.
+A count produces that day's canteen sales outright (§1/§2); until it happens, there is nothing
+to report for the canteen beyond the last count's date. This is a different kind of gap from
+the 2026-08-13 "provisional" figure it replaced: nothing here is a placeholder waiting to be
+corrected. It is simply absent until the count that will supply it is taken.
+
+One estimate remains at both locations, unrelated to counts: transferred food without a
+recorded recipe still uses the §5/§8 60% estimate, same as any cooked food without a recipe —
+labelled as such and replaced the moment a recipe is recorded.
 
 ---
 
@@ -383,10 +432,10 @@ Cash handed over             KSh 8,150
 Difference                 − KSh   250
 ```
 
-**At the canteen** *(revised 2026-08-13)*, expected is also that day's recorded sales — the
-same basis, not a separately declared figure — but checked as one **combined** total rather
-than cash and M-Pesa apart, since a canteen sale carries no payment method at entry (§1) and
-the split is not knowable from the record.
+**At the canteen** *(revised 2026-08-13, revised again 2026-08-15)*, expected is also that
+day's recorded sales — the same basis, not a separately declared figure — but checked as one
+**combined** total rather than cash and M-Pesa apart, since a canteen sale carries no payment
+method at entry (§1) and the split is not knowable from the record.
 
 ```
 Sales recorded (combined)    KSh 5,400
@@ -396,7 +445,15 @@ Difference                 − KSh   250
 
 There is no separate declare-takings step: handing over *is* entering what she is holding —
 cash counted and M-Pesa received — checked against the day's recorded sales the moment she
-does. The weekly count remains a secondary check on stock, not on cash — see §6.
+does.
+
+**Handover and the canteen's stock count run on independent cadences.** Handover happens daily
+regardless of whether a count was taken that day. On a day with no count, "sales recorded"
+means whatever the most recent count has produced so far — which may be zero for that day
+specifically if the count covering it hasn't happened yet. This is a real gap, not a rounding
+matter: a handover checked on a day with no covering count yet may show a large, expected-looking
+difference simply because the sales side is still incomplete. The count remains the only way the
+canteen's sales figure gets filled in — see §6.
 
 Credit sales are excluded — no money changed hands. They appear in §11.
 
@@ -442,10 +499,12 @@ consumption, so gross and net profit are real figures. What needs a recipe is co
 dish against another — "is mukimo better than chips" cannot be answered until yields are
 recorded.
 
-**Canteen profit is final daily, the same as the restaurant's**, since this revision — see §7.
+**Canteen profit is final for any day already covered by a count, and simply absent until
+then** — not provisional, not an estimate awaiting correction, genuinely not yet known. See §7.
 
-**Item detail at the canteen is current as at the last recorded movement**, the same as the
-restaurant — no longer only as current as the last count.
+**Item detail at the canteen is current as at the last count, not the last recorded movement**
+— sales themselves are no longer individually recorded there, so the ledger's picture of
+"what sold today" only updates when a count produces it.
 
 **The first period has no measured rate.** Until the canteen's first count, either an opening
 estimate is supplied or its cost figures wait for that count.

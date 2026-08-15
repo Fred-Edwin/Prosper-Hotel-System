@@ -14,15 +14,19 @@
  * Sheet overlay (extra chrome for what is, on a phone, effectively still a
  * one-column list).
  *
- * 2026-08-13 canteen redesign, item 6: for the attendant only, a summary
- * strip above the list — REQ-02 Part B's expanded content (sales recorded
- * today, transfers received/sent today, closing stock). Cashier and
- * store-manager content is unchanged. Composed from data shapes items 2-5
- * already decided (listTransfersAtLocation, getCurrentStockAtLocationBySource)
- * rather than a new read — closer to ordinary extension than new design, per
- * the handover's process note. Count-derived sold quantity is retired along
- * with the rest of the count-derived sales model (docs/scope.md, 2026-08-13)
- * — sold quantity here is real, from her own recorded sales.
+ * For the attendant only, a summary strip above the list — REQ-02 Part B's
+ * expanded content (sales recorded today, transfers received/sent today,
+ * closing stock). Cashier and store-manager content is unchanged. Composed
+ * from data shapes already decided elsewhere (listTransfersAtLocation,
+ * getCurrentStockAtLocationBySource) rather than a new read.
+ *
+ * 2026-08-15: the canteen no longer records sales individually — a stock
+ * count writes them instead (docs/scope.md's 2026-08-15 entry). Each row
+ * below is still a real Sale record either way, dated to whatever produced
+ * it (a counter sale's own moment, or a count's occurredAt) — this list
+ * reads the Sale table unchanged, so a count-derived sale shows up here the
+ * same as any other, one row per count that produced a shortfall, its
+ * lines being whichever products came up short in that count.
  */
 
 import { useEffect, useState } from "react";
@@ -458,15 +462,16 @@ export function TodaysSalesView({
   );
 }
 
-/** Cash + M-Pesa combined, excluding credit — the till figure a cashier or
- * attendant cares about, not the invoiced total. Voided sales excluded.
+/** Cash + M-Pesa combined, excluding credit — the till figure a cashier
+ * cares about, not the invoiced total. Voided sales excluded.
  *
- * docs/proposal.md §4 (2026-08-13 canteen redesign): a canteen cash/M-Pesa
- * sale carries no payment line at entry (reconciled against the day's
- * handover total instead) — only a credit sale still gets one, to record
- * who owes what. Falling back to totalMinor for the no-payment-line case
- * is what makes this figure include those sales at all; filtering only on
- * paymentLines left every canteen cash sale silently uncounted here. */
+ * A canteen sale carries no payment line at all (CONTEXT.md's Sale entry —
+ * true whether it was individually recorded, in the retired 2026-08-13
+ * model, or count-derived now): reconciled against the day's handover total
+ * instead, not split at the point of sale. Falling back to totalMinor for
+ * the no-payment-line case is what makes this figure include those sales
+ * at all; filtering only on paymentLines would leave every canteen sale
+ * silently uncounted here. */
 function soldTotalMinor(sales: SaleView[]): number {
   return sales
     .filter((sale) => !sale.voided)

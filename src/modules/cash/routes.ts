@@ -75,6 +75,7 @@ export async function todaysHandoverRoute(): Promise<Response> {
         }
       : null,
     locationCode: session.location.code,
+    canteenAwaitingTodaysCount: result.canteenAwaitingTodaysCount,
   });
 }
 

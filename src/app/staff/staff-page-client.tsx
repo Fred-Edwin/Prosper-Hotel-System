@@ -111,7 +111,9 @@ export function StaffPageClient({
       {active === "wastage" && (
         <RecordWastage onDone={() => setActive(null)} locationId={locationId} />
       )}
-      {active === "count" && <StockCount locationId={locationId} />}
+      {active === "count" && (
+        <StockCount locationId={locationId} isCanteen={locationCode === "canteen"} />
+      )}
       {active === "transfer" && <TransferStock />}
       {active === "transfer-history" && <TransferHistoryView />}
       {active === "confirm-transfer" && <ConfirmTransfer />}

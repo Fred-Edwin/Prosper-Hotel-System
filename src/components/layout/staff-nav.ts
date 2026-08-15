@@ -8,10 +8,11 @@
  * Cashiers get three, and should barely notice navigation exists: they sell,
  * and at the end of a shift they hand over. Janiffer runs the restaurant store
  * as well as selling, so she gets receiving, issuing and counts. Anne runs the
- * canteen alone — she sells the same way a cashier does (2026-08-13 revision:
- * real per-sale recording replaced declaring a daily takings total), plus
- * receiving and counts, since she is effectively cashier and store manager
- * for one location.
+ * canteen alone — receiving, counts and handover, since she is effectively
+ * store manager for one location, but no "sell" or "credit" destination
+ * (2026-08-15 revision: the canteen has no individual sale entry at all —
+ * a stock count infers what sold instead, see docs/scope.md's 2026-08-15
+ * entry — reversing the 2026-08-13 revision this comment used to describe).
  */
 
 import {
@@ -127,13 +128,13 @@ export const staffLinks: Record<string, StaffLink> = {
   },
 };
 
-/** Six, three and five were the counts settled at setup. store-manager and
- * attendant have since grown past docs/design.md's 5-8 target (10 and 9
- * tiles as of 2026-08-13, before transfer-history) as the canteen redesign
- * added real destinations — flagged as its own follow-up rather than
- * silently absorbed here; see docs/screens.md's 2026-08-13 note. Stock
- * added for every role in the tracer slice: it's read-only and useful to
- * everyone who works a location, not tied to one task the way the others
+/** Six, three and five were the counts settled at setup. store-manager has
+ * since grown past docs/design.md's 5-8 target (11 tiles) as the canteen
+ * redesign added real destinations — flagged as its own follow-up rather
+ * than silently absorbed here; see docs/screens.md's 2026-08-13 note.
+ * attendant dropped back to 7 on 2026-08-15 when sell/credit were removed.
+ * Stock added for every role in the tracer slice: it's read-only and useful
+ * to everyone who works a location, not tied to one task the way the others
  * are. */
 export const staffNav: Record<StaffRole, StaffLink[]> = {
   "store-manager": [
@@ -150,9 +151,11 @@ export const staffNav: Record<StaffRole, StaffLink[]> = {
     staffLinks.handover,
   ],
   cashier: [staffLinks.sell, staffLinks.sales, staffLinks.wastage, staffLinks.stock, staffLinks.handover],
+  // 2026-08-15: sell and credit dropped — the canteen no longer records
+  // individual sales at all (docs/scope.md's 2026-08-15 entry). A stock
+  // count is now how a canteen sale gets recorded; count remains her entry
+  // point for that.
   attendant: [
-    staffLinks.sell,
-    staffLinks.credit,
     staffLinks.sales,
     staffLinks.receive,
     staffLinks.count,

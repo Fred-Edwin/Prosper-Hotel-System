@@ -14,6 +14,7 @@ import {
   findCreditPaymentLinesForCustomer,
   findRepaymentsForCustomer,
   findSaleById,
+  findSalesAtLocationToday,
   findSalesForStaffToday,
   markSaleVoided,
   sumCreditAcrossAllCustomers,
@@ -207,21 +208,57 @@ export async function recordCounterSale(
     return { ok: false, reason: "forbidden" };
   }
 
-  // docs/proposal.md §4 (revised 2026-08-13): only the canteen records a
-  // sale with no payment line at entry, reconciled later via the day's
-  // handover total. The restaurant's per-sale payment discipline stays
-  // enforced by the system, not just by the till UI always sending
-  // payment lines — the exact gap that let BUG-10's double-count happen
-  // undetected.
+  // Revised 2026-08-15: the canteen no longer records individual sales at
+  // all — cash/M-Pesa sales are inferred from a stock count
+  // (stock/logic.ts's recordStockCount) and credit sales are dropped
+  // entirely for the canteen (docs/scope.md's "Canteen: count-derived
+  // sales" entry). Only the restaurant calls recordCounterSale now; a
+  // canteen attendant hitting this path (stale client, direct API call)
+  // is rejected the same way an oversell or a payment mismatch is —
+  // server-enforced, not just absent from the canteen UI.
+  const location = await findLocationById(db, locationId);
+  if (location?.code === "canteen") {
+    return { ok: false, reason: "forbidden" };
+  }
+
   if (input.paymentLines.length === 0) {
-    const location = await findLocationById(db, locationId);
-    if (location?.code !== "canteen") {
-      return { ok: false, reason: "unpaid_sale_not_allowed" };
-    }
+    return { ok: false, reason: "unpaid_sale_not_allowed" };
   }
 
   return priceAndCreateSale(db, requester, locationId, input, {
     staffMemberId: requester.staff.id,
+  });
+}
+
+// Called only from stock/logic.ts's recordStockCount (via sales/index.ts —
+// module rule: stock depends on sales, never the reverse, matching
+// priceAndCreateSale's existing recordStockMovement dependency the other
+// way). A canteen count already wrote the StockMovement itself — the
+// count *is* the stock decrement — so this only creates the Sale/SaleLine
+// bookkeeping (revenue, "today's summary", per-product sales reporting)
+// to match. No stock write here, no oversell guard (nothing to oversell:
+// stock already reflects the count), no payment lines (canteen sales
+// never carry one at entry, same as recordCounterSale's canteen case) and
+// no credit (dropped for the canteen entirely — docs/scope.md's
+// "Canteen: count-derived sales" entry).
+export async function recordCountDerivedSale(
+  db: PrismaClient,
+  input: {
+    locationId: string;
+    staffMemberId: string;
+    occurredAt: Date;
+    lines: { productId: string; quantity: number; priceMinor: number }[];
+  },
+): Promise<Sale> {
+  const totalMinor = input.lines.reduce((sum, l) => sum + l.quantity * l.priceMinor, 0);
+  return createSaleRecord(db, {
+    locationId: input.locationId,
+    staffMemberId: input.staffMemberId,
+    fulfilment: "counter",
+    totalMinor,
+    lines: input.lines,
+    paymentLines: [],
+    occurredAt: input.occurredAt,
   });
 }
 
@@ -429,6 +466,29 @@ export async function listTodaysSalesForStaff(
   dayEnd.setDate(dayEnd.getDate() + 1);
 
   const sales = await findSalesForStaffToday(db, requester.staff.id, locationId, dayStart, dayEnd);
+  return { ok: true, sales };
+}
+
+// Called only from cash/logic.ts's canteen Handover path — location-scoped,
+// not staff-scoped, deliberately unlike listTodaysSalesForStaff. See
+// findSalesAtLocationToday's comment: a canteen count-derived sale is
+// attributed to whoever ran the count, so a staff-scoped read could miss
+// sales at Handover time for a single-handed location.
+export async function listTodaysSalesAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<ListTodaysSalesResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const sales = await findSalesAtLocationToday(db, locationId, dayStart, dayEnd);
   return { ok: true, sales };
 }
 

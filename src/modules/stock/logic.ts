@@ -25,6 +25,13 @@ import {
   recordProductCost,
   type Product,
 } from "@/modules/catalogue";
+// Module rule: stock depends on sales here, never the reverse (sales
+// already depends on stock, for recordStockMovement — see sales/logic.ts).
+// recordCountDerivedSale writes only the Sale/SaleLine bookkeeping for a
+// canteen count's inferred sale; the StockMovement itself is written
+// directly below via createStockMovement, same as every other reason this
+// module writes.
+import { recordCountDerivedSale, listSalesInPeriod } from "@/modules/sales";
 import {
   createIngredientConsumptionMovement,
   createIngredientCorrectionMovement,
@@ -1335,8 +1342,15 @@ export async function findReceipt(
   return findReceiptById(db, receiptId);
 }
 
+// Same blind-count shape as StockCountForReader, minus the itemName field
+// that only the named (post-withItemNames) read path adds — recordStockCount
+// returns createStockCount's raw result, which never had item names.
+export type RecordedStockCountForNonOwner = Omit<StockCount, "lines"> & {
+  lines: (Omit<StockCount["lines"][number], "expectedQuantity"> & { expectedQuantity?: number })[];
+};
+
 export type RecordStockCountResult =
-  | { ok: true; count: StockCount }
+  | { ok: true; count: StockCount | RecordedStockCountForNonOwner }
   | { ok: false; reason: "forbidden" | "invalid_quantity" | "inactive_item" | "not_found" };
 
 // docs/architecture.md: "the count never changes the record on its own —
@@ -1403,18 +1417,91 @@ export async function recordStockCount(
     })),
   });
 
-  // 2026-08-13: count-derived sales retired — see docs/proposal.md §4.
-  // A count is now purely a shrinkage check (formulas.md §2/§6) at both
-  // locations; it no longer infers what sold. What sold comes from
-  // sales/logic.ts's recorded sales directly, the same as the
-  // restaurant always has.
+  // Revised 2026-08-15: the canteen no longer records individual cash/M-Pesa
+  // sales (docs/scope.md's "Canteen: count-derived sales" entry) — a count
+  // is how the system learns what sold, same mechanism as before BUG-10,
+  // this time with no per-item entry to double-count against, since the
+  // canteen dropped credit sales and individual entry for exactly this
+  // reason. Restaurant counts stay a pure shrinkage check (formulas.md §2)
+  // — sales there are still individually recorded and untouched here.
+  const location = await findLocationById(db, input.locationId);
+  if (location?.code === "canteen") {
+    const shortfalls = input.lines
+      .filter((line) => line.itemType === "product")
+      .map((line) => ({
+        productId: line.itemId,
+        soldQuantity: (expectedByProduct.get(line.itemId) ?? 0) - line.countedQuantity,
+      }))
+      .filter((line) => line.soldQuantity > 0);
 
-  return { ok: true, count };
+    if (shortfalls.length > 0) {
+      const soldProducts = await findProductsByIds(db, shortfalls.map((s) => s.productId));
+      const soldProductById = new Map(soldProducts.map((p) => [p.id, p]));
+
+      // The StockMovement is the actual stock decrement (what the rest of
+      // the system reads for on-hand quantity and cost of goods sold —
+      // formulas.md §6 works unchanged because it queries "sold" movements
+      // regardless of what wrote them). The Sale, written after, exists
+      // only so revenue reporting (getSalesRevenueAtLocation reads the
+      // Sale table, not StockMovement — see sales/queries.ts) and "today's
+      // summary" see this the same as any other canteen sale. Two writes,
+      // not `db.$transaction`-wrapped together: acceptable here because,
+      // unlike a counter sale, there is no oversell risk to guard against
+      // (the count already fixed what's on hand) and a failure between the
+      // two leaves the StockMovement — the figure everything else reads —
+      // still correct; only the Sale-derived revenue figure would lag,
+      // recoverable by re-running the count's numbers rather than corrupt.
+      for (const { productId, soldQuantity } of shortfalls) {
+        const product = soldProductById.get(productId);
+        await createStockMovement(db, {
+          productId,
+          locationId: input.locationId,
+          quantity: -soldQuantity,
+          reason: "sold",
+          staffMemberId: requester.staff.id,
+          occurredAt: count.occurredAt,
+          sellingValueMinor:
+            product?.priceMinor != null ? product.priceMinor * soldQuantity : null,
+        });
+      }
+
+      await recordCountDerivedSale(db, {
+        locationId: input.locationId,
+        staffMemberId: requester.staff.id,
+        occurredAt: count.occurredAt,
+        lines: shortfalls.map(({ productId, soldQuantity }) => ({
+          productId,
+          quantity: soldQuantity,
+          priceMinor: soldProductById.get(productId)?.priceMinor ?? 0,
+        })),
+      });
+    }
+  }
+
+  // Same blind-count filter as getStockCount: the restaurant's count stays
+  // an independent shrinkage check, so a non-owner submitter there doesn't
+  // get expectedQuantity back in the confirmation either. The canteen
+  // attendant does, since she's shown what the count implied before she
+  // leaves the screen — see record-stock-count.tsx's review step.
+  if (requester.staff.role === "owner" || location?.code === "canteen") {
+    return { ok: true, count };
+  }
+  return {
+    ok: true,
+    count: {
+      ...count,
+      lines: count.lines.map((line) => {
+        const { expectedQuantity: _expectedQuantity, ...rest } = line;
+        return rest;
+      }),
+    },
+  };
 }
 
 async function withItemNames(
   db: PrismaClient,
   count: StockCount,
+  isCanteen: boolean,
 ): Promise<StockCountForReader> {
   const productIds = count.lines.filter((l) => l.itemType === "product").map((l) => l.itemId);
   const ingredientIds = count.lines
@@ -1428,12 +1515,39 @@ async function withItemNames(
     ...products.map((p) => [p.id, p.name] as const),
     ...ingredients.map((i) => [i.id, i.name] as const),
   ]);
+  const priceById = new Map(products.map((p) => [p.id, p.priceMinor] as const));
+
+  // A count-derived Sale carries no FK back to the StockCount that produced
+  // it (StockCount predates Sale needing one) — recordCountDerivedSale
+  // stamps it with the count's own locationId + occurredAt instead (§2's
+  // "booked on the count's own date"), so that pair is how a short line's
+  // implied sale is found again here. voidedByProductId is undefined (not
+  // false) for a product with no matching sale line at all, so a line with
+  // no shortfall — and therefore no sale to check — renders no badge below.
+  let voidedByProductId = new Map<string, boolean>();
+  if (isCanteen && productIds.length > 0) {
+    const sales = await listSalesInPeriod(
+      db,
+      new Date(count.occurredAt.getTime() - 1),
+      count.occurredAt,
+    );
+    const sameSale = sales.filter(
+      (s) => s.locationId === count.locationId && s.occurredAt.getTime() === count.occurredAt.getTime(),
+    );
+    voidedByProductId = new Map(
+      sameSale.flatMap((s) => s.lines.map((l) => [l.productId, s.voided] as const)),
+    );
+  }
 
   return {
     ...count,
     lines: count.lines.map((line) => ({
       ...line,
       itemName: nameById.get(line.itemId) ?? "Unknown item",
+      ...(line.itemType === "product" ? { priceMinor: priceById.get(line.itemId) ?? null } : {}),
+      ...(voidedByProductId.has(line.itemId)
+        ? { saleVoided: voidedByProductId.get(line.itemId) }
+        : {}),
     })),
   };
 }
@@ -1464,9 +1578,19 @@ export async function getStockCount(
     return { ok: false, reason: "forbidden" };
   }
 
-  const named = await withItemNames(db, count);
+  // Revised 2026-08-15: the blind-count protection (hiding expectedQuantity
+  // from whoever isn't the owner, so her count stays an independent check
+  // rather than typing back what the system already believes) stays for the
+  // restaurant, where a count is still a pure shrinkage check against her
+  // own individually-recorded sales. At the canteen a count IS how the
+  // sold figure gets produced — the attendant is the one who needs to see
+  // what it implied, not just the owner reviewing it later — so she gets
+  // the same expected/counted/derived-sold detail the owner does.
+  const location = await findLocationById(db, count.locationId);
+  const isCanteen = location?.code === "canteen";
+  const named = await withItemNames(db, count, isCanteen);
 
-  if (requester.staff.role === "owner") {
+  if (requester.staff.role === "owner" || isCanteen) {
     return { ok: true, count: named };
   }
 
@@ -1478,6 +1602,30 @@ export async function getStockCount(
     }),
   };
   return { ok: true, count: counted };
+}
+
+export type LatestStockCountDateResult =
+  | { ok: true; occurredAt: Date | null }
+  | { ok: false; reason: "forbidden" };
+
+// docs/formulas.md §10's "no count yet today" gap — the canteen handover
+// screen needs to know whether today has a covering count, without the
+// owner-only expected/counted comparison getLatestStockCount carries. Just
+// the date, so any staff member who can access the location may call it
+// (unlike getLatestStockCount, which is owner-only) — this isn't the
+// blind-count comparison, only "has a count happened," the same kind of
+// fact stock-list.tsx already shows staff elsewhere.
+export async function getLatestStockCountDate(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<LatestStockCountDateResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const count = await findLatestStockCountAtLocation(db, locationId);
+  return { ok: true, occurredAt: count?.occurredAt ?? null };
 }
 
 // Ticket 24: "since last count" is only ever meaningful at the canteen
@@ -1510,7 +1658,8 @@ export async function getLatestStockCount(
   const count = await findLatestStockCountAtLocation(db, locationId);
   if (!count) return { ok: true, count: null };
 
-  return { ok: true, count: await withItemNames(db, count) };
+  const location = await findLocationById(db, locationId);
+  return { ok: true, count: await withItemNames(db, count, location?.code === "canteen") };
 }
 
 // Same shape as getLatestStockCount, parameterised by "before this count"
@@ -1531,7 +1680,8 @@ export async function getPreviousStockCount(
   const count = await findPreviousStockCountAtLocation(db, locationId, beforeOccurredAt);
   if (!count) return { ok: true, count: null };
 
-  return { ok: true, count: await withItemNames(db, count) };
+  const location = await findLocationById(db, locationId);
+  return { ok: true, count: await withItemNames(db, count, location?.code === "canteen") };
 }
 
 export type CorrectStockCountResult =
@@ -1566,7 +1716,24 @@ export async function correctStockCount(
   if (!line) return { ok: false, reason: "not_found" };
   if (line.correctedAt) return { ok: false, reason: "already_corrected" };
 
-  const delta = input.correctedQuantity - line.expectedQuantity;
+  // At the canteen, recordStockCount already wrote a `sold` movement for a
+  // product-line shortfall (expectedQuantity − countedQuantity) — so
+  // current stock already reflects countedQuantity, not expectedQuantity,
+  // for that specific line. Basing the correction's delta on
+  // expectedQuantity there would net out that sale a second time. A
+  // surplus line, by contrast, triggered no sale write at all — stock is
+  // still exactly expectedQuantity, same as any restaurant line — so it
+  // must keep comparing against expectedQuantity like every other case.
+  // Only "canteen product line with a shortfall already booked" swaps the
+  // base; everything else (restaurant, ingredients, canteen surpluses)
+  // is unchanged.
+  const location = await findLocationById(db, count.locationId);
+  const canteenShortfallAlreadyBooked =
+    line.itemType === "product" &&
+    location?.code === "canteen" &&
+    line.countedQuantity < line.expectedQuantity;
+  const deltaBase = canteenShortfallAlreadyBooked ? line.countedQuantity : line.expectedQuantity;
+  const delta = input.correctedQuantity - deltaBase;
 
   if (delta !== 0) {
     if (line.itemType === "product") {

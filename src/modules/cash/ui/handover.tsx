@@ -25,14 +25,24 @@
  * never had to render post-submit or same-day-reopen states.
  *
  * Ticket 27 extended this to the canteen rather than building a parallel
- * screen — same blind-count shape. Revised 2026-08-13: the canteen now
- * records real sales the same as the restaurant (docs/proposal.md §4), so
- * the expected figure is built from those sales at both locations —
- * see cash/logic.ts's computeExpectedFromSales — and there is no longer a
- * separate Takings declaration to record before a handover can be
- * submitted. The "record today's takings first" blocked state this
- * screen used to show at the canteen is retired along with Takings
- * itself; handing over is the single step at both locations now.
+ * screen — same blind-count shape. The expected figure is built from
+ * recorded Sale rows at both locations — see cash/logic.ts's
+ * computeExpectedFromSales — with no separate declare-a-total step at
+ * either location; handing over is the single step.
+ *
+ * 2026-08-15: at the canteen, a Sale is now written by a stock count, not
+ * typed individually (docs/scope.md's 2026-08-15 entry) — and a count runs
+ * on its own cadence, independent of the daily handover. docs/formulas.md
+ * §10 flags the resulting gap: on a day with no covering count yet,
+ * "sales recorded" reads as whatever the last count already produced,
+ * which understates what's really been sold and can make an honest
+ * handover look like a shortfall. canteenAwaitingTodaysCount (from
+ * cash/logic.ts's getTodaysHandoverForStaff, via stock's
+ * getLatestStockCountDate) flags that state; NoCountYetBanner surfaces it
+ * on both the count and confirm steps, so she isn't left guessing why the
+ * figures don't look right, and it's visible again if she comes back later
+ * once a count has landed. Never shown at the restaurant, where sales
+ * aren't count-dependent.
  */
 
 import { useEffect, useState } from "react";
@@ -58,6 +68,7 @@ export type LoadState =
       status: "ready";
       handover: HandoverView | null;
       locationCode: LocationCode;
+      canteenAwaitingTodaysCount: boolean;
     };
 
 async function fetchTodaysHandover(): Promise<LoadState> {
@@ -70,6 +81,7 @@ async function fetchTodaysHandover(): Promise<LoadState> {
       status: "ready",
       handover: body.handover ?? null,
       locationCode: body.locationCode,
+      canteenAwaitingTodaysCount: body.canteenAwaitingTodaysCount ?? false,
     };
   } catch {
     return { status: "error" };
@@ -167,6 +179,7 @@ export function HandoverView({
     <HandoverCount
       initial={state.handover}
       locationCode={state.locationCode}
+      canteenAwaitingTodaysCount={state.canteenAwaitingTodaysCount}
       onSubmit={onSubmit}
     />
   );
@@ -177,13 +190,30 @@ type Step =
   | { name: "confirm" }
   | { name: "done"; handover: HandoverView };
 
+function NoCountYetBanner() {
+  return (
+    <div
+      className="flex items-start gap-1.5 rounded-lg border border-warning/40 bg-warning-subtle px-3 py-2"
+      data-testid="handover-no-count-banner"
+    >
+      <Info className="mt-0.5 size-3.5 shrink-0 text-warning" />
+      <p className="text-[12px] text-foreground">
+        No stock count yet today — sales recorded may be incomplete until one is taken. This
+        isn&apos;t a shortfall, just an outdated figure.
+      </p>
+    </div>
+  );
+}
+
 function HandoverCount({
   initial,
   locationCode,
+  canteenAwaitingTodaysCount,
   onSubmit,
 }: {
   initial: HandoverView | null;
   locationCode: LocationCode;
+  canteenAwaitingTodaysCount: boolean;
   onSubmit: typeof submitHandover;
 }) {
   const [cash, setCash] = useState(initial ? String(initial.actualCashMinor) : "");
@@ -225,6 +255,13 @@ function HandoverCount({
             <Row label="M-Pesa" value={step.handover.actualMpesaMinor} />
           </div>
         </div>
+
+        {locationCode === "canteen" && canteenAwaitingTodaysCount && (
+          <div className="mt-3">
+            <NoCountYetBanner />
+          </div>
+        )}
+
         <button
           onClick={() => setStep({ name: "count" })}
           className="mt-3 w-full rounded-lg border border-dashed py-2.5 text-[13px] text-muted-foreground"
@@ -273,6 +310,8 @@ function HandoverCount({
             </p>
           </div>
 
+          {locationCode === "canteen" && canteenAwaitingTodaysCount && <NoCountYetBanner />}
+
           {submitError === "day_closed" && (
             <p className="text-[12px] text-destructive" data-testid="handover-submit-error">
               This day is closed — ask the owner.
@@ -306,6 +345,8 @@ function HandoverCount({
           Count what you are handing over. Cash and M-Pesa are counted
           separately.
         </p>
+
+        {locationCode === "canteen" && canteenAwaitingTodaysCount && <NoCountYetBanner />}
 
         <MethodBlock
           label="Cash"

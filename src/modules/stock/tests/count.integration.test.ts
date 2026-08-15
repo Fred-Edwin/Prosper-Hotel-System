@@ -30,6 +30,13 @@ function staffAt(
 }
 
 beforeEach(async () => {
+  // recordStockCount now writes real Sale/SaleLine rows for canteen
+  // count-derived sales (docs/scope.md's 2026-08-15 entry) — these must
+  // be cleared before product/staffMember/location, which they reference
+  // via RESTRICT foreign keys.
+  await testDb.paymentLine.deleteMany({});
+  await testDb.saleLine.deleteMany({});
+  await testDb.sale.deleteMany({});
   await testDb.stockCountLine.deleteMany({});
   await testDb.stockCount.deleteMany({});
   await testDb.stockMovement.deleteMany({});
@@ -77,6 +84,9 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  await testDb.paymentLine.deleteMany({});
+  await testDb.saleLine.deleteMany({});
+  await testDb.sale.deleteMany({});
   await testDb.stockCountLine.deleteMany({});
   await testDb.stockCount.deleteMany({});
   await testDb.stockMovement.deleteMany({});
@@ -103,6 +113,40 @@ describe("recordStockCount", () => {
     });
 
     const requester = staffAt("store_manager", restaurantId, storeManagerId);
+
+    const result = await recordStockCount(testDb, requester, {
+      locationId: restaurantId,
+      lines: [{ itemType: "product", itemId: sodaId, countedQuantity: 37 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // A restaurant count stays a blind independent check for a non-owner
+    // submitter (docs/architecture.md) — expectedQuantity is not echoed
+    // back in the confirmation, same filter getStockCount already applied
+    // to the read path.
+    expect(result.count.lines).toEqual([
+      expect.objectContaining({
+        itemType: "product",
+        itemId: sodaId,
+        countedQuantity: 37,
+      }),
+    ]);
+    expect((result.count.lines[0] as { expectedQuantity?: number }).expectedQuantity).toBeUndefined();
+  });
+
+  test("owner submitting a restaurant count still sees expectedQuantity", async () => {
+    await testDb.stockMovement.create({
+      data: {
+        productId: sodaId,
+        locationId: restaurantId,
+        quantity: 40,
+        reason: "received",
+        staffMemberId: storeManagerId,
+      },
+    });
+
+    const requester = staffAt("owner", restaurantId, storeManagerId);
 
     const result = await recordStockCount(testDb, requester, {
       locationId: restaurantId,
@@ -182,6 +226,51 @@ describe("recordStockCount", () => {
     });
 
     expect(result.ok).toBe(true);
+  });
+
+  test("a canteen attendant sees expectedQuantity in her own count's confirmation", async () => {
+    const canteen = await testDb.location.create({
+      data: { code: "canteen", name: "Test Canteen" },
+    });
+    const attendant = await testDb.staffMember.create({
+      data: {
+        name: "Test Attendant",
+        phone: "+254700111447",
+        pinHash: await hashPin("1234"),
+        role: "attendant",
+        locationId: canteen.id,
+        dailyRateMinor: 600,
+      },
+    });
+    await testDb.stockMovement.create({
+      data: {
+        productId: sodaId,
+        locationId: canteen.id,
+        quantity: 40,
+        reason: "received",
+        staffMemberId: attendant.id,
+      },
+    });
+    const requester = staffAt("attendant", canteen.id, attendant.id);
+
+    const result = await recordStockCount(testDb, requester, {
+      locationId: canteen.id,
+      lines: [{ itemType: "product", itemId: sodaId, countedQuantity: 33 }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Unlike the restaurant, the canteen count is how the sold figure gets
+    // produced — the attendant is shown what it implied, same detail the
+    // owner gets, not filtered out the way a restaurant submitter's is.
+    expect(result.count.lines).toEqual([
+      expect.objectContaining({
+        itemType: "product",
+        itemId: sodaId,
+        countedQuantity: 33,
+        expectedQuantity: 40,
+      }),
+    ]);
   });
 });
 
@@ -604,5 +693,318 @@ describe("correctStockCount", () => {
       where: { productId: sodaId, locationId: restaurantId, reason: "corrected" },
     });
     expect(movements).toHaveLength(0);
+  });
+});
+
+// docs/scope.md's 2026-08-15 "Canteen: count-derived sales" entry — a
+// canteen count now infers what sold rather than being a pure shrinkage
+// check (that stays restaurant-only, see recordStockCount's tests above).
+describe("recordStockCount — canteen count-derived sales", () => {
+  let canteenId: string;
+  let canteenSodaId: string;
+  let attendantId: string;
+
+  beforeEach(async () => {
+    const canteen = await testDb.location.create({
+      data: { code: "canteen", name: "Test Canteen" },
+    });
+    canteenId = canteen.id;
+
+    const attendant = await testDb.staffMember.create({
+      data: {
+        name: "Test Attendant",
+        phone: "+254700111447",
+        pinHash: await hashPin("1234"),
+        role: "attendant",
+        locationId: canteen.id,
+        dailyRateMinor: 600,
+      },
+    });
+    attendantId = attendant.id;
+
+    const canteenSoda = await testDb.product.create({
+      data: { name: "Canteen Soda", kind: "goods", priceMinor: 100, locationId: canteenId },
+    });
+    canteenSodaId = canteenSoda.id;
+
+    await testDb.stockMovement.create({
+      data: {
+        productId: canteenSodaId,
+        locationId: canteenId,
+        quantity: 40,
+        reason: "received",
+        staffMemberId: attendantId,
+      },
+    });
+  });
+
+  test("a shortfall writes a sold movement and a matching Sale with no payment lines", async () => {
+    const requester = staffAt("attendant", canteenId, attendantId);
+
+    const result = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: canteenSodaId, countedQuantity: 33 }],
+    });
+
+    expect(result.ok).toBe(true);
+
+    const soldMovements = await testDb.stockMovement.findMany({
+      where: { productId: canteenSodaId, locationId: canteenId, reason: "sold" },
+    });
+    expect(soldMovements).toHaveLength(1);
+    expect(soldMovements[0].quantity.toNumber()).toBe(-7);
+    expect(soldMovements[0].sellingValueMinor?.toNumber()).toBe(700);
+
+    const sales = await testDb.sale.findMany({
+      where: { locationId: canteenId },
+      include: { lines: true, paymentLines: true },
+    });
+    expect(sales).toHaveLength(1);
+    expect(sales[0].totalMinor.toNumber()).toBe(700);
+    expect(sales[0].paymentLines).toHaveLength(0);
+    expect(sales[0].lines).toEqual([
+      expect.objectContaining({ productId: canteenSodaId, quantity: expect.anything() }),
+    ]);
+    expect(sales[0].lines[0].quantity.toNumber()).toBe(7);
+  });
+
+  test("the sold movement and Sale are dated to the count's occurredAt, not now", async () => {
+    const requester = staffAt("attendant", canteenId, attendantId);
+
+    const result = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: canteenSodaId, countedQuantity: 30 }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const soldMovement = await testDb.stockMovement.findFirst({
+      where: { productId: canteenSodaId, locationId: canteenId, reason: "sold" },
+    });
+    const sale = await testDb.sale.findFirst({ where: { locationId: canteenId } });
+
+    expect(soldMovement?.occurredAt.getTime()).toBe(result.count.occurredAt.getTime());
+    expect(sale?.occurredAt.getTime()).toBe(result.count.occurredAt.getTime());
+  });
+
+  test("no shortfall (surplus or exact match) writes no sold movement and no Sale", async () => {
+    const requester = staffAt("attendant", canteenId, attendantId);
+
+    const result = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: canteenSodaId, countedQuantity: 45 }],
+    });
+    expect(result.ok).toBe(true);
+
+    const soldMovements = await testDb.stockMovement.findMany({
+      where: { productId: canteenSodaId, locationId: canteenId, reason: "sold" },
+    });
+    expect(soldMovements).toHaveLength(0);
+
+    const sales = await testDb.sale.findMany({ where: { locationId: canteenId } });
+    expect(sales).toHaveLength(0);
+  });
+
+  test("an ingredient line at the canteen is unaffected — no product, no sale inference", async () => {
+    const ingredient = await testDb.ingredient.create({
+      data: { name: "Cups", unitOfMeasure: "unit", lastKnownCostMinor: 500 },
+    });
+    await testDb.ingredientMovement.create({
+      data: {
+        ingredientId: ingredient.id,
+        locationId: canteenId,
+        quantity: 20,
+        reason: "received",
+        staffMemberId: attendantId,
+      },
+    });
+
+    const requester = staffAt("attendant", canteenId, attendantId);
+    const result = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [{ itemType: "ingredient", itemId: ingredient.id, countedQuantity: 15 }],
+    });
+    expect(result.ok).toBe(true);
+
+    const sales = await testDb.sale.findMany({ where: { locationId: canteenId } });
+    expect(sales).toHaveLength(0);
+  });
+
+  test("multiple shortfall lines in one count produce one Sale with multiple lines", async () => {
+    const chips = await testDb.product.create({
+      data: { name: "Canteen Chips", kind: "goods", priceMinor: 50, locationId: canteenId },
+    });
+    await testDb.stockMovement.create({
+      data: {
+        productId: chips.id,
+        locationId: canteenId,
+        quantity: 20,
+        reason: "received",
+        staffMemberId: attendantId,
+      },
+    });
+
+    const requester = staffAt("attendant", canteenId, attendantId);
+    const result = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [
+        { itemType: "product", itemId: canteenSodaId, countedQuantity: 33 },
+        { itemType: "product", itemId: chips.id, countedQuantity: 18 },
+      ],
+    });
+    expect(result.ok).toBe(true);
+
+    const sales = await testDb.sale.findMany({
+      where: { locationId: canteenId },
+      include: { lines: true },
+    });
+    expect(sales).toHaveLength(1);
+    expect(sales[0].lines).toHaveLength(2);
+    // 7 sodas at 100 + 2 chips at 50 = 800
+    expect(sales[0].totalMinor.toNumber()).toBe(800);
+  });
+});
+
+describe("correctStockCount — canteen count-derived sale already booked", () => {
+  let canteenId: string;
+  let canteenSodaId: string;
+  let attendantId: string;
+  let canteenOwnerId: string;
+
+  beforeEach(async () => {
+    const canteen = await testDb.location.create({
+      data: { code: "canteen", name: "Test Canteen" },
+    });
+    canteenId = canteen.id;
+
+    const attendant = await testDb.staffMember.create({
+      data: {
+        name: "Test Attendant",
+        phone: "+254700111449",
+        pinHash: await hashPin("1234"),
+        role: "attendant",
+        locationId: canteen.id,
+        dailyRateMinor: 600,
+      },
+    });
+    attendantId = attendant.id;
+
+    const canteenOwner = await testDb.staffMember.create({
+      data: {
+        name: "Test Owner (canteen count corrections)",
+        phone: "+254700111450",
+        pinHash: await hashPin("1234"),
+        role: "owner",
+        locationId: canteen.id,
+        dailyRateMinor: 0,
+      },
+    });
+    canteenOwnerId = canteenOwner.id;
+
+    const canteenSoda = await testDb.product.create({
+      data: { name: "Canteen Soda", kind: "goods", priceMinor: 100, locationId: canteenId },
+    });
+    canteenSodaId = canteenSoda.id;
+
+    await testDb.stockMovement.create({
+      data: {
+        productId: canteenSodaId,
+        locationId: canteenId,
+        quantity: 40,
+        reason: "received",
+        staffMemberId: attendantId,
+      },
+    });
+  });
+
+  test("correcting to the same figure the attendant counted writes no further movement", async () => {
+    // expected 40, counted 33 -> recordStockCount already wrote sold -7,
+    // stock now at 33. The owner re-examines and agrees 33 was right.
+    const requester = staffAt("attendant", canteenId, attendantId);
+    const recorded = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: canteenSodaId, countedQuantity: 33 }],
+    });
+    if (!recorded.ok) throw new Error("setup failed");
+
+    const ownerRequester = staffAt("owner", canteenId, canteenOwnerId);
+    const result = await correctStockCount(testDb, ownerRequester, {
+      stockCountId: recorded.count.id,
+      lineId: recorded.count.lines[0].id,
+      correctedQuantity: 33,
+    });
+    expect(result).toEqual({ ok: true });
+
+    const correctionMovements = await testDb.stockMovement.findMany({
+      where: { productId: canteenSodaId, locationId: canteenId, reason: "corrected" },
+    });
+    expect(correctionMovements).toHaveLength(0);
+
+    const movements = await testDb.stockMovement.findMany({
+      where: { productId: canteenSodaId, locationId: canteenId },
+    });
+    const quantityOnHand = movements.reduce((sum, m) => sum + m.quantity.toNumber(), 0);
+    expect(quantityOnHand).toBe(33);
+  });
+
+  test("correcting against the already-counted figure, not the stale expected figure, avoids double-counting the shrinkage", async () => {
+    // expected 40, counted 33 -> sold -7 written, stock at 33. Owner later
+    // finds the true count should have been 30 (attendant misread the
+    // shelf). The correction must move stock from 33 -> 30 (delta -3), not
+    // from the stale expected 40 -> 30 (which would double the -7 already
+    // booked as a sale).
+    const requester = staffAt("attendant", canteenId, attendantId);
+    const recorded = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: canteenSodaId, countedQuantity: 33 }],
+    });
+    if (!recorded.ok) throw new Error("setup failed");
+
+    const ownerRequester = staffAt("owner", canteenId, canteenOwnerId);
+    const result = await correctStockCount(testDb, ownerRequester, {
+      stockCountId: recorded.count.id,
+      lineId: recorded.count.lines[0].id,
+      correctedQuantity: 30,
+    });
+    expect(result).toEqual({ ok: true });
+
+    const correctionMovements = await testDb.stockMovement.findMany({
+      where: { productId: canteenSodaId, locationId: canteenId, reason: "corrected" },
+    });
+    expect(correctionMovements).toHaveLength(1);
+    expect(correctionMovements[0].quantity.toNumber()).toBe(-3);
+
+    const movements = await testDb.stockMovement.findMany({
+      where: { productId: canteenSodaId, locationId: canteenId },
+    });
+    const quantityOnHand = movements.reduce((sum, m) => sum + m.quantity.toNumber(), 0);
+    expect(quantityOnHand).toBe(30);
+  });
+
+  test("a canteen count with no shortfall (nothing sold) still corrects against expected as normal", async () => {
+    // expected 40, counted 42 (surplus) -> no sold movement written.
+    // countedQuantity (42) and expectedQuantity (40) both make sense as a
+    // base here since nothing was already booked as a sale; the
+    // canteen-specific deltaBase only matters when a shortfall occurred.
+    const requester = staffAt("attendant", canteenId, attendantId);
+    const recorded = await recordStockCount(testDb, requester, {
+      locationId: canteenId,
+      lines: [{ itemType: "product", itemId: canteenSodaId, countedQuantity: 42 }],
+    });
+    if (!recorded.ok) throw new Error("setup failed");
+
+    const ownerRequester = staffAt("owner", canteenId, canteenOwnerId);
+    const result = await correctStockCount(testDb, ownerRequester, {
+      stockCountId: recorded.count.id,
+      lineId: recorded.count.lines[0].id,
+      correctedQuantity: 45,
+    });
+    expect(result).toEqual({ ok: true });
+
+    const movements = await testDb.stockMovement.findMany({
+      where: { productId: canteenSodaId, locationId: canteenId },
+    });
+    const quantityOnHand = movements.reduce((sum, m) => sum + m.quantity.toNumber(), 0);
+    expect(quantityOnHand).toBe(45);
   });
 });

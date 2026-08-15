@@ -270,3 +270,26 @@ export async function findSalesForStaffToday(
   });
   return rows.map(toSale);
 }
+
+// Location-scoped, not staff-scoped — unlike findSalesForStaffToday. The
+// canteen's Handover reconciles the whole location's day, not one person's
+// till: a count-derived sale (recordStockCount) is attributed to whoever
+// ran the count, which may not be the attendant handing over. Restaurant
+// handover deliberately stays staff-scoped (each cashier reconciles their
+// own drawer) — this is canteen-only, single-handed-location bookkeeping.
+export async function findSalesAtLocationToday(
+  db: PrismaClient,
+  locationId: string,
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<Sale[]> {
+  const rows = await db.sale.findMany({
+    where: {
+      locationId,
+      occurredAt: { gte: dayStart, lt: dayEnd },
+    },
+    include: { lines: true, paymentLines: true },
+    orderBy: { occurredAt: "desc" },
+  });
+  return rows.map(toSale);
+}

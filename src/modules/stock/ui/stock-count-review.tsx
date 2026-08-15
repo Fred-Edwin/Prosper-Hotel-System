@@ -21,11 +21,21 @@
  * has no room for a stateful per-row input.
  *
  * Ticket 24 extends this screen with a "since last count" section: the
- * canteen's derived-sold quantity and revenue per item, computed when the
- * count was recorded (stock/logic.ts's recordCountDerivedSales). Owner-only
- * like the rest of this screen — it's financial detail, same footing as the
+ * canteen's derived-sold quantity and revenue per item. Owner-only like the
+ * rest of this screen — it's financial detail, same footing as the
  * expected/difference comparison above. Absent for a restaurant count or a
  * canteen's first-ever count (nothing to derive against yet).
+ *
+ * 2026-08-15 fix: this section used to read a `derivedSales` field from
+ * getLatestStockCount's response that the backend has never actually sent
+ * (retired with the 2026-08-13 "real sales" rework and never restored when
+ * count-derived sales came back) — it silently rendered "nothing sold"
+ * regardless of what happened. Computed client-side instead, the same way
+ * record-stock-count.tsx's post-submit review does: sold = expected −
+ * counted for any short product line, valued at priceMinor (now part of
+ * ReviewLine — see schema.ts's StockCountLineForReader). isCanteen, passed
+ * by the caller (stock-page-client.tsx knows the selected location's
+ * code), gates the section the same way `derivedSales.available` used to.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -51,16 +61,12 @@ export type ReviewLine = {
   countedQuantity: number;
   expectedQuantity: number;
   correctedAt: string | null;
+  /** Product lines only — needed to value a short line as a derived sale. */
+  priceMinor?: number | null;
+  /** True when the sale this short line implied has since been voided —
+   * see stock/logic.ts's withItemNames. */
+  saleVoided?: boolean;
 };
-
-export type DerivedSaleLine = {
-  productId: string;
-  itemName: string;
-  quantity: number;
-  revenueMinor: number | null;
-};
-
-export type DerivedSalesDetail = { available: false } | { available: true; lines: DerivedSaleLine[] };
 
 export type LoadState =
   | { status: "loading" }
@@ -69,7 +75,6 @@ export type LoadState =
       status: "ready";
       countId: string | null;
       lines: ReviewLine[] | null;
-      derivedSales: DerivedSalesDetail;
     };
 
 async function fetchLatestCount(locationId: string): Promise<LoadState> {
@@ -81,7 +86,6 @@ async function fetchLatestCount(locationId: string): Promise<LoadState> {
       status: "ready",
       countId: body.count?.id ?? null,
       lines: body.count?.lines ?? null,
-      derivedSales: body.derivedSales ?? { available: false },
     };
   } catch {
     return { status: "error" };
@@ -109,12 +113,19 @@ async function submitCorrection(
   }
 }
 
-export function StockCountReview({ locationId }: { locationId: string }) {
+export function StockCountReview({
+  locationId,
+  isCanteen = false,
+}: {
+  locationId: string;
+  isCanteen?: boolean;
+}) {
   const [attempt, setAttempt] = useState(0);
   return (
     <StockCountReviewForAttempt
       key={`${locationId}-${attempt}`}
       locationId={locationId}
+      isCanteen={isCanteen}
       onRetry={() => setAttempt((a) => a + 1)}
     />
   );
@@ -122,9 +133,11 @@ export function StockCountReview({ locationId }: { locationId: string }) {
 
 function StockCountReviewForAttempt({
   locationId,
+  isCanteen,
   onRetry,
 }: {
   locationId: string;
+  isCanteen: boolean;
   onRetry: () => void;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -155,7 +168,9 @@ function StockCountReviewForAttempt({
     });
   };
 
-  return <StockCountReviewView state={state} onRetry={onRetry} onCorrected={onCorrected} />;
+  return (
+    <StockCountReviewView state={state} isCanteen={isCanteen} onRetry={onRetry} onCorrected={onCorrected} />
+  );
 }
 
 /** The presentational half — what Storybook mounts to show every state
@@ -164,12 +179,14 @@ function StockCountReviewForAttempt({
  * component drives this state itself in every real caller. */
 export function StockCountReviewView({
   state,
+  isCanteen = false,
   onRetry = () => {},
   onCorrected = () => {},
   onCorrect = submitCorrection,
   initialCorrectingId = null,
 }: {
   state: LoadState;
+  isCanteen?: boolean;
   onRetry?: () => void;
   onCorrected?: (lineId: string) => void;
   onCorrect?: typeof submitCorrection;
@@ -343,21 +360,44 @@ export function StockCountReviewView({
         </Table>
       </div>
 
-      <DerivedSalesSection detail={state.derivedSales} />
+      {isCanteen && <DerivedSalesSection lines={lines} />}
     </div>
   );
 }
 
+type DerivedSaleLine = {
+  id: string;
+  itemName: string;
+  quantity: number;
+  revenueMinor: number | null;
+  voided: boolean;
+};
+
+function derivedSalesFrom(lines: ReviewLine[]): DerivedSaleLine[] {
+  return lines
+    .filter((l) => l.itemType === "product" && l.countedQuantity < l.expectedQuantity)
+    .map((l) => {
+      const quantity = l.expectedQuantity - l.countedQuantity;
+      return {
+        id: l.id,
+        itemName: l.itemName,
+        quantity,
+        revenueMinor: l.priceMinor != null ? l.priceMinor * quantity : null,
+        voided: l.saleVoided === true,
+      };
+    });
+}
+
 /** The canteen's only source of item-by-item trading detail — worked out
  * at this count, not recorded at the moment of sale (CONTEXT.md's "Sold,
- * derived"). Renders nothing for a restaurant count; shows an explicit
- * "not yet available" message for a canteen's first-ever count, per
- * formulas.md's "first period has no measured rate" caveat, rather than a
- * false zero-baseline figure. */
-function DerivedSalesSection({ detail }: { detail: DerivedSalesDetail }) {
-  if (!detail.available) return null;
+ * derived"). Renders nothing for a restaurant count (isCanteen false);
+ * shows an explicit empty state for a canteen count with no shortfall,
+ * rather than nothing at all, so the owner can tell "nothing sold" from
+ * "this section is broken." */
+function DerivedSalesSection({ lines }: { lines: ReviewLine[] }) {
+  const sold = derivedSalesFrom(lines);
 
-  if (detail.lines.length === 0) {
+  if (sold.length === 0) {
     return (
       <div className="mt-4">
         <div className="mb-3 flex items-center gap-2">
@@ -371,7 +411,12 @@ function DerivedSalesSection({ detail }: { detail: DerivedSalesDetail }) {
     );
   }
 
-  const totalRevenueMinor = detail.lines.reduce((sum, l) => sum + (l.revenueMinor ?? 0), 0);
+  // Voided lines are still shown (the shortfall itself is real) but drop
+  // out of the total — a voided count-derived sale no longer counts as
+  // revenue anywhere else in the app, and this total shouldn't disagree.
+  const totalRevenueMinor = sold
+    .filter((l) => !l.voided)
+    .reduce((sum, l) => sum + (l.revenueMinor ?? 0), 0);
 
   return (
     <div className="mt-4">
@@ -392,11 +437,28 @@ function DerivedSalesSection({ detail }: { detail: DerivedSalesDetail }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {detail.lines.map((l) => (
-              <TableRow key={l.productId} data-testid="derived-sales-row">
-                <TableCell className="font-medium">{l.itemName}</TableCell>
-                <TableCell className="tabular-nums text-right">{l.quantity}</TableCell>
-                <TableCell className="tabular-nums text-right">
+            {sold.map((l) => (
+              <TableRow key={l.id} data-testid="derived-sales-row" data-voided={l.voided}>
+                <TableCell className="font-medium">
+                  {l.itemName}
+                  {l.voided && (
+                    <Badge
+                      variant="outline"
+                      className="ml-2 text-[10px] text-muted-foreground"
+                      data-testid="derived-sales-voided-badge"
+                    >
+                      Voided
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell
+                  className={`tabular-nums text-right ${l.voided ? "text-muted-foreground" : ""}`}
+                >
+                  {l.quantity}
+                </TableCell>
+                <TableCell
+                  className={`tabular-nums text-right ${l.voided ? "text-muted-foreground" : ""}`}
+                >
                   {l.revenueMinor == null ? "—" : money(l.revenueMinor)}
                 </TableCell>
               </TableRow>

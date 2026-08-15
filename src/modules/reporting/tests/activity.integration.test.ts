@@ -169,6 +169,11 @@ describe("getActivity", () => {
     expect(wastage.ok).toBe(true);
 
     // stock count + owner correction (canteen, Anne counts, Lucy corrects)
+    // — 2026-08-15: this count's own shortfall (100 on hand, 5 counted) is
+    // now what produces the canteen's "sale" row (docs/scope.md's
+    // "Canteen: count-derived sales" entry), so there is no longer a
+    // separate recordCounterSale call to seed one — recordCounterSale
+    // rejects the canteen outright now.
     const count = await recordStockCount(testDb, attendant(), {
       locationId: canteenId,
       lines: [{ itemType: "product", itemId: sodaId, countedQuantity: 5 }],
@@ -196,14 +201,6 @@ describe("getActivity", () => {
         actualMpesaMinor: 0,
       },
     });
-
-    // canteen sale (Anne) — 2026-08-13: the canteen records real sales
-    // the same as the restaurant now, no separate Takings row.
-    const canteenSale = await recordCounterSale(testDb, attendant(), {
-      lines: [{ productId: sodaId, quantity: 1 }],
-      paymentLines: [],
-    });
-    expect(canteenSale.ok).toBe(true);
 
     // expense (restaurant, owner)
     const expense = await recordExpense(testDb, owner(), {

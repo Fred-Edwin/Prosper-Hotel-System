@@ -25,6 +25,12 @@ function staffAt(role: "owner" | "cashier", locationId: string, locationCode: "r
 }
 
 beforeEach(async () => {
+  // A canteen count with a shortfall now writes a real Sale/SaleLine
+  // (docs/scope.md's 2026-08-15 entry) — clear those before
+  // product/staffMember/location, which they reference via RESTRICT keys.
+  await testDb.paymentLine.deleteMany({});
+  await testDb.saleLine.deleteMany({});
+  await testDb.sale.deleteMany({});
   await testDb.stockCountLine.deleteMany({});
   await testDb.stockCount.deleteMany({});
   await testDb.stockMovement.deleteMany({});
@@ -57,6 +63,9 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  await testDb.paymentLine.deleteMany({});
+  await testDb.saleLine.deleteMany({});
+  await testDb.sale.deleteMany({});
   await testDb.stockCountLine.deleteMany({});
   await testDb.stockCount.deleteMany({});
   await testDb.stockMovement.deleteMany({});

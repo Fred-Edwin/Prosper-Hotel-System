@@ -168,7 +168,38 @@ function DraftRows({ draft, onQuantity, onRemove }: { draft: DraftLine[]; onQuan
 }
 
 function DraftLineRow({ line, onQuantity, onRemove }: { line: DraftLine; onQuantity: (id: string, value: number) => void; onRemove: (id: string) => void }) {
-  return <div className="flex items-center gap-2 rounded-lg border bg-card p-2"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{line.name}</p><p className="text-xs text-muted-foreground">{line.available} {line.unit} available</p></div><Button variant="outline" size="icon-sm" onClick={() => onQuantity(line.id, line.quantity - 1)} aria-label={`Decrease ${line.name}`}><Minus /></Button><Input value={String(line.quantity)} onChange={(event) => onQuantity(line.id, Number(event.target.value) || 1)} inputMode="numeric" className="h-7 w-12 px-1 text-center text-sm" aria-label={`Quantity for ${line.name}`} /><Button variant="outline" size="icon-sm" onClick={() => onQuantity(line.id, line.quantity + 1)} aria-label={`Increase ${line.name}`}><Plus /></Button><Button variant="ghost" size="icon-sm" onClick={() => onRemove(line.id)} aria-label={`Remove ${line.name}`}><Trash2 /></Button></div>;
+  return <div className="flex items-center gap-2 rounded-lg border bg-card p-2"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{line.name}</p><p className="text-xs text-muted-foreground">{line.available} {line.unit} available</p></div><Button variant="outline" size="icon-sm" onClick={() => onQuantity(line.id, line.quantity - 1)} aria-label={`Decrease ${line.name}`}><Minus /></Button><DraftQtyInput key={line.quantity} line={line} onCommit={(value) => onQuantity(line.id, value)} /><Button variant="outline" size="icon-sm" onClick={() => onQuantity(line.id, line.quantity + 1)} aria-label={`Increase ${line.name}`}><Plus /></Button><Button variant="ghost" size="icon-sm" onClick={() => onRemove(line.id)} aria-label={`Remove ${line.name}`}><Trash2 /></Button></div>;
+}
+
+/** Free-typed text while focused — clamping on every keystroke (the old
+ * behaviour) made the field undeletable, since an in-progress value like
+ * "2" got immediately forced back through Math.max/min. Keyed on
+ * line.quantity so stepper-driven changes remount with fresh text instead
+ * of syncing via an effect. */
+function DraftQtyInput({ line, onCommit }: { line: DraftLine; onCommit: (value: number) => void }) {
+  const [text, setText] = useState(String(line.quantity));
+
+  const commit = () => {
+    const parsed = Number(text);
+    onCommit(Number.isFinite(parsed) && text.trim() !== "" ? parsed : line.quantity);
+  };
+
+  return (
+    <Input
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          commit();
+          event.currentTarget.blur();
+        }
+      }}
+      inputMode="numeric"
+      className="h-7 w-12 px-1 text-center text-sm"
+      aria-label={`Quantity for ${line.name}`}
+    />
+  );
 }
 
 function DraftBar({ count, onReview }: { count: number; onReview: () => void }) {

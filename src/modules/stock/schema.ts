@@ -115,12 +115,22 @@ export type StockCount = {
 };
 
 // getStockCount's response shape — expectedQuantity is present only when
-// the caller is the owner. The comparison is owner-only regardless of who
-// recorded the count, so a store manager/attendant's response omits the
-// field entirely rather than the UI hiding a column it already received.
+// the caller is the owner or the count is at the canteen (2026-08-15: see
+// stock/logic.ts). priceMinor lets a canteen reader value a short line as
+// a derived sale (stock-count-review.tsx's "since last count" panel,
+// record-stock-count.tsx's post-submit review) without a second round trip
+// for the product's price — present only for product lines, absent for
+// ingredients, which are never sold.
 export type StockCountLineForReader = Omit<StockCountLine, "expectedQuantity"> & {
   expectedQuantity?: number;
   itemName: string;
+  priceMinor?: number | null;
+  /** Canteen only, and only for a line that was short (implied a sale).
+   * True when the count-derived Sale this line produced has since been
+   * voided — the shortfall is still real, but the sale no longer counts
+   * anywhere revenue is reported. Undefined where there's no derived sale
+   * to check (not short, an ingredient line, or the restaurant). */
+  saleVoided?: boolean;
 };
 
 export type StockCountForReader = Omit<StockCount, "lines"> & {

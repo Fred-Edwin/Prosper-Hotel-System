@@ -111,25 +111,6 @@ export const DeliveryFulfilment: Story = {
   },
 };
 
-/**
- * 2026-08-13 canteen redesign: the attendant records product + quantity
- * only, no payment method per sale (proposal.md §4). Add products and
- * "Complete sale" enables immediately with no payment line typed — that's
- * the expected, complete state for this role, not something to fill in.
- * Credit is still available via "Record as credit", which still needs a
- * named customer.
- */
-export const AttendantNoPaymentRequired: Story = {
-  name: "Attendant — payment not required",
-  args: {
-    state: { status: "ready", products },
-    onSubmit: stubSubmit,
-    onLoadCustomers: stubLoadCustomers,
-    onCreateCustomer: stubCreateCustomer,
-    role: "attendant",
-  },
-};
-
 export const Loading: Story = {
   args: { state: { status: "loading" } },
 };

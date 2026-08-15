@@ -181,6 +181,60 @@ correct); how current stock is computed (still purely the movement ledger); perm
 business rule about *what's offered*, not a permission check about *who may act*, and is
 enforced separately in each module's `logic.ts`).
 
+### 2026-08-15 — Canteen: count-derived sales, dropping credit and individual entry
+
+*Supersedes the 2026-08-13 "Canteen: real sales" entry above, specifically its "canteen
+attendant records real per-sale rows" change — everything else that entry introduced
+(two-sided transfers, the canteen stock page split, "Today's summary") is unaffected and
+stays. Client-directed: individually recording a sale per item proved too slow for the
+canteen's actual mid-rush trade, and the owner's own established procedure — count what's left,
+subtract from what was available, that's what sold — was the model this system moved away from
+on 2026-08-13. This entry moves back to it, deliberately, not by accident.*
+
+**What changes:**
+
+- The canteen attendant no longer records individual sales at all — no per-item entry, no
+  payment method, no customer name. `recordCounterSale` rejects a canteen location outright.
+- Instead, a canteen stock count (`recordStockCount`) infers what sold: for any product line
+  where the counted quantity is short of expected, the shortfall is written as a real `sold`
+  `StockMovement` — the same reason and shape a restaurant sale's line writes — plus a matching
+  `Sale` record (product, quantity, no payment lines) so revenue reporting and "Today's summary"
+  see it exactly as they would any other canteen sale. Both are dated to the count's own
+  `occurredAt`, not spread across the days since the previous count.
+- **Credit sales are dropped for the canteen entirely.** A count cannot infer a customer's name,
+  and running two entry paths at one location (count-derived for cash, typed for credit) is the
+  exact combination that produced BUG-10 the first time. The restaurant's credit-sale flow is
+  unaffected.
+- **No distinction between a sale and ordinary shrinkage at the canteen.** Breakage, giveaways
+  and missed counts all read as a sale — accepted as a deliberate simplification for the
+  canteen's stock, not a gap to close later.
+- A canteen count and a canteen handover are fully decoupled: handover (cash/M-Pesa held) stays
+  daily as it already was; a count may be taken on any day the attendant chooses, independent of
+  that cadence.
+- The owner's stock-count correction (`correctStockCount`) is adjusted so that correcting an
+  already count-derived canteen line diffs against what was counted, not the original expected
+  figure — the count already moved stock once via the inferred sale; correcting against the
+  stale expected figure would move it a second time.
+
+**What this retires:** individual canteen sale entry (`new-sale.tsx`/`credit-sale.tsx` no
+longer offer the canteen as a target — canteen-side UI work follows in a separate pass);
+canteen credit sales.
+
+**What this does not change:** the restaurant's sale recording, credit, and correction flows,
+all untouched; canteen cost of goods sold (`docs/formulas.md` §6) — it already read `sold`
+movements directly and needed no change, since a count-derived `sold` line is indistinguishable
+from one written any other way; two-sided transfers and the canteen stock page split from
+2026-08-13, both unaffected.
+
+**Definition of done:** a canteen stock count with a shortfall line writes a `sold`
+`StockMovement` and a matching `Sale`, dated to the count; `recordCounterSale` rejects any
+canteen-location call; no canteen credit sale can be recorded through any path; correcting a
+canteen count line after a count-derived sale was already written adjusts stock correctly, not
+doubly; canteen revenue and cost of goods sold report correctly off count-derived sales in the
+Dashboard and Ledger; `CONTEXT.md`'s `Sale`, `Location` and `Stock Movement` entries and
+`docs/formulas.md` §1/§2 read consistently with this design (backend half only — UI and full
+verification are separate, later passes per the 3-session split agreed with the client).
+
 **Definition of done:** every product has a home location, set at creation and editable after;
 New Sale/Production/Correction at each location show only in-scope products, with
 transferred-in items visually distinguished; production is rejected with a clear reason when

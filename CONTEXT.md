@@ -74,12 +74,16 @@ restaurant counts **daily**. The canteen counts its **cooked food daily** (a sho
 count of a few items) and its **own packaged goods periodically**, weekly by habit,
 their bulk making a daily count impractical.
 
-*Revised 2026-08-13.* The count cycle no longer changes how sales are recorded — both
-locations record every [[Sale]] individually, see [[Sale]]. A count is now purely a
-**shrinkage check**: counted quantity against what the movements say should be on the
-shelf, at whatever cycle suits each location's stock. It is an **event, not a schedule** —
-it may be taken on any day — but it no longer determines the period for any revenue or cost
-figure, since those now come from sales as recorded.
+*Revised 2026-08-13, revised again 2026-08-15.* At the restaurant, the count cycle does not
+change how sales are recorded — every [[Sale]] is recorded individually, and a count is purely
+a **shrinkage check**: counted quantity against what the movements say should be on the shelf.
+
+At the canteen, a count is how the system learns what sold — see [[Sale]]. It is still an
+**event, not a schedule**: it may be taken on any day, independently of [[Handover]], which
+stays daily regardless of whether a count happened that day. Whatever a count implies about the
+days since the previous one is booked entirely on the count's own date — it is not spread back
+across the intervening days, which report no canteen sales until the count that covers them
+lands.
 
 ## Takings — retired 2026-08-13
 
@@ -105,14 +109,43 @@ Two independent facts sit on a sale, and neither creates a different kind of sal
 
 Credit is a payment line like any other, settled later. See [[Customer]].
 
-**Sales are recorded per sale at both locations.** *Revised 2026-08-13.* A canteen sale
-records product and quantity, the same as a restaurant sale, but carries **no payment line at
-the point of entry** — trade is too fast, mid-rush, for payment method to be captured per
-sale. It is settled at close instead, when the attendant hands over: the cash and M-Pesa she
-is holding are entered directly on the [[Handover]] and checked against the day's recorded
-sales as a combined total rather than reconciled line by line. A credit sale
-is the one exception: it is still recorded individually with a named [[Customer]] attached, at
-either location, because a debt needs a name and cannot be inferred from a total.
+**The restaurant records every sale individually**, the same discipline this section always
+described: product, quantity and payment line(s) entered at the point of sale.
+
+**The canteen does not.** *Revised 2026-08-15 — supersedes the 2026-08-13 revision below.*
+Trying individually-recorded canteen sales in practice surfaced the reason the client had
+originally counted stock by hand instead: an attendant serving mid-rush cannot pause to key in
+a line per item. The canteen now works the way its own physical process already did — the
+attendant counts what remains on the shelf ([[Stock Movement]] covers how that count becomes a
+`sold` movement), and the system infers the quantity sold from the gap between what was
+expected and what she counted. That inferred quantity is what a canteen "Sale" is: a real
+`Sale` record, product and quantity, dated to the count that produced it — but authored by a
+count, not typed line by line.
+
+**No payment line, same as before** — canteen revenue was never split into cash/M-Pesa at the
+point of entry, and still isn't; the [[Handover]] total remains the only place that split is
+declared.
+
+**No credit sales at the canteen.** A credit sale needs a named [[Customer]] entered
+individually — the one thing a count cannot infer. Rather than maintain two entry paths at one
+location (count-derived for cash sales, typed for credit), credit is dropped for the canteen
+entirely. A canteen sale on credit is not recorded; the restaurant is unaffected; see
+`docs/scope.md`'s 2026-08-15 entry for why.
+
+**No distinction between a sale and ordinary shrinkage at the canteen.** Breakage, a
+complimentary item, or a missed count all read identically to a sale — the gap between expected
+and counted stock, with no way to tell them apart after the fact. This is a deliberate
+simplification for the canteen's low-value, high-volume goods, not an oversight; see
+`docs/scope.md`.
+
+*Retired 2026-08-15 (previously the 2026-08-13 revision, in force for two days):* the canteen
+briefly recorded real per-sale rows the same way the restaurant does, with credit sales
+individually entered and named. That model exposed BUG-10 — a real cash sale and a count-based
+inference double-counting the same shrinkage — because a count-derived figure and an
+individually-recorded figure existed side by side with no reliable way to net one against the
+other. Retiring individual canteen entry back to count-derived, and dropping canteen credit
+sales alongside it, removes the two moving parts that collided rather than patching the netting
+formula between them.
 
 ## Stock Movement
 
@@ -131,6 +164,14 @@ differently and the client reads them as separate records:
 
 The families share the reason list below; what differs is how they are valued
 and therefore how they are read.
+
+**A `sold` movement's author differs by location.** *Added 2026-08-15.* At the restaurant it is
+always written directly, one line per [[Sale]], the moment the sale is entered. At the canteen
+it is written by a stock count instead — see [[Location]] and [[Sale]] — as the gap between
+that count's expected and counted quantity, for any product line that came up short. The
+movement itself is indistinguishable from a restaurant `sold` line once written; only how it
+came to exist differs, and that provenance lives in which record produced it (a [[Sale]] versus
+a stock count), not in the movement's own `reason`.
 
 Every movement carries a **reason**, and the reasons are kept apart rather than
 lumped together:

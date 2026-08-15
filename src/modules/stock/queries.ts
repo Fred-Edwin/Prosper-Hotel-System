@@ -79,10 +79,12 @@ export async function createStockMovement(
     isEstimated?: boolean;
     transferId?: string;
     receiptId?: string;
-    // Ticket 24: sold_derived rows are stamped with the triggering count's
-    // own occurredAt rather than a fresh now(), so the owner's review
-    // screen can look them back up by (location, reason, occurredAt) —
-    // the same value written here — without a stored count-id link.
+    // A count-derived canteen sale (recordStockCount) is stamped with the
+    // triggering count's own occurredAt rather than a fresh now(), so it
+    // books on the count date even when written a moment after the count
+    // row itself — matching the "all booked on the count date" rule
+    // (docs/formulas.md §1/§6), not spread across the days since the last
+    // count.
     occurredAt?: Date;
   },
 ): Promise<StockMovement> {

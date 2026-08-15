@@ -2,10 +2,12 @@
 
 export {
   recordCounterSale,
+  recordCountDerivedSale,
   getCustomerBalance,
   getCustomerBalanceForOwner,
   getCustomerCreditHistory,
   listTodaysSalesForStaff,
+  listTodaysSalesAtLocation,
   voidSale,
   creditSaleQuantityByProductAtLocation,
   getSalesRevenueAtLocation,

@@ -7,6 +7,22 @@ import { RecordStockCountView } from "./record-stock-count";
  * Default is interactive — search for a product or ingredient, tap to add
  * it as a line, fill in the counted quantity, then Record count. onSubmit
  * is stubbed so no network call leaves the story.
+ *
+ * 2026-08-15: canteen stories (isCanteen: true) show two new behaviours —
+ * expected quantity displayed per product line while counting, and a
+ * post-submit "this count means you sold" review before the read view.
+ * Try counting a product short of its expected quantity (e.g. Soda 500ml,
+ * expected 40 — count something less than 40) then Record count to see the
+ * review populated; count everything at its expected quantity to see the
+ * review's empty state instead.
+ *
+ * Also 2026-08-15: tapping a tile now expands it in place with a quantity
+ * input, rather than sending her to a separate panel below the grid to
+ * type — the CanteenWithTransferredStock story below shows the "My stock"
+ * / "From restaurant" tab filter too, same pattern as stock-list.tsx and
+ * new-sale.tsx, which only appears once transferred-in stock exists to
+ * split against (every other story here has none, so the tabs stay
+ * absent — that's the correct fallback, not a gap).
  */
 const meta = {
   title: "Modules/Stock/RecordStockCount",
@@ -26,7 +42,68 @@ const items = [
   { id: "i3", name: "Potatoes", itemType: "ingredient" as const, unit: "kg" },
 ];
 
-const stubSubmit = async () => ({ ok: true as const, countId: "count-1" });
+const canteenItems = [
+  { id: "p1", name: "Soda 500ml", itemType: "product" as const, unit: "unit", expectedQuantity: 40, priceMinor: 10000 },
+  { id: "p2", name: "Samosa", itemType: "product" as const, unit: "unit", expectedQuantity: 25, priceMinor: 5000 },
+  { id: "p3", name: "Exercise book", itemType: "product" as const, unit: "unit", expectedQuantity: 60, priceMinor: 3000 },
+];
+
+// Same locationId shape stock-list.tsx and new-sale.tsx already use to
+// split "My stock" from "From restaurant" — a product line's locationId
+// equal to the canteen's own id is hers; anything else is transferred in.
+const canteenItemsWithTransferredStock = [
+  {
+    id: "p1",
+    name: "Exercise book",
+    itemType: "product" as const,
+    unit: "unit",
+    expectedQuantity: 60,
+    priceMinor: 3000,
+    locationId: "loc-canteen",
+  },
+  {
+    id: "p2",
+    name: "Cakes",
+    itemType: "product" as const,
+    unit: "unit",
+    expectedQuantity: 12,
+    priceMinor: 15000,
+    locationId: "loc-restaurant",
+  },
+  {
+    id: "p3",
+    name: "Samosa",
+    itemType: "product" as const,
+    unit: "unit",
+    expectedQuantity: 25,
+    priceMinor: 5000,
+    locationId: "loc-restaurant",
+  },
+];
+
+const stubSubmit = async () => ({ ok: true as const, countId: "count-1", lines: [] });
+
+// Simulates recordStockCount's own comparison (soda and samosa counted
+// short of expected; exercise books counted exactly) — mirrors what the
+// backend would echo back in the count's confirmation for a canteen caller.
+const stubSubmitCanteenShortfall = async () => ({
+  ok: true as const,
+  countId: "count-2",
+  lines: [
+    { itemType: "product" as const, itemId: "p1", countedQuantity: 33, expectedQuantity: 40 },
+    { itemType: "product" as const, itemId: "p2", countedQuantity: 20, expectedQuantity: 25 },
+    { itemType: "product" as const, itemId: "p3", countedQuantity: 60, expectedQuantity: 60 },
+  ],
+});
+
+const stubSubmitCanteenNoShortfall = async () => ({
+  ok: true as const,
+  countId: "count-3",
+  lines: [
+    { itemType: "product" as const, itemId: "p1", countedQuantity: 40, expectedQuantity: 40 },
+    { itemType: "product" as const, itemId: "p2", countedQuantity: 25, expectedQuantity: 25 },
+  ],
+});
 
 const locations = [
   { id: "loc-restaurant", code: "restaurant", name: "Prosper Restaurant" },
@@ -39,6 +116,39 @@ export const Default: Story = {
     locations,
     locationId: "loc-restaurant",
     onSubmit: stubSubmit,
+  },
+};
+
+export const CanteenWithShortfall: Story = {
+  name: "Canteen — expected quantity shown, review has a shortfall",
+  args: {
+    state: { status: "ready", items: canteenItems },
+    locations,
+    locationId: "loc-canteen",
+    isCanteen: true,
+    onSubmit: stubSubmitCanteenShortfall,
+  },
+};
+
+export const CanteenWithTransferredStock: Story = {
+  name: "Canteen — My stock / From restaurant tabs, tap a tile to count it",
+  args: {
+    state: { status: "ready", items: canteenItemsWithTransferredStock },
+    locations,
+    locationId: "loc-canteen",
+    isCanteen: true,
+    onSubmit: stubSubmit,
+  },
+};
+
+export const CanteenNoShortfall: Story = {
+  name: "Canteen — review empty, nothing counted short",
+  args: {
+    state: { status: "ready", items: canteenItems },
+    locations,
+    locationId: "loc-canteen",
+    isCanteen: true,
+    onSubmit: stubSubmitCanteenNoShortfall,
   },
 };
 

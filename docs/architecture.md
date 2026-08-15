@@ -24,46 +24,69 @@ Three consequences, settled deliberately because retrofitting any of them is exp
   the canteen sends printing stock back. Two stocking points supplying each other, not a
   hub and spoke. A transfer is one movement out and one movement in.
 
-### The two locations record trade the same way
+### The two locations record trade differently
 
-*Revised 2026-08-13 — superseding the original design below the line.* Both locations record
-sales individually. The difference between them is now narrower than it was:
+*Revised 2026-08-15 — superseding the 2026-08-13 revision below the line, which itself
+superseded the original design further down.* The two locations now diverge more than the
+2026-08-13 revision left them:
 
 | | Restaurant | Canteen |
 |---|---|---|
-| Sales | Recorded individually, as they happen, with payment method | Recorded individually, as they happen, **without** payment method |
-| Money | Sum of the day's sales, per payment line | **Takings** — cash and M-Pesa totals declared at close, checked against the day's recorded sales as a whole |
-| Stock count | Daily | Cooked food daily; own goods weekly — both now a shrinkage check only |
-| Item detail | From the sales themselves | From the sales themselves |
+| Sales | Recorded individually, as they happen, with payment method | Inferred from a stock count — see below |
+| Money | Sum of the day's sales, per payment line | Cash and M-Pesa totals declared at [[Handover]], checked against the day's count-derived sales as a whole |
+| Stock count | Daily, a shrinkage check only | Cooked food daily; own goods on any day the attendant chooses — the count that produces that day's sales, not merely a shrinkage check |
+| Item detail | From the sales themselves | From the sales the count produced |
+| Credit sales | Recorded individually, named customer | Not available |
 
-**Why the canteen still skips payment method per sale.** Students arrive in a rush. The
-attendant is serving and handling money, not keying in a payment method between customers. She
-records what sold — product and quantity — and reads her M-Pesa messages and counts her
-drawer at close, the same as before. What changed is that *what sold* is now a real record,
-not inferred from a stock count.
+**Why the canteen moved to count-derived sales, again.** Client-directed. Individually
+recording a sale per item — even with payment method dropped, the 2026-08-13 fix — was still
+too slow for the canteen's actual mid-rush trade, and the client's own established procedure
+was already "count what's left, subtract from what was available." Rather than continue
+optimising per-sale entry, the canteen now works that way: `recordStockCount` infers the
+quantity sold for any product line short of its expected quantity, and writes it as a real
+`sold` `StockMovement` — indistinguishable in the ledger from a restaurant sale's line — plus a
+matching `Sale` record so revenue reporting sees it the same way. See `stock/logic.ts`'s
+`recordStockCount` and `sales/logic.ts`'s `recordCountDerivedSale`.
 
-**Why the canteen still counts weekly.** Its stock is packaged goods in quantity — a box of
-biscuits, a carton of sweets. Counting them daily is a chore with no daily payoff, and the
-count is no longer needed to establish revenue — only to catch shrinkage.
+**Why credit sales are dropped at the canteen, not merely re-inferred alongside them.** A count
+cannot supply a customer's name, and running two entry paths at one location — count-derived
+for cash sales, individually typed for credit — is the exact combination BUG-10 exploited the
+first time: a real entry and an inferred entry, both claiming the same shrinkage, with no
+reliable way to net one against the other. Dropping canteen credit entirely removes the second
+path rather than reintroducing the netting problem it caused.
 
-**What holds now, unchanged from before:**
+**Why the canteen's stock count no longer separates a sale from ordinary shrinkage.** Breakage,
+a complimentary item, and a genuine sale all read identically — the gap between expected and
+counted stock. Accepted as a deliberate simplification for the canteen's low-value, high-volume
+goods; the restaurant's wastage/consumption/give-away tracking is unaffected and still separate
+from `sold` there.
 
-- Two controls, at two frequencies: money checked daily, stock checked at its own cycle.
-- M-Pesa is independently verifiable at both locations, since the messages are evidence the
-  attendant does not author.
-- **Credit sales are always recorded individually, at both locations**, with a named customer
-  — folded into the same sale-entry flow as any other sale, not a separate screen.
+**Why a canteen count and a canteen handover no longer share a cadence.** Handover — cash and
+M-Pesa she's holding — stays daily, independent of whether a count happened that day. A count
+may be taken whenever the attendant does it; whatever it implies about the days since the
+previous count is booked entirely on the count's own date, not spread across the intervening
+days. Days between counts show no canteen sales until the count that covers them lands.
 
-**What no longer holds, and why the change was made:** BUG-10 (2026-08-13) found that the
-canteen attendant could already record a real sale (`recordCounterSale` had no role
-restriction preventing it), which the original design below did not anticipate — so a real
-sale and an inferred one were being counted as the same shrinkage twice. Rather than patch the
-inference formula, the inference itself is retired: the count-derived-sales mechanism
-(`recordCountDerivedSales`, the `sold_derived` movement reason) is removed, canteen profit is
-no longer provisional on waiting for a count (a transferred item with no recipe still uses the
-existing 60%-of-selling-price estimate, same as at the restaurant — not new, not count-related),
-and low-stock warnings are current rather than stale between counts.
-See `docs/proposal.md` §4 and `docs/formulas.md` §6 for the resulting figures.
+**What holds unchanged:**
+
+- The restaurant's sale recording, credit, and correction flows — untouched by this revision.
+- `docs/formulas.md` §6's canteen cost-of-goods formula — it already read `sold` movements
+  directly, not the `Sale` table, so a count-derived `sold` line changes nothing about how cost
+  is computed.
+- M-Pesa remains independently verifiable at both locations via the messages the attendant does
+  not author.
+
+---
+
+**2026-08-13 design, retained for record.** Both locations recorded sales individually — the
+canteen without payment method per line, settled at Handover instead, with credit sales the one
+exception still recorded individually with a named customer at both locations. This replaced
+the original count-derived design below after BUG-10 found the canteen attendant could already
+record a real sale alongside the system's own count-based inference, double-counting the same
+shrinkage. That revision held for two days before the client asked for count-derived sales back
+— see the revision above for why per-sale entry, even simplified, still didn't fit how the
+canteen actually trades, and how credit was dropped this time to avoid reintroducing BUG-10's
+exact collision.
 
 ---
 
@@ -73,7 +96,8 @@ stock counts, at a cost rate measured at the last count. The stated reasons were
 requiring per-sale entry mid-rush would produce invented data, and that packaged goods are
 impractical to count daily. The rejection of per-sale entry turned out to be solvable by
 dropping payment method from the sale record rather than dropping the sale record itself —
-see the revision above.
+see the 2026-08-13 revision above — until that too proved too slow, and the design returned
+here, this time explicitly for the reason the original design already understood.
 
 ---
 

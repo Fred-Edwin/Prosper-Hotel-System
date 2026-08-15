@@ -6,8 +6,8 @@ import {
   markDaysWorkedPaid,
   type AuthenticatedStaff,
 } from "@/modules/people";
-import { listTodaysSalesForStaff } from "@/modules/sales";
-import { findReceipt } from "@/modules/stock";
+import { listTodaysSalesAtLocation, listTodaysSalesForStaff } from "@/modules/sales";
+import { findReceipt, getLatestStockCountDate } from "@/modules/stock";
 import {
   createDrawingDebt,
   createDrawingRepayment,
@@ -96,22 +96,31 @@ async function computeExpected(
   return { expectedCashMinor, expectedMpesaMinor };
 }
 
-// CONTEXT.md's Handover, canteen case (revised 2026-08-13): expected is
-// the sum of that day's recorded sales, the same basis as the
-// restaurant — but as a single combined figure rather than cash/M-Pesa
-// split. A canteen sale carries no payment method at entry (too slow for
-// rush trade — proposal.md §4), so the split isn't knowable from the
-// sale record; only the total is. Credit sales are excluded via their
-// "credit" payment line, same exclusion the restaurant applies.
-// expectedMpesaMinor is null, not 0 — see Handover.expectedMpesaMinor's
-// schema comment: null means "not tracked separately, see
-// expectedCashMinor for the combined total," which is a different claim
-// than "expected zero M-Pesa."
+// CONTEXT.md's Handover, canteen case (revised 2026-08-13, and again
+// 2026-08-15): expected is the sum of that day's recorded sales, the same
+// basis as the restaurant — but as a single combined figure rather than
+// cash/M-Pesa split. A canteen sale carries no payment method at entry
+// (too slow for rush trade — proposal.md §4), so the split isn't knowable
+// from the sale record; only the total is. Credit sales are excluded via
+// their "credit" payment line — kept for any historical canteen credit
+// sale, though the canteen no longer creates new ones (docs/scope.md's
+// 2026-08-15 entry). expectedMpesaMinor is null, not 0 — see
+// Handover.expectedMpesaMinor's schema comment: null means "not tracked
+// separately, see expectedCashMinor for the combined total," which is a
+// different claim than "expected zero M-Pesa."
+//
+// Location-scoped (listTodaysSalesAtLocation), not staff-scoped like the
+// restaurant's computeExpected: since 2026-08-15 a canteen sale is
+// count-derived and attributed to whoever ran the count (attendant,
+// owner, anyone with access), not necessarily whoever is handing over.
+// The canteen is single-handed in practice, so this reads as "the day's
+// sales at this location," matching how one person's cash actually works
+// there.
 async function computeExpectedFromSales(
   db: PrismaClient,
   requester: AuthenticatedStaff,
 ): Promise<{ expectedCashMinor: number; expectedMpesaMinor: null } | { forbidden: true }> {
-  const result = await listTodaysSalesForStaff(db, requester);
+  const result = await listTodaysSalesAtLocation(db, requester, requester.staff.locationId);
   if (!result.ok) return { forbidden: true };
 
   let expectedTotalMinor = 0;
@@ -177,7 +186,16 @@ export async function recordHandover(
 }
 
 export type GetTodaysHandoverResult =
-  | { ok: true; handover: Handover | null }
+  | {
+      ok: true;
+      handover: Handover | null;
+      /** docs/formulas.md §10's "no count yet today" gap — true only when
+       * this is a canteen location and its most recent stock count didn't
+       * happen today, so today's "sales recorded" figure is still
+       * incomplete. Always false at the restaurant, where sales aren't
+       * count-dependent. */
+      canteenAwaitingTodaysCount: boolean;
+    }
   | { ok: false; reason: "forbidden" };
 
 export async function getTodaysHandoverForStaff(
@@ -192,7 +210,14 @@ export async function getTodaysHandoverForStaff(
   const { dayStart, dayEnd } = dayBounds();
   const handover = await findTodaysHandover(db, requester.staff.id, locationId, dayStart, dayEnd);
 
-  return { ok: true, handover };
+  let canteenAwaitingTodaysCount = false;
+  if (requester.location.code === "canteen") {
+    const latestCount = await getLatestStockCountDate(db, requester, locationId);
+    canteenAwaitingTodaysCount =
+      latestCount.ok && (!latestCount.occurredAt || latestCount.occurredAt < dayStart);
+  }
+
+  return { ok: true, handover, canteenAwaitingTodaysCount };
 }
 
 export type RecordExpenseResult =

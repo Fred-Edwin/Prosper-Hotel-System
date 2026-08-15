@@ -58,7 +58,10 @@ export function StockPageClient({
           }
         />
         <div className="p-3">
-          <StockCountReview locationId={locationId} />
+          <StockCountReview
+            locationId={locationId}
+            isCanteen={locations.find((l) => l.id === locationId)?.code === "canteen"}
+          />
         </div>
       </div>
     </AdminShell>
