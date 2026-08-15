@@ -152,6 +152,8 @@ export async function ledgerSummaryRoute(request: Request): Promise<Response> {
     grossProfitMinor: result.grossProfitMinor,
     nonSalesAtCostMinor: result.nonSalesAtCostMinor,
     nonSalesAtPriceMinor: result.nonSalesAtPriceMinor,
+    restaurant: result.restaurant,
+    canteen: result.canteen,
   });
 }
 

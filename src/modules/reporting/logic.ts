@@ -546,6 +546,26 @@ export type LedgerSummaryResult =
       grossProfitMinor: number;
       nonSalesAtCostMinor: number;
       nonSalesAtPriceMinor: number;
+      // Ticket [ledger location toggle] — the same per-location figures
+      // above are already summed from, broken out so the waterfall card's
+      // Restaurant/Canteen tabs don't need separate queries. The canteen
+      // has no opening/purchases/closing stock figures of its own (see the
+      // comment above this type) — its cost of goods comes from
+      // computeCanteenCostOfGoods (sales-derived), not a stock waterfall.
+      restaurant: {
+        salesValueMinor: number;
+        costOfGoodsSoldMinor: number;
+        grossProfitMinor: number;
+        nonSalesAtCostMinor: number;
+        nonSalesAtPriceMinor: number;
+      };
+      canteen: {
+        salesValueMinor: number;
+        costOfGoodsSoldMinor: number;
+        grossProfitMinor: number;
+        nonSalesAtCostMinor: number;
+        nonSalesAtPriceMinor: number;
+      };
     }
   | { ok: false; reason: "forbidden" | "not_found" };
 
@@ -627,6 +647,20 @@ export async function getLedgerSummary(
     grossProfitMinor: salesValueMinor - costOfGoodsSoldMinor,
     nonSalesAtCostMinor: restaurantNonSales.atCostMinor + canteenNonSales.atCostMinor,
     nonSalesAtPriceMinor: restaurantNonSales.atPriceMinor + canteenNonSales.atPriceMinor,
+    restaurant: {
+      salesValueMinor: restaurantRevenue.totalMinor,
+      costOfGoodsSoldMinor: restaurantCogs.totalMinor,
+      grossProfitMinor: restaurantRevenue.totalMinor - restaurantCogs.totalMinor,
+      nonSalesAtCostMinor: restaurantNonSales.atCostMinor,
+      nonSalesAtPriceMinor: restaurantNonSales.atPriceMinor,
+    },
+    canteen: {
+      salesValueMinor: canteenRevenue.totalMinor,
+      costOfGoodsSoldMinor: canteenCogs.totalMinor,
+      grossProfitMinor: canteenRevenue.totalMinor - canteenCogs.totalMinor,
+      nonSalesAtCostMinor: canteenNonSales.atCostMinor,
+      nonSalesAtPriceMinor: canteenNonSales.atPriceMinor,
+    },
   };
 }
 

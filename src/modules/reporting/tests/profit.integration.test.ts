@@ -883,6 +883,20 @@ describe("getLedgerSummary — ticket 38, whole business over an arbitrary perio
     expect(result.grossProfitMinor).toBe(result.salesValueMinor - result.costOfGoodsSoldMinor);
     expect(result.nonSalesAtCostMinor).toBe(60);
     expect(result.nonSalesAtPriceMinor).toBe(100);
+
+    // Per-location breakdown — same figures the totals above are summed
+    // from, for the waterfall card's Restaurant/Canteen tabs.
+    expect(result.restaurant.salesValueMinor).toBe(9000);
+    expect(result.restaurant.costOfGoodsSoldMinor).toBe(12000);
+    expect(result.restaurant.grossProfitMinor).toBe(9000 - 12000);
+    expect(result.restaurant.nonSalesAtCostMinor).toBe(60);
+    expect(result.restaurant.nonSalesAtPriceMinor).toBe(100);
+
+    expect(result.canteen.salesValueMinor).toBe(2500);
+    expect(result.canteen.costOfGoodsSoldMinor).toBe(1800);
+    expect(result.canteen.grossProfitMinor).toBe(2500 - 1800);
+    expect(result.canteen.nonSalesAtCostMinor).toBe(0);
+    expect(result.canteen.nonSalesAtPriceMinor).toBe(0);
   });
 
   test("rejects a non-owner", async () => {

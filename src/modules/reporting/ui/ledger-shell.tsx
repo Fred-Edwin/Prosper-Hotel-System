@@ -31,6 +31,19 @@
  * see getLedgerSummary in reporting/logic.ts. canteenCostRate no longer
  * exists in the response; the waterfall's "partly provisional" badge is
  * gone along with it.
+ *
+ * 2026-08-15: an All/Restaurant/Canteen toggle in the waterfall card's
+ * header switches which location's figures the tiles and bottom row show.
+ * "All" is the business-wide total from before. "Restaurant" reuses the
+ * same four tiles scoped to the restaurant's own opening/purchases/closing/
+ * cost-of-goods-sold. "Canteen" drops the opening/purchases/closing tiles
+ * entirely — the canteen has no ingredient stock waterfall of its own
+ * (formulas.md §6/§7 — its cost of goods comes from recorded sales, not a
+ * stock balance) — and shows a single cost-of-goods-sold tile plus the same
+ * sales/gross-profit/non-sales bottom row, scoped to the canteen. Purely a
+ * client-side slice of one fetch; getLedgerSummary already returns
+ * `restaurant`/`canteen` breakdowns of every figure the totals are summed
+ * from, so switching tabs needs no new request.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -55,6 +68,14 @@ import { NonSalesLedger } from "./non-sales-ledger";
 import { CashLedger } from "./cash-ledger";
 import { isOpeningBalanceLoadDay } from "./opening-balance";
 
+export type LedgerLocationSummary = {
+  salesValueMinor: number;
+  costOfGoodsSoldMinor: number;
+  grossProfitMinor: number;
+  nonSalesAtCostMinor: number;
+  nonSalesAtPriceMinor: number;
+};
+
 export type LedgerSummaryData = {
   openingMinor: number;
   purchasesMinor: number;
@@ -64,6 +85,8 @@ export type LedgerSummaryData = {
   grossProfitMinor: number;
   nonSalesAtCostMinor: number;
   nonSalesAtPriceMinor: number;
+  restaurant: LedgerLocationSummary;
+  canteen: LedgerLocationSummary;
 };
 
 export type LoadState =
@@ -107,6 +130,14 @@ function boundsForPreset(preset: PeriodPreset, customStart: string, customEnd: s
   return { periodStart: customStart, periodEnd: customEnd };
 }
 
+const zeroLedgerLocationSummary: LedgerLocationSummary = {
+  salesValueMinor: 0,
+  costOfGoodsSoldMinor: 0,
+  grossProfitMinor: 0,
+  nonSalesAtCostMinor: 0,
+  nonSalesAtPriceMinor: 0,
+};
+
 const zeroLedgerSummaryData: LedgerSummaryData = {
   openingMinor: 0,
   purchasesMinor: 0,
@@ -116,6 +147,8 @@ const zeroLedgerSummaryData: LedgerSummaryData = {
   grossProfitMinor: 0,
   nonSalesAtCostMinor: 0,
   nonSalesAtPriceMinor: 0,
+  restaurant: zeroLedgerLocationSummary,
+  canteen: zeroLedgerLocationSummary,
 };
 
 async function fetchLedgerSummary(
@@ -231,7 +264,9 @@ function LedgerShellForPeriod({
   );
 }
 
-type StatTerm = "opening" | "purchases" | "closing" | "cogs";
+type StatTerm = "opening" | "purchases" | "closing" | "cogs" | "sales" | "grossProfit" | "nonSales";
+type WaterfallLocation = "all" | "restaurant" | "canteen";
+const waterfallLocations = ["all", "restaurant", "canteen"] as const;
 
 const subLedgers: { key: SubLedgerKey; label: string; hint: string }[] = [
   { key: "products", label: "Product ledger", hint: "What was sold, and what it earned" },
@@ -280,6 +315,7 @@ export function LedgerShellView({
   const [localActive, setLocalActive] = useState<SubLedgerKey>("products");
   const [statTerm, setStatTerm] = useState<StatTerm | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [waterfallLocation, setWaterfallLocation] = useState<WaterfallLocation>("all");
 
   const active = activeTab ?? localActive;
   const setActive = onActiveTabChange ?? setLocalActive;
@@ -338,7 +374,14 @@ export function LedgerShellView({
       </div>
 
       <div className="mb-5">
-        <LedgerWaterfall state={state} active={statTerm} onSelect={selectTerm} onRetry={onRetry} />
+        <LedgerWaterfall
+          state={state}
+          active={statTerm}
+          onSelect={selectTerm}
+          onRetry={onRetry}
+          location={waterfallLocation}
+          onLocationChange={setWaterfallLocation}
+        />
       </div>
 
       <Tabs value={active} onValueChange={(v) => setActive(v as SubLedgerKey)}>
@@ -423,11 +466,15 @@ function LedgerWaterfall({
   active,
   onSelect,
   onRetry,
+  location,
+  onLocationChange,
 }: {
   state: LoadState;
   active: StatTerm | null;
   onSelect: (t: StatTerm) => void;
   onRetry: () => void;
+  location: WaterfallLocation;
+  onLocationChange: (l: WaterfallLocation) => void;
 }) {
   if (state.status === "loading") {
     return (
@@ -492,46 +539,125 @@ function LedgerWaterfall({
     );
   }
 
+  // The restaurant's ingredient opening/purchases/closing waterfall
+  // (formulas.md §6) has no canteen equivalent — canteen cost of goods is
+  // computed from recorded sales, not a stock balance (§6/§7). "All" shows
+  // the business-wide waterfall as before; "Restaurant" shows the same
+  // tiles scoped to the restaurant's own figures; "Canteen" drops the
+  // opening/purchases/closing tiles entirely rather than showing zeroes
+  // that would read as a bug.
   const terms: {
     key: StatTerm;
     label: string;
+    sublabel?: string;
     value: number;
     operator?: string;
     colour: string;
-  }[] = [
-    { key: "opening", label: "Opening stock", value: data.openingMinor, colour: "var(--color-neutral-400)" },
-    {
-      key: "purchases",
-      label: "Purchases",
-      value: data.purchasesMinor,
-      operator: "+",
-      colour: "var(--color-brand-600)",
-    },
-    {
-      key: "closing",
-      label: "Closing stock",
-      value: data.closingMinor,
-      operator: "−",
-      colour: "var(--color-neutral-400)",
-    },
-    {
-      key: "cogs",
-      label: "Cost of goods sold",
-      value: data.costOfGoodsSoldMinor,
-      operator: "=",
-      colour: "var(--color-danger)",
-    },
-  ];
+  }[] =
+    location === "canteen"
+      ? [
+          {
+            key: "sales",
+            label: "Sales value",
+            sublabel: "Canteen",
+            value: data.canteen.salesValueMinor,
+            colour: "var(--color-brand-600)",
+          },
+          {
+            key: "cogs",
+            label: "Cost of goods sold",
+            sublabel: "From recorded sales",
+            value: data.canteen.costOfGoodsSoldMinor,
+            operator: "−",
+            colour: "var(--color-danger)",
+          },
+          {
+            key: "grossProfit",
+            label: "Gross profit",
+            sublabel: "Canteen",
+            value: data.canteen.grossProfitMinor,
+            operator: "=",
+            colour: "var(--color-neutral-400)",
+          },
+          {
+            key: "nonSales",
+            label: "Non-sales consumption",
+            sublabel: `${money(data.canteen.nonSalesAtPriceMinor)} at selling price`,
+            value: data.canteen.nonSalesAtCostMinor,
+            colour: "var(--color-danger)",
+          },
+        ]
+      : [
+          {
+            key: "opening",
+            label: "Opening stock",
+            sublabel: "Restaurant ingredients",
+            value: data.openingMinor,
+            colour: "var(--color-neutral-400)",
+          },
+          {
+            key: "purchases",
+            label: "Purchases",
+            sublabel: "Restaurant ingredients",
+            value: data.purchasesMinor,
+            operator: "+",
+            colour: "var(--color-brand-600)",
+          },
+          {
+            key: "closing",
+            label: "Closing stock",
+            sublabel: "Restaurant ingredients",
+            value: data.closingMinor,
+            operator: "−",
+            colour: "var(--color-neutral-400)",
+          },
+          {
+            key: "cogs",
+            label: "Cost of goods sold",
+            sublabel: location === "restaurant" ? "Restaurant" : undefined,
+            value: location === "restaurant" ? data.restaurant.costOfGoodsSoldMinor : data.costOfGoodsSoldMinor,
+            operator: "=",
+            colour: "var(--color-danger)",
+          },
+        ];
   const max = Math.max(...terms.map((t) => t.value), 1);
+  const locationSummary =
+    location === "restaurant" ? data.restaurant : location === "canteen" ? data.canteen : null;
+  const salesValueMinor = locationSummary ? locationSummary.salesValueMinor : data.salesValueMinor;
+  const grossProfitMinor = locationSummary ? locationSummary.grossProfitMinor : data.grossProfitMinor;
+  const nonSalesAtCostMinor = locationSummary ? locationSummary.nonSalesAtCostMinor : data.nonSalesAtCostMinor;
+  const nonSalesAtPriceMinor = locationSummary ? locationSummary.nonSalesAtPriceMinor : data.nonSalesAtPriceMinor;
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm" data-testid="ledger-waterfall">
-      <div className="flex items-center justify-between px-5 pt-4 pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4 pb-3">
         <div>
           <h2 className="text-sm font-medium">Cost of goods sold</h2>
           <p className="text-xs text-muted-foreground">What the stock movements below add up to.</p>
         </div>
+        <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5" data-testid="ledger-waterfall-location">
+          {waterfallLocations.map((l) => (
+            <button
+              key={l}
+              onClick={() => onLocationChange(l)}
+              data-testid={`ledger-waterfall-location-${l}`}
+              className={`rounded-md px-2.5 py-1 text-[13px] capitalize transition-colors ${
+                location === l ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+              aria-pressed={location === l}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {location === "canteen" && (
+        <p className="px-5 pb-3 text-[11px] text-muted-foreground">
+          Canteen cost is drawn from recorded sales, not a stock waterfall — see Restaurant for
+          opening/closing stock.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4">
         {terms.map((t, i) => {
@@ -556,7 +682,7 @@ function LedgerWaterfall({
                   {t.label}
                 </div>
                 <div className="tabular mt-1 text-2xl font-semibold">{money(t.value)}</div>
-                <div className="tabular mt-0.5 mb-3 text-[11px] text-muted-foreground">&nbsp;</div>
+                <div className="tabular mt-0.5 mb-3 text-[11px] text-muted-foreground">{t.sublabel ?? <>&nbsp;</>}</div>
               </div>
               <div className="h-1.5 w-full bg-muted">
                 <div
@@ -569,20 +695,27 @@ function LedgerWaterfall({
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t bg-muted/20 px-5 py-3">
-        <Piece label="Sales value" value={data.salesValueMinor} />
-        <Piece label="Gross profit" value={data.grossProfitMinor} strong />
-        <Piece
-          label="Non-sales consumption"
-          value={data.nonSalesAtCostMinor}
-          tone="danger"
-          note={`${money(data.nonSalesAtPriceMinor)} at selling price`}
-        />
-        <p className="ml-auto max-w-md text-[11px] text-muted-foreground">
+      {location === "canteen" ? (
+        <p className="border-t bg-muted/20 px-5 py-3 text-[11px] text-muted-foreground">
           Non-sales consumption is already inside cost of goods sold — stock no longer present
           was counted as used up. It is shown to say where stock went, not deducted twice.
         </p>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t bg-muted/20 px-5 py-3">
+          <Piece label="Sales value" value={salesValueMinor} />
+          <Piece label="Gross profit" value={grossProfitMinor} strong />
+          <Piece
+            label="Non-sales consumption"
+            value={nonSalesAtCostMinor}
+            tone="danger"
+            note={`${money(nonSalesAtPriceMinor)} at selling price`}
+          />
+          <p className="ml-auto max-w-md text-[11px] text-muted-foreground">
+            Non-sales consumption is already inside cost of goods sold — stock no longer present
+            was counted as used up. It is shown to say where stock went, not deducted twice.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
