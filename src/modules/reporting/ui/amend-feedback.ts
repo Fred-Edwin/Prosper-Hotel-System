@@ -14,7 +14,6 @@
  */
 
 import { money } from "@/shared/money";
-import type { ProductLedgerRowData } from "./product-ledger";
 
 export type AmendSummary = {
   /** One sentence, real figures. Empty when nothing measurable moved. */
@@ -24,19 +23,41 @@ export type AmendSummary = {
 };
 
 /**
+ * How to read one ledger's rows, supplied by the tab.
+ *
+ * Editable-ledger T6.5 made this generic. It was product-shaped — it took
+ * `productId` and `ProductLedgerRowData[]` and reached into `closingQty`,
+ * `profitMinor` and `days[].closing` directly — which meant the Store tab
+ * would have needed a second copy, and Cash a third. The owner's decision
+ * that **no edit on any tab is accepted silently** made three copies the
+ * likely outcome, so the shape moved out to the caller instead.
+ *
+ * A tab that has no profit figure (Store) returns null from `profitOf` and
+ * the profit clause simply drops out of the sentence.
+ */
+export type LedgerRowAccessors<Row> = {
+  identify: (row: Row) => string;
+  describe: (row: Row) => string;
+  closingOf: (row: Row) => number;
+  profitOf: (row: Row) => number | null;
+  daysOf: (row: Row) => { date: string; closing: number }[];
+};
+
+/**
  * Days whose closing quantity moved, and by how much — the cascade, stated
  * as a count of days rather than a list, because "across 3 days" is what
  * she needs and three dates is more than she asked for.
  */
-function daysChanged(
-  before: ProductLedgerRowData | undefined,
-  after: ProductLedgerRowData | undefined,
+function daysChanged<Row>(
+  before: Row | undefined,
+  after: Row | undefined,
+  accessors: LedgerRowAccessors<Row>,
 ): { count: number; delta: number } {
   if (!before || !after) return { count: 0, delta: 0 };
-  const beforeByDate = new Map(before.days.map((d) => [d.date, d]));
+  const beforeByDate = new Map(accessors.daysOf(before).map((d) => [d.date, d]));
   let count = 0;
   let delta = 0;
-  for (const day of after.days) {
+  for (const day of accessors.daysOf(after)) {
     const was = beforeByDate.get(day.date);
     if (!was) continue;
     if (was.closing !== day.closing) {
@@ -48,33 +69,44 @@ function daysChanged(
   return { count, delta };
 }
 
-export function summariseAmendment(input: {
-  productId: string;
-  previousRows: ProductLedgerRowData[];
-  rows: ProductLedgerRowData[];
+export function summariseAmendment<Row>(input: {
+  itemId: string;
+  previousRows: Row[];
+  rows: Row[];
+  accessors: LedgerRowAccessors<Row>;
+  /**
+   * An extra clause for a figure the tab knows moved but the generic
+   * closing/profit comparison cannot see — the Store tab's purchase edits
+   * use it to name the unit cost that followed, since editing quantity or
+   * value moves the figure nobody typed (plan T6.4).
+   */
+  extraClause?: string;
 }): AmendSummary {
-  const before = input.previousRows.find((r) => r.productId === input.productId);
-  const after = input.rows.find((r) => r.productId === input.productId);
+  const { accessors } = input;
+  const before = input.previousRows.find((r) => accessors.identify(r) === input.itemId);
+  const after = input.rows.find((r) => accessors.identify(r) === input.itemId);
   if (!before || !after) return { message: "Updated.", cascaded: false };
 
   const parts: string[] = [];
 
-  const closingDelta = after.closingQty - before.closingQty;
-  const { count } = daysChanged(before, after);
+  const closingDelta = accessors.closingOf(after) - accessors.closingOf(before);
+  const { count } = daysChanged(before, after, accessors);
   if (closingDelta !== 0) {
     const direction = closingDelta > 0 ? "rose" : "fell";
     const span = count > 1 ? ` across ${count} days` : "";
-    parts.push(`${after.productName} closing ${direction} by ${Math.abs(closingDelta)}${span}`);
+    parts.push(`${accessors.describe(after)} closing ${direction} by ${Math.abs(closingDelta)}${span}`);
   }
 
   // Profit is the figure she will not expect to move, so it is named
   // explicitly whenever it does — C7's whole reason for existing.
-  const profitBefore = before.profitMinor;
-  const profitAfter = after.profitMinor;
+  const profitBefore = accessors.profitOf(before);
+  const profitAfter = accessors.profitOf(after);
   if (profitBefore !== null && profitAfter !== null && profitBefore !== profitAfter) {
     const delta = profitAfter - profitBefore;
     parts.push(`profit changed by ${money(Math.abs(delta))}`);
   }
+
+  if (input.extraClause) parts.push(input.extraClause);
 
   if (parts.length === 0) return { message: "Updated.", cascaded: false };
   return {

@@ -141,12 +141,32 @@ depart from precedent:
   reference here. Mirror the Product tab's chevron exactly — same markup,
   same interaction — rather than introducing a second expansion idiom.
 - **`purchasedQty` and `purchasedValueMinor` are two cells over one fact.**
-  Editing quantity without value leaves an implied unit cost nobody typed.
-  **Rule: editing quantity holds unit cost constant, so value moves with
-  it.** She is correcting "we got 12kg, not 10kg"; the price per kg did not
-  change. Editing value directly is Kind C on the receipt rows and moves
-  unit cost, which is the other thing she might mean, and she has a separate
-  cell for it. Record this in T10 — it is not in the companion plan.
+  Three numbers, two independent: `quantity × unitCost = value`. Editing any
+  one means another must move; the design question is only which.
+
+  **Rule, confirmed with the owner 2026-08-17:**
+
+  > Edit quantity → unit cost holds, value follows.
+  > Edit value → quantity holds, unit cost follows.
+  > **Unit cost is the figure that moves, because it is the one nobody
+  > typed.**
+
+  Quantity and value are the two facts a delivery note actually states —
+  how much arrived, and what was paid. Unit cost is derived from them, so
+  it is what absorbs a correction. "We got 12kg not 10kg" says nothing
+  about price per kg; "we paid 8,400 not 7,800" says nothing about how many
+  kilos arrived, and moving quantity there would have the app invent stock
+  she never mentioned.
+
+  **No confirm dialog on purchase edits** (owner-confirmed). Unlike §3.3's
+  `sold`, where the app genuinely cannot know which of two real situations
+  she means, here there is exactly one sensible reading — so the app acts
+  and *tells her afterwards*, naming the derived figure that moved ("unit
+  cost now KSh 70/kg"). A pre-emptive confirm on the tab where she corrects
+  most would fire constantly and train her to dismiss it unread, which
+  costs the one place a real warning would land.
+
+  Record all of this in T10 — none of it is in the companion plan.
 
 Editability per §3.2, at day level:
 
@@ -170,11 +190,69 @@ Build as a Storybook story on port 6320 with real seed data, hand over the
 live URL, then wire it live. One composition, not variants — this mirrors an
 existing table rather than exploring a new shape.
 
-### T6.5 — Stories and verification
+### T6.5 — Generalise the notification layer to every tab
+
+**Owner decision, 2026-08-17: no ledger edit on any tab is ever accepted
+silently.** Pulled forward into T6 rather than left to T7, because building
+the Store tab's feedback against a product-shaped summariser and then
+generalising it twice is the more expensive order.
+
+What exists today: T4 built the toast, the cascade summary quoting real
+figures, Undo, and C7's escalations — but wired into `ProductLedgerView`
+only. `amend-feedback.ts` is already extracted and **mostly tab-agnostic**:
+`confirmMessage`, `farBackMonths` and `previewLine` need no change.
+`summariseAmendment` is the product-shaped part — it takes `productId` and
+`ProductLedgerRowData[]`, and reads `closingQty`, `profitMinor`,
+`productName` and `days[].closing` off them.
+
+**The change:** make `summariseAmendment` generic over what a ledger row
+is, by having callers supply the accessors rather than the function knowing
+the shape:
+
+```ts
+summariseAmendment({
+  itemId,
+  previousRows, rows,
+  identify: (r) => r.id,          // productId | ingredientId | record id
+  describe: (r) => r.name,
+  closingOf: (r) => r.closingQty,
+  profitOf: (r) => r.profitMinor, // null where the tab has no profit
+  daysOf: (r) => r.days.map(d => ({ date: d.date, closing: d.closingQty })),
+})
+```
+
+Store rows have no profit, so `profitOf` returns null and the profit clause
+drops out — the Store toast says what closing did and, for purchase edits,
+what unit cost did. Cash and non-sales plug in the same way in T7.
+
+**The rule, stated once and applied on every tab:**
+
+| What happened | What she sees |
+|---|---|
+| Value unchanged | Nothing — no write occurred |
+| Edit, no cascade | Toast confirming the change, with Undo |
+| Edit that cascaded | Toast quoting the real downstream figures |
+| Purchase edit | Toast naming the derived figure that moved |
+| Cascade beyond 31 days | Confirm step first, naming the span (D6) |
+
+The first row is deliberate and stays: T4 makes an unchanged value write
+nothing at all — no request, no amendment, no toast — so she can press
+Enter through cells while reading without generating noise. "Never
+silently" means every edit that *changes* something says so, not that every
+keystroke produces a toast.
+
+The toast markup itself currently lives inline in `product-ledger.tsx`
+(~line 749). Extract it alongside this so the two tabs render the same
+component rather than two copies that drift. **This is a shared UI element,
+so per CLAUDE.md it needs confirming before it lands in
+`components/patterns/` — or it stays local to `reporting/ui/` as a module
+component, which is the lighter option and probably right.**
+
+### T6.6 — Stories and verification
 
 Stories covering the new day-expanded states (collapsed, expanded, saving,
-per-cell error, read-only phone, empty-filtered). `pnpm test`,
-`pnpm exec tsc --noEmit`, `pnpm lint`.
+per-cell error, read-only phone, empty-filtered) and the Store toast.
+`pnpm test`, `pnpm exec tsc --noEmit`, `pnpm lint`.
 
 ---
 
@@ -273,7 +351,20 @@ entries for those two fields. Note this is the one place a *movement* takes a
 scalar edit rather than a day-total edit, because these are snapshotted money
 figures, not quantities.
 
-### T7.5 — Stories and verification
+### T7.5 — Plug both tabs into the shared notification layer
+
+T6.5 generalised `summariseAmendment` and extracted the toast, so this is
+supplying accessors per tab, not rebuilding the layer. Cash rows have no
+`closing` quantity but do have closing cash/M-Pesa balances — summarise on
+those. Non-sales rows are single movements with no cascade of their own,
+so most edits there produce the no-cascade toast.
+
+The escalations still apply: the handover confirm case (`confirmMessage`'s
+third branch) finally gets its real use here, since it exists for exactly
+the D2 situation where the ledger and a day's handover are meant to
+disagree afterwards.
+
+### T7.6 — Stories and verification
 
 Per-table stories for the new editable states. Full verification sweep.
 
@@ -339,7 +430,14 @@ after that section was written and would otherwise be lost:
    to the breakdown when they mix (T7.4).
 5. **Period-total quantities are read-only** because they span many days and
    offer no honest date to stamp an amendment against (T6.4).
-6. **Purchased quantity edits hold unit cost constant** (T6.4).
+6. **The purchase-edit rule** (T6.4): quantity edits hold unit cost and move
+   value; value edits hold quantity and move unit cost; unit cost is the
+   figure that moves because it is the one nobody typed. No confirm dialog —
+   the toast names the derived figure afterwards.
+6a. **No edit on any tab is accepted silently** (T6.5), with the one
+   deliberate exception that an unchanged value writes nothing and says
+   nothing. The five-row table in T6.5 is the rule; put it somewhere a
+   future tab will find it.
 7. **F4 — §3.2's reason for `previousUnitCostMinor` being read-only is
    stale.** It is no longer algebraically reconstructed from a running
    average; it is read off the last delivery before the period. Cell stays

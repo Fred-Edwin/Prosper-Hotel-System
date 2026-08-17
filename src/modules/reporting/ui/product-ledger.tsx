@@ -25,7 +25,14 @@ import {
 } from "@/components/ui/select";
 import { ErrorState, PermissionDenied, EmptyFiltered, LoadingTable } from "@/components/patterns/states";
 import { EditableNum, type EditableNumState } from "./editable-num";
-import { summariseAmendment, confirmMessage, farBackMonths, type ConfirmCase } from "./amend-feedback";
+import {
+  summariseAmendment,
+  confirmMessage,
+  farBackMonths,
+  type ConfirmCase,
+  type LedgerRowAccessors,
+} from "./amend-feedback";
+import { AmendToast, type AmendToastState } from "./amend-toast";
 import { ChevronRight, Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -295,6 +302,16 @@ function movementReasonFor(column: string): string {
   }
 }
 
+// How amend-feedback reads a Product row (T6.5). The Store tab supplies its
+// own; the summariser knows neither shape.
+const PRODUCT_ROW_ACCESSORS: LedgerRowAccessors<ProductLedgerRowData> = {
+  identify: (r) => r.productId,
+  describe: (r) => r.productName,
+  closingOf: (r) => r.closingQty,
+  profitOf: (r) => r.profitMinor,
+  daysOf: (r) => r.days.map((d) => ({ date: d.date, closing: d.closing })),
+};
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <ChevronRight
@@ -342,7 +359,7 @@ export function ProductLedgerView({
   // edits in flight at once never mask each other. Errors live on the cell
   // rather than in a toast: she needs to know *which* figure failed.
   const [cellState, setCellState] = useState<Record<string, { state: EditableNumState; message?: string }>>({});
-  const [toast, setToast] = useState<{ message: string; undo: () => void } | null>(null);
+  const [toast, setToast] = useState<AmendToastState | null>(null);
   const [confirming, setConfirming] = useState<
     { c: ConfirmCase; proceed: () => void } | null
   >(null);
@@ -389,7 +406,12 @@ export function ProductLedgerView({
       // C7 stage two: real figures, and Undo. Undo is itself an amendment
       // (C8) — it re-submits the previous value rather than deleting
       // anything, so the trail records both moves.
-      const summary = summariseAmendment({ productId, previousRows: payload.previousRows, rows: payload.rows });
+      const summary = summariseAmendment({
+        itemId: productId,
+        previousRows: payload.previousRows,
+        rows: payload.rows,
+        accessors: PRODUCT_ROW_ACCESSORS,
+      });
       const previousValue = body["newValue"];
       setToast({
         message: summary.message,
@@ -743,33 +765,7 @@ export function ProductLedgerView({
 
   return (
     <div className="rounded-lg border bg-card" data-testid="product-ledger">
-      {/* C7 stage two — real figures, and Undo carrying the screen's one
-          accent (docs/design.md: editable cells stay neutral so this can
-          be the primary thing on the page when it appears). */}
-      {toast && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-card px-4 py-2.5 text-[13px] shadow-lg"
-          data-testid="amend-toast"
-        >
-          <span>{toast.message}</span>
-          <button
-            onClick={toast.undo}
-            className="rounded-md bg-primary px-2.5 py-1 text-[13px] font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-            data-testid="amend-undo"
-          >
-            Undo
-          </button>
-          <button
-            onClick={() => setToast(null)}
-            aria-label="Dismiss"
-            className="text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      )}
+      <AmendToast toast={toast} onDismiss={() => setToast(null)} />
 
       {/* §3.3 — the one place the app asks. Two buttons naming two real
           situations, not a confirmation and not a reason prompt. Cancelling
