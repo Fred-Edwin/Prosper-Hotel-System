@@ -9,6 +9,7 @@ import {
   findStaffMembersByIds,
   listLocations,
   getDaysWorkedForActivity,
+  listAmendmentsInPeriod,
 } from "@/modules/people";
 import { getCurrentRecipe, findProductsByIds, findIngredientsByIds } from "@/modules/catalogue";
 import {
@@ -1455,7 +1456,11 @@ export type ActivityKind =
   | "handover"
   | "expense"
   | "repayment"
-  | "days_worked";
+  | "days_worked"
+  // Editable-ledger T2 — the owner's in-place edits. Distinct from
+  // "correction", which is the superseded backdated-sale mechanism that
+  // T11 removes.
+  | "amendment";
 
 export type ActivityEntry = {
   id: string;
@@ -1506,6 +1511,7 @@ async function buildActivityNameLookups(
     repayments: { recordedBy: string }[];
   },
   daysWorked: { staffMemberId: string }[],
+  amendments: { staffMemberId: string }[],
 ): Promise<ActivityNameLookups> {
   const locationNameById = new Map(locations.map((l) => [l.id, l.name]));
 
@@ -1541,6 +1547,7 @@ async function buildActivityNameLookups(
     ...cashTransactions.expenses.map((e) => e.staffMemberId),
     ...cashTransactions.repayments.map((r) => r.recordedBy),
     ...daysWorked.map((d) => d.staffMemberId),
+    ...amendments.map((a) => a.staffMemberId),
   ]);
   const staff = await findStaffMembersByIds(db, Array.from(staffIds));
   const staffNameById = new Map(staff.map((s) => [s.id, s.name]));
@@ -1822,6 +1829,60 @@ function daysWorkedToActivityRows(
   return rows;
 }
 
+/**
+ * Editable-ledger T2 — the amendment trail as an Activity source.
+ *
+ * `what` states the fact in her terms, not the app's: "received · Beef
+ * stew · restaurant: 3 → 5", never "stock_movements.abc123.quantity
+ * changed". That is what `ledgerContext` is stored for (plan §3.1's note
+ * on day-level trails). Where an amendment has no ledger context — a staff
+ * member's name, say — the record type and field carry the description
+ * instead.
+ *
+ * `enteredAt` is when she typed it; `effectiveOn` is the ledger day the
+ * edit applies to, falling back to the typing day where an edit has no
+ * ledger day. Keeping those distinct is the whole point of the pair.
+ */
+function amendmentsToActivityRows(
+  amendments: {
+    id: string;
+    recordType: string;
+    recordId: string;
+    field: string;
+    previousValue: string;
+    newValue: string;
+    ledgerContext: string | null;
+    effectiveDate: Date | null;
+    locationId: string | null;
+    staffMemberId: string;
+    createdAt: Date;
+  }[],
+  lookups: ActivityNameLookups,
+): ActivityEntry[] {
+  const { locationNameById, nameFor } = lookups;
+  const rows: ActivityEntry[] = [];
+
+  for (const a of amendments) {
+    const subject = a.ledgerContext ?? `${a.recordType} ${a.field}`;
+    const from = a.previousValue === "" ? "(empty)" : a.previousValue;
+    const to = a.newValue === "" ? "(empty)" : a.newValue;
+    rows.push({
+      id: `amendment-${a.id}`,
+      enteredAt: a.createdAt,
+      effectiveOn: a.effectiveDate ?? a.createdAt,
+      kind: "amendment",
+      who: nameFor(a.staffMemberId),
+      whoId: a.staffMemberId,
+      what: `${subject}: ${from} → ${to}`,
+      locationName: a.locationId ? locationNameById.get(a.locationId) ?? null : null,
+      amountMinor: null,
+      reason: null,
+    });
+  }
+
+  return rows;
+}
+
 function filterAndPaginateActivity(
   rows: ActivityEntry[],
   input: { personId?: string; kind?: ActivityKind; search?: string; page: number; pageSize: number },
@@ -1873,6 +1934,7 @@ export async function getActivity(
     cashTransactions,
     daysWorked,
     locations,
+    amendments,
   ] = await Promise.all([
     listSalesInPeriod(db, periodStart, periodEnd),
     getMovementsForActivity(db, requester, periodStart, periodEnd),
@@ -1880,6 +1942,7 @@ export async function getActivity(
     getCashLedgerTransactions(db, requester, periodStart, periodEnd),
     getDaysWorkedForActivity(db, requester, periodStart, periodEnd),
     listLocations(db),
+    listAmendmentsInPeriod(db, periodStart, periodEnd),
   ]);
   if (!movements.ok) return movements;
   if (!stockCounts.ok) return stockCounts;
@@ -1894,6 +1957,7 @@ export async function getActivity(
     stockCounts.counts,
     cashTransactions,
     daysWorked.value,
+    amendments,
   );
 
   const rows: ActivityEntry[] = [
@@ -1902,6 +1966,7 @@ export async function getActivity(
     ...countsToActivityRows(stockCounts.counts, lookups),
     ...cashToActivityRows(cashTransactions, lookups),
     ...daysWorkedToActivityRows(daysWorked.value, lookups),
+    ...amendmentsToActivityRows(amendments, lookups),
   ];
 
   const { rows: paged, total } = filterAndPaginateActivity(rows, input);

@@ -2,6 +2,10 @@
 
 export {
   canAccessLocation,
+  recordAmendment,
+  listAmendmentsForRecord,
+  listAmendmentsInPeriod,
+  diffToAmendments,
   createCustomer,
   createStaffMember,
   deactivateStaffMember,
@@ -21,6 +25,7 @@ export {
   getDaysWorkedForActivity,
 } from "./logic";
 export type { LoginResult, AuthenticatedStaff, PayForStaff } from "./logic";
+export type { Amendment, AmendmentInput } from "./schema";
 export {
   loginRoute,
   logoutRoute,

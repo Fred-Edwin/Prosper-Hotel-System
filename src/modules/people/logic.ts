@@ -22,8 +22,19 @@ import {
   updateCustomerRecord,
   updateStaffMemberRecord,
   upsertDaysWorked,
+  createAmendment,
+  findAmendmentsForRecord,
+  findAmendmentsInPeriod,
 } from "./queries";
-import type { Customer, DaysWorked, Location, StaffMember, StaffRole } from "./schema";
+import type {
+  Amendment,
+  AmendmentInput,
+  Customer,
+  DaysWorked,
+  Location,
+  StaffMember,
+  StaffRole,
+} from "./schema";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
 
@@ -195,13 +206,45 @@ export async function updateStaffMember(
     pinHash = await hashPin(input.pin);
   }
 
-  const staffMember = await updateStaffMemberRecord(db, id, {
-    name,
-    phone,
-    pinHash,
-    role: input.role,
-    locationId: input.locationId,
-    dailyRateMinor: input.dailyRateMinor,
+  // BUG-01 / D3: the previous value is retained, and the owner is never
+  // asked to type a reason. Only changed fields produce a trail row, and
+  // the row commits with the update — an untrailed edit is worse than no
+  // edit (C2). pinHash is deliberately absent from the diff: a PIN's
+  // previous value must never be recoverable from the audit trail.
+  const amendments = diffToAmendments(
+    {
+      name: current.name,
+      phone: current.phone,
+      role: current.role,
+      locationId: current.locationId,
+      dailyRateMinor: current.dailyRateMinor,
+    },
+    {
+      name,
+      phone,
+      role: input.role,
+      locationId: input.locationId,
+      dailyRateMinor: input.dailyRateMinor,
+    },
+    {
+      recordType: "StaffMember",
+      recordId: id,
+      staffMemberId: requester.staff.id,
+      locationId: input.locationId,
+    },
+  );
+
+  const staffMember = await db.$transaction(async (tx) => {
+    const updated = await updateStaffMemberRecord(tx, id, {
+      name,
+      phone,
+      pinHash,
+      role: input.role,
+      locationId: input.locationId,
+      dailyRateMinor: input.dailyRateMinor,
+    });
+    for (const amendment of amendments) await createAmendment(tx, amendment);
+    return updated;
   });
   return { ok: true, value: staffMember };
 }
@@ -280,9 +323,24 @@ export async function updateCustomer(
   const current = await findCustomerByIdQuery(db, id);
   if (!current) return { ok: false, reason: "not_found" };
 
-  const customer = await updateCustomerRecord(db, id, {
-    name,
-    phone: input.phone ?? null,
+  // BUG-01, customer side — same rule as updateStaffMember above.
+  const amendments = diffToAmendments(
+    { name: current.name, phone: current.phone },
+    { name, phone: input.phone ?? null },
+    {
+      recordType: "Customer",
+      recordId: id,
+      staffMemberId: _requester.staff.id,
+    },
+  );
+
+  const customer = await db.$transaction(async (tx) => {
+    const updated = await updateCustomerRecord(tx, id, {
+      name,
+      phone: input.phone ?? null,
+    });
+    for (const amendment of amendments) await createAmendment(tx, amendment);
+    return updated;
   });
   return { ok: true, value: customer };
 }
@@ -433,4 +491,64 @@ export async function markDaysWorkedPaid(
     paidAs,
   );
   return { ids: unpaid.map((d) => d.id), amountMinor: unpaid.length * dailyRateMinor };
+}
+
+/**
+ * Editable-ledger T2 — record one field-level edit.
+ *
+ * A thin pass-through today, and deliberately the *only* way an amendment
+ * is written: C1's "one write path per kind" depends on there being a
+ * single choke point where the trail is produced, so T3's three ledger
+ * write functions and the name/phone edits here cannot drift apart.
+ *
+ * Pass a transaction client as `db` whenever the amendment accompanies a
+ * data change — C2 makes an untrailed edit worse than no edit.
+ */
+export async function recordAmendment(
+  db: Parameters<typeof createAmendment>[0],
+  input: AmendmentInput,
+): Promise<Amendment> {
+  return createAmendment(db, input);
+}
+
+export async function listAmendmentsForRecord(
+  db: Parameters<typeof findAmendmentsForRecord>[0],
+  recordType: string,
+  recordId: string,
+): Promise<Amendment[]> {
+  return findAmendmentsForRecord(db, recordType, recordId);
+}
+
+export async function listAmendmentsInPeriod(
+  db: Parameters<typeof findAmendmentsInPeriod>[0],
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Amendment[]> {
+  return findAmendmentsInPeriod(db, periodStart, periodEnd);
+}
+
+/**
+ * The field-by-field diff behind BUG-01.
+ *
+ * Only *changed* fields produce a row: saving a form without touching
+ * anything must leave no trail, or Activity fills with noise that hides
+ * the real edits. Values are stringified here rather than in
+ * createAmendment because rendering is a domain decision — an absent phone
+ * reads as "" rather than "null", which is what the owner would see on
+ * screen.
+ */
+export function diffToAmendments(
+  before: Record<string, string | number | null | undefined>,
+  after: Record<string, string | number | null | undefined>,
+  common: Omit<AmendmentInput, "field" | "previousValue" | "newValue">,
+): AmendmentInput[] {
+  const render = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v));
+  const rows: AmendmentInput[] = [];
+  for (const field of Object.keys(after)) {
+    const previousValue = render(before[field]);
+    const newValue = render(after[field]);
+    if (previousValue === newValue) continue;
+    rows.push({ ...common, field, previousValue, newValue });
+  }
+  return rows;
 }

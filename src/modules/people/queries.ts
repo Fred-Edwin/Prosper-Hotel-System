@@ -1,5 +1,12 @@
 import type { PrismaClient, StaffMember as PrismaStaffMember } from "@/generated/prisma/client";
-import type { Customer, DaysWorked, Location, StaffMember } from "./schema";
+import type { Amendment, AmendmentInput, Customer, DaysWorked, Location, StaffMember } from "./schema";
+import type { Prisma } from "@/generated/prisma/client";
+
+// recordAmendment is called both with the ordinary db handle and from
+// inside a db.$transaction callback — C2 requires the trail row and the
+// data change to commit together. Prisma's transaction client is a
+// distinct (near-identical) type, same convention as stock/logic.ts's Db.
+type Db = PrismaClient | Prisma.TransactionClient;
 
 // Prisma returns Decimal fields as Decimal.js objects, not plain numbers —
 // converted here so the rest of the app (logic.ts, routes.ts, UI) keeps
@@ -90,7 +97,7 @@ export async function createStaffMemberRecord(
 }
 
 export async function updateStaffMemberRecord(
-  db: PrismaClient,
+  db: Db,
   id: string,
   data: {
     name: string;
@@ -147,7 +154,7 @@ export async function createCustomerRecord(
 }
 
 export async function updateCustomerRecord(
-  db: PrismaClient,
+  db: Db,
   id: string,
   data: { name: string; phone: string | null },
 ): Promise<Customer> {
@@ -240,4 +247,54 @@ export async function markDaysWorkedPaid(
   paidAs: string,
 ): Promise<void> {
   await db.daysWorked.updateMany({ where: { id: { in: ids } }, data: { paidAs } });
+}
+
+// Editable-ledger T2 — the amendment trail's only write path.
+//
+// Deliberately dumb: it stores strings and never interprets them. Every
+// decision about *what* counts as a change (which fields, how a value is
+// rendered, what the ledger context reads) belongs to the caller in
+// logic.ts, because only the caller knows the domain meaning. This keeps
+// one storage shape serving stock quantities, expense amounts, prices,
+// names and days worked alike.
+export async function createAmendment(db: Db, input: AmendmentInput): Promise<Amendment> {
+  return db.amendment.create({
+    data: {
+      recordType: input.recordType,
+      recordId: input.recordId,
+      field: input.field,
+      previousValue: input.previousValue,
+      newValue: input.newValue,
+      ledgerContext: input.ledgerContext ?? null,
+      effectiveDate: input.effectiveDate ?? null,
+      locationId: input.locationId ?? null,
+      staffMemberId: input.staffMemberId,
+    },
+  });
+}
+
+// Newest first: "what did this say before" is nearly always a question
+// about the most recent change, and C8 guarantees there may be many.
+export async function findAmendmentsForRecord(
+  db: Db,
+  recordType: string,
+  recordId: string,
+): Promise<Amendment[]> {
+  return db.amendment.findMany({
+    where: { recordType, recordId },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+// Ticket T2: Activity reads the trail as one more source alongside sales,
+// movements, counts, cash and days worked.
+export async function findAmendmentsInPeriod(
+  db: Db,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Amendment[]> {
+  return db.amendment.findMany({
+    where: { createdAt: { gte: periodStart, lte: periodEnd } },
+    orderBy: { createdAt: "desc" },
+  });
 }

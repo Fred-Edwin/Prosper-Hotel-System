@@ -18,6 +18,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Amendments reference staff members (editable-ledger T2), so they
+  // must be cleared first — the foreign key is RESTRICT.
+  await testDb.amendment.deleteMany({});
   await testDb.session.deleteMany({});
   await testDb.staffMember.deleteMany({});
   await testDb.location.deleteMany({});
@@ -25,6 +28,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  // Amendments reference staff members (editable-ledger T2), so they
+  // must be cleared first — the foreign key is RESTRICT.
+  await testDb.amendment.deleteMany({});
   await testDb.session.deleteMany({});
   await testDb.staffMember.deleteMany({});
   const staff = await testDb.staffMember.create({

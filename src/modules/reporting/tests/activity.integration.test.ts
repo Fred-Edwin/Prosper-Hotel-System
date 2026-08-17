@@ -4,6 +4,7 @@ import type { AuthenticatedStaff } from "@/modules/people";
 import { recordCounterSale, voidSale, recordSaleCorrection } from "@/modules/sales";
 import { recordExpense, recordDrawingRepayment } from "@/modules/cash";
 import { recordNonSalesConsumption, recordStockCount, correctStockCount, getStockCount } from "@/modules/stock";
+import { recordAmendment } from "@/modules/people";
 import { getActivity } from "../logic";
 import { testDb } from "@/shared/test-db";
 
@@ -60,6 +61,7 @@ function attendant(): AuthenticatedStaff {
 }
 
 async function resetDb() {
+  await testDb.amendment.deleteMany({});
   await testDb.repayment.deleteMany({});
   await testDb.paymentLine.deleteMany({});
   await testDb.saleLine.deleteMany({});
@@ -418,5 +420,84 @@ describe("getActivity", () => {
     const result = await getActivity(testDb, cashier(), { periodStart, periodEnd, page: 1, pageSize: 50 });
 
     expect(result).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+// Editable-ledger T2 — the amendment trail as an Activity source.
+describe("getActivity — amendments", () => {
+  test("shows an in-place edit in the owner's terms, not the app's", async () => {
+    const { periodStart, periodEnd } = period();
+    await recordAmendment(testDb, {
+      recordType: "StockMovement",
+      recordId: "movement-xyz",
+      field: "received",
+      previousValue: "3",
+      newValue: "5",
+      staffMemberId: ownerId,
+      ledgerContext: "received · Sodas (500ml) · restaurant",
+      effectiveDate: new Date("2026-08-16T00:00:00.000Z"),
+      locationId: restaurantId,
+    });
+
+    const result = await getActivity(testDb, owner(), { periodStart, periodEnd, page: 1, pageSize: 50 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const row = result.rows.find((r) => r.kind === "amendment");
+    expect(row).toBeDefined();
+    // The row names the cell she edited, never a movement id.
+    expect(row?.what).toBe("received · Sodas (500ml) · restaurant: 3 → 5");
+    expect(row?.what).not.toContain("movement-xyz");
+    expect(row?.who).toBe("Lucy");
+    expect(row?.locationName).toBe("Test Restaurant");
+  });
+
+  test("separates the ledger day it applies to from the day it was typed", async () => {
+    const { periodStart, periodEnd } = period();
+    const ledgerDay = new Date("2026-08-16T00:00:00.000Z");
+    await recordAmendment(testDb, {
+      recordType: "StockMovement",
+      recordId: "movement-abc",
+      field: "received",
+      previousValue: "3",
+      newValue: "5",
+      staffMemberId: ownerId,
+      ledgerContext: "received · Sodas (500ml) · restaurant",
+      effectiveDate: ledgerDay,
+      locationId: restaurantId,
+    });
+
+    const result = await getActivity(testDb, owner(), { periodStart, periodEnd, page: 1, pageSize: 50 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const row = result.rows.find((r) => r.kind === "amendment");
+    expect(row?.effectiveOn.getTime()).toBe(ledgerDay.getTime());
+    expect(row?.enteredAt.getTime()).toBeGreaterThan(ledgerDay.getTime());
+  });
+
+  test("is filterable as its own kind", async () => {
+    const { periodStart, periodEnd } = period();
+    await recordAmendment(testDb, {
+      recordType: "Customer",
+      recordId: "customer-1",
+      field: "name",
+      previousValue: "Mama Njeri",
+      newValue: "Mama Njeri Kamau",
+      staffMemberId: ownerId,
+    });
+
+    const result = await getActivity(testDb, owner(), {
+      periodStart,
+      periodEnd,
+      kind: "amendment",
+      page: 1,
+      pageSize: 50,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.rows).toHaveLength(1);
+    // No ledger context — the record type and field describe it instead.
+    expect(result.rows[0]?.what).toBe("Customer name: Mama Njeri → Mama Njeri Kamau");
   });
 });

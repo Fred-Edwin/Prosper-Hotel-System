@@ -50,7 +50,9 @@ export type ActivityKind =
   | "takings"
   | "expense"
   | "repayment"
-  | "days_worked";
+  | "days_worked"
+  // Editable-ledger T2 — the owner's in-place edits.
+  | "amendment";
 
 export type ActivityRowData = {
   id: string;
@@ -75,6 +77,7 @@ const kindLabel: Record<ActivityKind, string> = {
   expense: "Expense",
   repayment: "Repayment",
   days_worked: "People",
+  amendment: "Amendment",
 };
 
 const PAGE_SIZE = 50;
@@ -421,7 +424,7 @@ export function ActivityView({
 }
 
 function KindBadge({ kind }: { kind: ActivityKind }) {
-  const notable = kind === "correction" || kind === "void";
+  const notable = kind === "correction" || kind === "void" || kind === "amendment";
   return (
     <Badge
       variant="outline"

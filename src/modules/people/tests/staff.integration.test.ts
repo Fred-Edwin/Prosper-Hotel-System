@@ -7,15 +7,17 @@ import {
   login,
   reactivateStaffMember,
   updateStaffMember,
+  hashPin,
 } from "../index";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
+let requesterId: string;
 
 function staffAt(role: "owner" | "cashier"): AuthenticatedStaff {
   return {
     staff: {
-      id: "staff-1",
+      id: requesterId,
       name: "Test Owner",
       phone: "+254700111555",
       role,
@@ -28,6 +30,9 @@ function staffAt(role: "owner" | "cashier"): AuthenticatedStaff {
 }
 
 afterAll(async () => {
+  // Amendments reference staff members (editable-ledger T2), so they
+  // must be cleared first — the foreign key is RESTRICT.
+  await testDb.amendment.deleteMany({});
   await testDb.session.deleteMany({});
   await testDb.staffMember.deleteMany({});
   await testDb.location.deleteMany({});
@@ -35,6 +40,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  // Amendments reference staff members (editable-ledger T2), so they
+  // must be cleared first — the foreign key is RESTRICT.
+  await testDb.amendment.deleteMany({});
   await testDb.session.deleteMany({});
   await testDb.staffMember.deleteMany({});
   await testDb.location.deleteMany({});
@@ -42,6 +50,22 @@ beforeEach(async () => {
     data: { code: "restaurant", name: "Test Restaurant" },
   });
   restaurantId = restaurant.id;
+
+  // A real row, not a synthetic id (editable-ledger T2): updateStaffMember
+  // now writes an Amendment attributing the edit, and an amendment must
+  // name a staff member who exists. An edit that cannot be attributed does
+  // not happen — D3 makes the trail a guarantee, not best-effort.
+  const requester = await testDb.staffMember.create({
+    data: {
+      name: "Test Requester",
+      phone: "+254700111555",
+      pinHash: await hashPin("1234"),
+      role: "owner",
+      locationId: restaurant.id,
+      dailyRateMinor: 0,
+    },
+  });
+  requesterId = requester.id;
 });
 
 describe("createStaffMember", () => {
