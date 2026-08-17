@@ -742,3 +742,159 @@ describe("C3 — the reconciliation invariant holds after arbitrary amendments",
     assertReconciles(row!);
   });
 });
+
+/**
+ * §3.3 — the one genuinely hard cell.
+ *
+ * `sold` is simultaneously a stock movement and a financial record, so
+ * reducing it has no neutral option: either revenue stays and disagrees
+ * with stock, or it drops and the app erases money a customer physically
+ * handed over. The owner names which happened.
+ */
+describe("amendDayTotal — sold, and the money", () => {
+  async function saleOf(quantity: number, priceMinor: number, occurredAt: Date) {
+    const sale = await testDb.sale.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: cashierId,
+        fulfilment: "counter",
+        totalMinor: quantity * priceMinor,
+        occurredAt,
+        lines: { create: [{ productId, quantity, priceMinor }] },
+      },
+      include: { lines: true },
+    });
+    await movement(-quantity, "sold", occurredAt);
+    return sale;
+  }
+
+  afterEach(async () => {
+    await testDb.saleLine.deleteMany({});
+    await testDb.sale.deleteMany({});
+  });
+
+  test("stock only — the movement moves, revenue does not", async () => {
+    await saleOf(30, 300, at("2026-08-16", "12:00:00.000"));
+
+    const result = await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-16"),
+      reason: "sold",
+      newTotal: 28,
+      revenueTreatment: "stock",
+    });
+    expect(result.ok).toBe(true);
+
+    const row = await ledgerRow(D("2026-08-16"), at("2026-08-16", "23:59:59.999"));
+    expect(row?.sold).toBe(28);
+
+    // The money a customer handed over is still recorded.
+    const sales = await testDb.sale.findMany({});
+    expect(sales[0]?.totalMinor.toNumber()).toBe(9000);
+  });
+
+  test("stock and money — revenue drops by the implied amount", async () => {
+    await saleOf(30, 300, at("2026-08-16", "12:00:00.000"));
+
+    await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-16"),
+      reason: "sold",
+      newTotal: 28,
+      revenueTreatment: "stockAndMoney",
+    });
+
+    const row = await ledgerRow(D("2026-08-16"), at("2026-08-16", "23:59:59.999"));
+    expect(row?.sold).toBe(28);
+
+    const sales = await testDb.sale.findMany({});
+    // 30 × 300 = 9000, less 2 × 300 = 8400.
+    expect(sales[0]?.totalMinor.toNumber()).toBe(8400);
+    const lines = await testDb.saleLine.findMany({});
+    expect(lines[0]?.quantity.toNumber()).toBe(28);
+  });
+
+  test("takes from the most recent sale first, deterministically", async () => {
+    await saleOf(10, 300, at("2026-08-16", "09:00:00.000"));
+    const later = await saleOf(10, 300, at("2026-08-16", "17:00:00.000"));
+
+    await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-16"),
+      reason: "sold",
+      newTotal: 17,
+      revenueTreatment: "stockAndMoney",
+    });
+
+    const lines = await testDb.saleLine.findMany({ orderBy: { quantity: "asc" } });
+    // The later sale absorbs all three units; the earlier is untouched.
+    expect(lines.map((l) => l.quantity.toNumber()).sort((a, b) => a - b)).toEqual([7, 10]);
+    const laterReloaded = await testDb.sale.findUnique({ where: { id: later.id } });
+    expect(laterReloaded?.totalMinor.toNumber()).toBe(2100);
+  });
+
+  test("spills into the next sale when one is not enough", async () => {
+    await saleOf(10, 300, at("2026-08-16", "09:00:00.000"));
+    await saleOf(4, 300, at("2026-08-16", "17:00:00.000"));
+
+    await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-16"),
+      reason: "sold",
+      newTotal: 8,
+      revenueTreatment: "stockAndMoney",
+    });
+
+    // 6 units removed: the later sale's 4 in full, then 2 from the earlier.
+    const remaining = await testDb.saleLine.findMany({});
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.quantity.toNumber()).toBe(8);
+  });
+
+  test("raising sold never invents a sale", async () => {
+    await saleOf(10, 300, at("2026-08-16", "12:00:00.000"));
+
+    await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-16"),
+      reason: "sold",
+      newTotal: 14,
+      revenueTreatment: "stockAndMoney",
+    });
+
+    const row = await ledgerRow(D("2026-08-16"), at("2026-08-16", "23:59:59.999"));
+    expect(row?.sold).toBe(14);
+    // Stock rises; the revenue she actually took stands. Fabricating a
+    // sale would need a customer, a payment method and a time she never
+    // stated.
+    const sales = await testDb.sale.findMany({});
+    expect(sales[0]?.totalMinor.toNumber()).toBe(3000);
+  });
+
+  test("records her intent in the trail, not just the delta", async () => {
+    await saleOf(30, 300, at("2026-08-16", "12:00:00.000"));
+
+    await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-16"),
+      reason: "sold",
+      newTotal: 28,
+      revenueTreatment: "stock",
+    });
+
+    const amendments = await testDb.amendment.findMany({});
+    expect(amendments[0]?.ledgerContext).toContain("stock only");
+  });
+});

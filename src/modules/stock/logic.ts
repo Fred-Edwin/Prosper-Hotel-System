@@ -2592,6 +2592,25 @@ export async function amendDayTotal(
     date: Date;
     reason: StockMovementReason;
     newTotal: number;
+    /**
+     * §3.3 — only meaningful when `reason` is "sold", and only asked once,
+     * on that cell.
+     *
+     * `sold` is the one figure that is simultaneously a stock movement and
+     * a financial record, so reducing it has no neutral option: either
+     * revenue stays and disagrees with stock, or it drops and the app
+     * erases money a customer physically handed over. The owner names
+     * which happened; the app never guesses.
+     *
+     *   "stock"      -> the units never left the shelf (miscount,
+     *                   breakage). Revenue is untouched.
+     *   "stockAndMoney" -> they were never sold. The day's sale value drops
+     *                   by the implied amount, most-recent-sale-first.
+     *
+     * Defaults to "stock", the conservative choice: it never destroys a
+     * revenue record without being told to.
+     */
+    revenueTreatment?: "stock" | "stockAndMoney";
   },
 ): Promise<AmendResult> {
   if (requester.staff.role !== "owner") return { ok: false, reason: "forbidden" };
@@ -2679,6 +2698,50 @@ export async function amendDayTotal(
       }
     }
 
+    // §3.3's money half. Stock has already moved above; this reduces the
+    // recorded revenue to match, most-recent-sale-first — the same
+    // determinism as the several-rows rule, so the outcome never depends
+    // on which sale the database happens to return first.
+    //
+    // Only ever reduces. Raising a `sold` figure cannot invent a sale: we
+    // would have to fabricate a customer, a payment method and a time, none
+    // of which she stated. The stock rises, and the revenue she actually
+    // took stands.
+    if (input.reason === "sold" && input.revenueTreatment === "stockAndMoney" && delta < 0) {
+      let unitsToRemove = -delta;
+      const lines = await tx.saleLine.findMany({
+        where: {
+          productId: input.itemId,
+          sale: { locationId: input.locationId, voided: false, occurredAt: { gt: start, lte: end } },
+        },
+        orderBy: { sale: { occurredAt: "desc" } },
+        include: { sale: true },
+      });
+
+      for (const line of lines) {
+        if (unitsToRemove <= 0) break;
+        const quantity = line.quantity.toNumber();
+        const removed = Math.min(quantity, unitsToRemove);
+        const priceMinor = line.priceMinor.toNumber();
+
+        if (removed >= quantity) {
+          await tx.saleLine.delete({ where: { id: line.id } });
+        } else {
+          await tx.saleLine.update({
+            where: { id: line.id },
+            data: { quantity: quantity - removed },
+          });
+        }
+        // The sale's own total is a stored figure, so it moves with its
+        // lines or the two disagree.
+        await tx.sale.update({
+          where: { id: line.saleId },
+          data: { totalMinor: { decrement: removed * priceMinor } },
+        });
+        unitsToRemove -= removed;
+      }
+    }
+
     // The trail is day-level, because the day's total is the fact she
     // stated. "movement abc123.quantity changed" would be a true statement
     // about a row and a useless one about her business.
@@ -2688,7 +2751,13 @@ export async function amendDayTotal(
       field: input.reason,
       previousValue: String(currentTotal),
       newValue: String(input.newTotal),
-      ledgerContext,
+      // §3.3: the choice is recorded on the amendment, so the trail states
+      // her *intent* rather than a bare arithmetic delta — worth more six
+      // weeks later than the number alone.
+      ledgerContext:
+        input.reason === "sold" && input.revenueTreatment
+          ? `${ledgerContext} · ${input.revenueTreatment === "stockAndMoney" ? "stock and money" : "stock only"}`
+          : ledgerContext,
       effectiveDate: start,
       locationId: input.locationId,
       staffMemberId: requester.staff.id,

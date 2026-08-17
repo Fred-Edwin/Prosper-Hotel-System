@@ -346,6 +346,17 @@ export function ProductLedgerView({
   const [confirming, setConfirming] = useState<
     { c: ConfirmCase; proceed: () => void } | null
   >(null);
+  // §3.3's two-button choice, pending her answer. Not a confirmation
+  // dialog and not a reason prompt: two buttons naming two different real
+  // situations, on this one cell only.
+  const [soldChoice, setSoldChoice] = useState<{
+    productName: string;
+    from: number;
+    to: number;
+    revenueMinor: number;
+    unitPriceMinor: number | null;
+    choose: (treatment: "stock" | "stockAndMoney") => void;
+  } | null>(null);
 
   const editingEnabled = !!onReplaceRows;
 
@@ -528,6 +539,37 @@ export function ProductLedgerView({
                   : months !== null
                     ? { kind: "farBack", months }
                     : null;
+                // §3.3 — reducing `sold` has no neutral option, so ask.
+                // Only on a reduction: raising it cannot invent a sale.
+                if (column === "sold" && next < value) {
+                  setSoldChoice({
+                    productName: row.productName,
+                    from: value,
+                    to: next,
+                    revenueMinor: day.salesValueMinor,
+                    unitPriceMinor: row.sellingPriceMinor,
+                    choose: (treatment) => {
+                      setSoldChoice(null);
+                      amend({
+                        cellKey,
+                        productId: row.productId,
+                        escalation,
+                        body: {
+                          kind: "dayTotal",
+                          itemType: "product",
+                          itemId: row.productId,
+                          locationId: row.locationId,
+                          date: day.date,
+                          reason: "sold",
+                          newValue: next,
+                          undoValue: value,
+                          revenueTreatment: treatment,
+                        },
+                      });
+                    },
+                  });
+                  return;
+                }
                 amend({
                   cellKey,
                   productId: row.productId,
@@ -555,6 +597,83 @@ export function ProductLedgerView({
                       },
                 });
               }
+            : undefined
+        }
+      />
+    );
+  }
+
+  /**
+   * A period-total quantity on the parent row.
+   *
+   * Deliberately not editable. The figure spans every day in the period, so
+   * "received should be 12" has no single date to write a movement against
+   * — and picking one would put the correction on a day she did not name.
+   * Rather than being silently inert it says so, and points at the day
+   * rows, where the same edit is unambiguous.
+   */
+  function periodCell(
+    row: ProductLedgerRowData,
+    value: number,
+    opts: { muted?: boolean; strong?: boolean; tone?: "danger" } = {},
+  ) {
+    return (
+      <EditableNum
+        value={value}
+        muted={opts.muted}
+        strong={opts.strong}
+        tone={opts.tone}
+        notEditableReason={
+          editingEnabled
+            ? `This is the total for the whole period. Expand ${row.productName} and correct the day.`
+            : undefined
+        }
+      />
+    );
+  }
+
+  /**
+   * Kind C — a scalar on the product itself, edited from the period row.
+   *
+   * Price and unit cost are the only two figures on that row that *can* be
+   * edited there: everything else is a period aggregate spanning many days,
+   * with no single date to write a movement against. Those stay read-only
+   * and say so, rather than being silently inert (expand the row and edit
+   * the day).
+   *
+   * Not retroactive, and T8 is what makes that true — past sales carry
+   * their own snapshotted cost, so changing the price here moves the figure
+   * from now on without reshaping a closed month.
+   */
+  function scalarCell(row: ProductLedgerRowData, field: "sellingPriceMinor" | "unitCostMinor") {
+    const value = field === "sellingPriceMinor" ? row.sellingPriceMinor : row.unitCostMinor;
+    const cellKey = `${row.productId}:${row.locationId}:${field}`;
+    const cell = cellState[cellKey];
+
+    return (
+      <EditableNum
+        value={value}
+        asMoney
+        state={cell?.state}
+        errorMessage={cell?.message}
+        label={`${field === "sellingPriceMinor" ? "selling price" : "unit cost"} for ${row.productName}`}
+        onCommit={
+          editingEnabled
+            ? (next) =>
+                amend({
+                  cellKey,
+                  productId: row.productId,
+                  escalation: null,
+                  body: {
+                    kind: "scalar",
+                    recordType: "Product",
+                    recordId: row.productId,
+                    field: field === "sellingPriceMinor" ? "priceMinor" : "lastKnownCostMinor",
+                    locationId: row.locationId,
+                    newValue: next,
+                    undoValue: value,
+                  },
+                })
             : undefined
         }
       />
@@ -649,6 +768,72 @@ export function ProductLedgerView({
           >
             <X className="size-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* §3.3 — the one place the app asks. Two buttons naming two real
+          situations, not a confirmation and not a reason prompt. Cancelling
+          leaves the figure untouched, which is itself one of the honest
+          answers. */}
+      {soldChoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="sold-choice-title"
+            className="max-w-md rounded-lg border bg-card p-4 shadow-lg"
+            data-testid="sold-choice"
+          >
+            <h2 id="sold-choice-title" className="text-sm font-medium">
+              Sold: {soldChoice.from} → {soldChoice.to}
+            </h2>
+            <p className="mt-1.5 text-[13px] text-muted-foreground">
+              Revenue recorded for these is {money(soldChoice.revenueMinor)}.
+            </p>
+            <div className="mt-4 grid gap-2">
+              <button
+                onClick={() => soldChoice.choose("stock")}
+                className="rounded-md border px-3 py-2 text-left focus-visible:ring-2 focus-visible:ring-ring/50"
+                data-testid="sold-choice-stock"
+              >
+                <span className="block text-[13px] font-medium">Stock only</span>
+                <span className="block text-[12px] text-muted-foreground">
+                  {soldChoice.from - soldChoice.to} never left the shelf (miscount, breakage).
+                  Revenue unchanged.
+                </span>
+              </button>
+              <button
+                onClick={() => soldChoice.choose("stockAndMoney")}
+                className="rounded-md border px-3 py-2 text-left focus-visible:ring-2 focus-visible:ring-ring/50"
+                data-testid="sold-choice-stock-and-money"
+              >
+                <span className="block text-[13px] font-medium">Stock and money</span>
+                <span className="block text-[12px] text-muted-foreground">
+                  These {soldChoice.from - soldChoice.to} were never sold.
+                  {soldChoice.unitPriceMinor !== null && (
+                    <>
+                      {" "}
+                      Revenue drops to{" "}
+                      {money(
+                        soldChoice.revenueMinor -
+                          (soldChoice.from - soldChoice.to) * soldChoice.unitPriceMinor,
+                      )}
+                      .
+                    </>
+                  )}
+                </span>
+              </button>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={() => setSoldChoice(null)}
+                className="text-[13px] text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                data-testid="sold-choice-cancel"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -805,35 +990,29 @@ export function ProductLedgerView({
                           </span>
                         </button>
                       </td>
-                      <Td border><Num value={r.openingQty} /></Td>
+                      <Td border>{periodCell(r, r.openingQty)}</Td>
                       <Td>
                         <Num value={r.unitCostMinor === null ? null : r.unitCostMinor * r.openingQty} asMoney muted />
                       </Td>
-                      <Td border><Num value={r.produced} muted /></Td>
-                      <Td><Num value={r.received} muted /></Td>
-                      <Td><Num value={r.transferredIn} muted /></Td>
-                      <Td border><Num value={r.sold} strong /></Td>
-                      <Td><Num value={r.transferredOut} muted /></Td>
-                      <Td><Num value={r.nonSales} muted tone="danger" /></Td>
+                      <Td border>{periodCell(r, r.produced, { muted: true })}</Td>
+                      <Td>{periodCell(r, r.received, { muted: true })}</Td>
+                      <Td>{periodCell(r, r.transferredIn, { muted: true })}</Td>
+                      <Td border>{periodCell(r, r.sold, { strong: true })}</Td>
+                      <Td>{periodCell(r, r.transferredOut, { muted: true })}</Td>
+                      <Td>{periodCell(r, r.nonSales, { muted: true, tone: "danger" })}</Td>
                       <Td><Num value={r.corrected} muted signed /></Td>
                       <Td border><Num value={r.salesValueMinor} asMoney strong /></Td>
                       <Td>
                         <span className="tabular">
-                          {r.unitCostMinor === null ? (
-                            <span className="text-muted-foreground">—</span>
-                          ) : (
-                            <>
-                              {money(r.unitCostMinor)}
-                              {r.isEstimated && (
-                                <span className="ml-1 text-[10px] text-muted-foreground" title="Estimated at 60% of selling price">
-                                  est
-                                </span>
-                              )}
-                            </>
+                          {scalarCell(r, "unitCostMinor")}
+                          {r.isEstimated && r.unitCostMinor !== null && (
+                            <span className="ml-1 text-[10px] text-muted-foreground" title="Estimated at 60% of selling price">
+                              est
+                            </span>
                           )}
                         </span>
                       </Td>
-                      <Td><Num value={r.sellingPriceMinor} asMoney /></Td>
+                      <Td>{scalarCell(r, "sellingPriceMinor")}</Td>
                       <Td><Num value={cos} asMoney /></Td>
                       <Td>
                         {p === null ? (

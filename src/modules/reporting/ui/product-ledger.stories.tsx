@@ -286,6 +286,29 @@ export const NonSalesSplit: Story = {
   },
 };
 
+/**
+ * §3.3's two-button choice, the one place the app asks.
+ *
+ * Reduce the **Sold** figure on either day row (52 → 50, say) and the
+ * choice appears. It is not a confirmation and not a reason prompt: two
+ * buttons naming two different real situations, because doing nothing is
+ * also a choice here — either revenue disagrees with stock, or the app
+ * erases money a customer physically handed over.
+ *
+ * Raising the figure never asks: inventing a sale would need a customer, a
+ * payment method and a time she never stated.
+ */
+export const SoldChoice: Story = {
+  name: "Sold — stock only vs stock and money",
+  args: {
+    state: { status: "ready", rows: [chipsRow], categories, locations },
+    initialExpandedRowKey: `${chipsRow.productId}:${chipsRow.locationId}`,
+    onReplaceRows: () => {},
+    periodStart: "2026-08-05T00:00:00.000Z",
+    periodEnd: "2026-08-06T23:59:59.999Z",
+  },
+};
+
 export const Loading: Story = {
   args: { state: { status: "loading" } },
 };

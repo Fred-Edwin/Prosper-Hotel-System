@@ -425,6 +425,7 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
     date?: string;
     reason?: string;
     position?: "opening" | "closing";
+    revenueTreatment?: "stock" | "stockAndMoney";
     newValue?: number;
     recordType?: string;
     recordId?: string;
@@ -463,6 +464,7 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
       date,
       reason: input.reason as StockMovementReason,
       newTotal: input.newValue,
+      revenueTreatment: input.revenueTreatment,
     });
   } else if (input.kind === "derivedPosition") {
     if (!input.itemId || !input.locationId || !input.date || !input.position) {
