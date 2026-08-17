@@ -217,11 +217,7 @@ stock. Nobody trades until step 7 passes.
 
 ---
 
-## Two follow-ups owed to the owner
-
-**Rotate `POSTGRES_PASSWORD`.** It was pasted into a chat transcript on
-2026-08-17. Only reachable via SSH (no published ports), so not urgent, but
-do it. Rotation steps: `docs/infrastructure.md`.
+## Follow-up owed to the owner
 
 **Build a stock adjustment screen.** The owner asked to replace derived stock
 with stored, editable quantities. The real problem is that there is no
