@@ -56,6 +56,7 @@ export {
   exceptionsRoute,
   ledgerSummaryRoute,
   productLedgerRoute,
+  amendLedgerRoute,
   storeLedgerRoute,
   nonSalesLedgerRoute,
   cashLedgerRoute,

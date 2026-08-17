@@ -24,6 +24,9 @@ const chipsRow: ProductLedgerRowData = {
   sold: 52,
   transferredOut: 5,
   nonSales: 2,
+  wasted: 2,
+  consumed: 0,
+  givenAway: 0,
   corrected: 0,
   salesValueMinor: 520000,
   unitCostMinor: 4100,
@@ -43,6 +46,9 @@ const chipsRow: ProductLedgerRowData = {
       sold: 26,
       transferredOut: 3,
       nonSales: 1,
+      wasted: 1,
+      consumed: 0,
+      givenAway: 0,
       corrected: 0,
       salesValueMinor: 260000,
       closing: 14,
@@ -56,6 +62,9 @@ const chipsRow: ProductLedgerRowData = {
       sold: 26,
       transferredOut: 2,
       nonSales: 1,
+      wasted: 1,
+      consumed: 0,
+      givenAway: 0,
       corrected: 0,
       salesValueMinor: 260000,
       closing: 5,
@@ -76,6 +85,9 @@ const sodaRow: ProductLedgerRowData = {
   sold: 60,
   transferredOut: 0,
   nonSales: 0,
+  wasted: 0,
+  consumed: 0,
+  givenAway: 0,
   corrected: 0,
   salesValueMinor: 480000,
   unitCostMinor: 5800,
@@ -95,6 +107,9 @@ const sodaRow: ProductLedgerRowData = {
       sold: 60,
       transferredOut: 0,
       nonSales: 0,
+      wasted: 0,
+      consumed: 0,
+      givenAway: 0,
       corrected: 0,
       salesValueMinor: 480000,
       closing: 84,
@@ -115,6 +130,9 @@ const beefStewRow: ProductLedgerRowData = {
   sold: 18,
   transferredOut: 0,
   nonSales: 0,
+  wasted: 0,
+  consumed: 0,
+  givenAway: 0,
   corrected: 0,
   salesValueMinor: 324000,
   unitCostMinor: null,
@@ -134,6 +152,9 @@ const beefStewRow: ProductLedgerRowData = {
       sold: 18,
       transferredOut: 0,
       nonSales: 0,
+      wasted: 0,
+      consumed: 0,
+      givenAway: 0,
       corrected: 0,
       salesValueMinor: 324000,
       closing: 9,
@@ -202,6 +223,66 @@ export const WithCorrection: Story = {
       locations,
     },
     initialExpandedRowKey: `${beefStewRow.productId}:${beefStewRow.locationId}`,
+  },
+};
+
+/**
+ * Editable-ledger T4 — the same table with editing enabled, expanded to
+ * the day rows where most editing happens.
+ *
+ * `onReplaceRows` being present is what turns editing on: without it (every
+ * other story, and any read-only context) the cells render exactly as they
+ * always did. Here it only updates local state — there is no network in
+ * Storybook — so committing a cell shows the interaction, not the cascade.
+ *
+ * At rest the table is unmarked. The dotted underline follows the cursor.
+ */
+export const Editable: Story = {
+  name: "Editable — day rows",
+  args: {
+    state: { status: "ready", rows: [chipsRow, sodaRow], categories, locations },
+    initialExpandedRowKey: `${chipsRow.productId}:${chipsRow.locationId}`,
+    onReplaceRows: () => {},
+    periodStart: "2026-08-05T00:00:00.000Z",
+    periodEnd: "2026-08-06T23:59:59.999Z",
+  },
+};
+
+/**
+ * The non-sales split (plan §3.1's "ambiguous which thing she meant").
+ *
+ * The Non-sales column folds wastage, staff meals and giveaways. Editing
+ * the combined figure is unambiguous only when one of them is non-zero:
+ *
+ *  - **2026-08-05** has 1 wasted and nothing else, so the cell edits in
+ *    place and she never learns there was a breakdown.
+ *  - **2026-08-06** mixes 1 wasted with 1 staff meal. Silently adding to
+ *    wastage would file a staff meal as loss and quietly overstate it for
+ *    months, so the cell declines and says what the figure is made of.
+ *
+ * Hover both Non-sales cells to see the difference.
+ */
+export const NonSalesSplit: Story = {
+  name: "Non-sales — unambiguous vs mixed",
+  args: {
+    state: {
+      status: "ready",
+      rows: [
+        {
+          ...chipsRow,
+          days: [
+            { ...chipsRow.days[0]!, nonSales: 1, wasted: 1, consumed: 0, givenAway: 0 },
+            { ...chipsRow.days[1]!, nonSales: 2, wasted: 1, consumed: 1, givenAway: 0 },
+          ],
+        },
+      ],
+      categories,
+      locations,
+    },
+    initialExpandedRowKey: `${chipsRow.productId}:${chipsRow.locationId}`,
+    onReplaceRows: () => {},
+    periodStart: "2026-08-05T00:00:00.000Z",
+    periodEnd: "2026-08-06T23:59:59.999Z",
   },
 };
 

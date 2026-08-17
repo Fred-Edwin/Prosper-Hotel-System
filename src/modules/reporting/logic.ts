@@ -698,6 +698,11 @@ export type ProductLedgerDay = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  // The three reasons behind nonSales — see ReasonSums. The UI needs them
+  // to tell an unambiguous non-sales edit from one that must be split.
+  wasted: number;
+  consumed: number;
+  givenAway: number;
   corrected: number;
   salesValueMinor: number;
   closing: number;
@@ -716,6 +721,9 @@ export type ProductLedgerRow = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  wasted: number;
+  consumed: number;
+  givenAway: number;
   corrected: number;
   salesValueMinor: number;
   unitCostMinor: number | null;
@@ -784,6 +792,16 @@ type ReasonSums = {
   transferredOut: number;
   sold: number;
   nonSales: number;
+  // The three reasons behind `nonSales`, kept separately (editable-ledger
+  // T4). The combined column is what she reads, but wastage, a staff meal
+  // and a giveaway are different events with different meanings — an edit
+  // to the combined figure is only unambiguous when exactly one of them is
+  // non-zero. The UI uses this to decide whether it can edit in place or
+  // must defer to the expanded breakdown, per plan §3.1's "ambiguous which
+  // thing she meant" clause.
+  wasted: number;
+  consumed: number;
+  givenAway: number;
   // Signed: positive raises the position, negative lowers it. Kept out of
   // the in/out pair deliberately — a correction is not a delivery and must
   // never be presented as one (plan §3.1's Kind B note).
@@ -798,6 +816,9 @@ function emptyReasonSums(): ReasonSums {
     transferredOut: 0,
     sold: 0,
     nonSales: 0,
+    wasted: 0,
+    consumed: 0,
+    givenAway: 0,
     corrected: 0,
   };
 }
@@ -818,6 +839,9 @@ function foldReasonLines(
     } else if (line.reason === "sold") sums.sold += -line.quantity;
     else if (line.reason === "wasted" || line.reason === "consumed" || line.reason === "given_away") {
       sums.nonSales += -line.quantity;
+      if (line.reason === "wasted") sums.wasted += -line.quantity;
+      else if (line.reason === "consumed") sums.consumed += -line.quantity;
+      else sums.givenAway += -line.quantity;
     } else if (line.reason === "corrected") sums.corrected += line.quantity;
   }
   return sums;
@@ -905,6 +929,9 @@ async function buildProductLedgerRow(
       sold: daySums.sold,
       transferredOut: daySums.transferredOut,
       nonSales: daySums.nonSales,
+      wasted: daySums.wasted,
+      consumed: daySums.consumed,
+      givenAway: daySums.givenAway,
       corrected: daySums.corrected,
       salesValueMinor: product.priceMinor != null ? daySums.sold * product.priceMinor : 0,
       closing: dayClosing,
@@ -925,6 +952,9 @@ async function buildProductLedgerRow(
     sold: sums.sold,
     transferredOut: sums.transferredOut,
     nonSales: sums.nonSales,
+    wasted: sums.wasted,
+    consumed: sums.consumed,
+    givenAway: sums.givenAway,
     corrected: sums.corrected,
     salesValueMinor,
     unitCostMinor: basis?.costBasisMinor ?? null,

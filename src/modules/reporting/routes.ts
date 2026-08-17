@@ -15,6 +15,13 @@ import {
   type CashTransactionCategory,
   type ActivityKind,
 } from "./logic";
+import {
+  amendDayTotal,
+  amendDerivedPosition,
+  amendScalar,
+  type AmendResult,
+  type StockMovementReason,
+} from "@/modules/stock";
 import type { NonSalesCategory } from "@/modules/stock";
 
 function writeStatus(reason: string): number {
@@ -377,4 +384,123 @@ export async function dashboardStoreMovementsRoute(request: Request): Promise<Re
   }
 
   return Response.json({ rows: result.rows });
+}
+
+/**
+ * Editable-ledger T4 — one ledger cell edit, and the recomputed rows.
+ *
+ * Returns the refreshed ledger in the **same response** as the write,
+ * rather than making the client save-then-refetch. Three reasons, and the
+ * third is the one that matters:
+ *
+ *  - one round trip instead of two;
+ *  - no interleaving window where two in-flight edits land out of order
+ *    and the second overwrites the first's view;
+ *  - the toast can quote **real figures** (C7 stage two). Under
+ *    refetch-after-save the client would have to diff two snapshots to say
+ *    "closing rose by 2 across 3 days", and actual numbers are what make
+ *    the disclosure checkable.
+ *
+ * The `before` rows are returned alongside so the client can state what
+ * changed without keeping its own copy.
+ */
+export async function amendLedgerRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "invalid body" }, { status: 400 });
+  }
+
+  const input = body as {
+    kind?: "dayTotal" | "derivedPosition" | "scalar";
+    periodStart?: string;
+    periodEnd?: string;
+    itemType?: "product" | "ingredient";
+    itemId?: string;
+    locationId?: string;
+    date?: string;
+    reason?: string;
+    position?: "opening" | "closing";
+    newValue?: number;
+    recordType?: string;
+    recordId?: string;
+    field?: string;
+  };
+
+  if (!input.periodStart || !input.periodEnd) {
+    return Response.json({ error: "periodStart and periodEnd are required" }, { status: 400 });
+  }
+  const periodStart = new Date(input.periodStart);
+  const periodEnd = new Date(input.periodEnd);
+  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+    return Response.json({ error: "invalid period" }, { status: 400 });
+  }
+  if (typeof input.newValue !== "number" || !Number.isFinite(input.newValue)) {
+    return Response.json({ error: "newValue must be a number" }, { status: 400 });
+  }
+
+  // Read before, so the response can say what actually moved.
+  const before = await getProductLedger(db, session, { periodStart, periodEnd });
+  if (!before.ok) {
+    return Response.json({ error: before.reason }, { status: writeStatus(before.reason) });
+  }
+
+  let result: AmendResult;
+  if (input.kind === "dayTotal") {
+    if (!input.itemId || !input.locationId || !input.date || !input.reason) {
+      return Response.json({ error: "itemId, locationId, date and reason are required" }, { status: 400 });
+    }
+    const date = new Date(input.date);
+    if (Number.isNaN(date.getTime())) return Response.json({ error: "invalid date" }, { status: 400 });
+    result = await amendDayTotal(db, session, {
+      itemType: input.itemType ?? "product",
+      itemId: input.itemId,
+      locationId: input.locationId,
+      date,
+      reason: input.reason as StockMovementReason,
+      newTotal: input.newValue,
+    });
+  } else if (input.kind === "derivedPosition") {
+    if (!input.itemId || !input.locationId || !input.date || !input.position) {
+      return Response.json({ error: "itemId, locationId, date and position are required" }, { status: 400 });
+    }
+    const date = new Date(input.date);
+    if (Number.isNaN(date.getTime())) return Response.json({ error: "invalid date" }, { status: 400 });
+    result = await amendDerivedPosition(db, session, {
+      itemType: input.itemType ?? "product",
+      itemId: input.itemId,
+      locationId: input.locationId,
+      date,
+      position: input.position,
+      newValue: input.newValue,
+    });
+  } else if (input.kind === "scalar") {
+    if (!input.recordType || !input.recordId || !input.field) {
+      return Response.json({ error: "recordType, recordId and field are required" }, { status: 400 });
+    }
+    result = await amendScalar(db, session, {
+      recordType: input.recordType,
+      recordId: input.recordId,
+      field: input.field,
+      newValue: input.newValue,
+      locationId: input.locationId,
+    });
+  } else {
+    return Response.json({ error: "unknown kind" }, { status: 400 });
+  }
+
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  const after = await getProductLedger(db, session, { periodStart, periodEnd });
+  if (!after.ok) {
+    return Response.json({ error: after.reason }, { status: writeStatus(after.reason) });
+  }
+
+  return Response.json({ rows: after.rows, previousRows: before.rows });
 }

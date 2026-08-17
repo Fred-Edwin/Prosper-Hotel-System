@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ErrorState, PermissionDenied, EmptyFiltered, LoadingTable } from "@/components/patterns/states";
+import { EditableNum, type EditableNumState } from "./editable-num";
+import { summariseAmendment, confirmMessage, farBackMonths, type ConfirmCase } from "./amend-feedback";
 import { ChevronRight, Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -36,6 +38,11 @@ export type ProductLedgerDayData = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  // The three reasons behind nonSales. The combined column is what she
+  // reads; these decide whether an edit to it is unambiguous.
+  wasted: number;
+  consumed: number;
+  givenAway: number;
   // Editable-ledger T3: signed owner corrections to opening/closing. Shown
   // as its own column so the row still reconciles on screen — a correction
   // that moved closing without appearing anywhere would read as a bug.
@@ -57,6 +64,9 @@ export type ProductLedgerRowData = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  wasted: number;
+  consumed: number;
+  givenAway: number;
   corrected: number;
   salesValueMinor: number;
   unitCostMinor: number | null;
@@ -149,7 +159,45 @@ function ProductLedgerForAttempt({
     };
   }, [periodStart, periodEnd]);
 
-  return <ProductLedgerView state={state} onRetry={onRetry} />;
+  /**
+   * T4.2 — refresh **without remounting**.
+   *
+   * An edit changes other cells: closing, every later day's opening, and
+   * the money columns. So the table has to re-read after a save, and the
+   * obvious way to do that — bumping the `attempt` key above — destroys
+   * the component and takes her expanded row, scroll position, search text
+   * and filters with it. Ten edits in sequence would mean ten scroll-
+   * position losses, which quietly defeats C7's "edit ten cells without a
+   * confirm click".
+   *
+   * Replacing `state.rows` in place keeps every one of those, because the
+   * view never unmounts. Only the figures change, which is exactly what
+   * the edit changed.
+   */
+  const replaceRows = (rows: ProductLedgerRowData[]) => {
+    setState((current) => (current.status === "ready" ? { ...current, rows } : current));
+  };
+
+  const refresh = async () => {
+    const start = new Date(`${periodStart}T00:00:00`).toISOString();
+    const end = new Date(`${periodEnd}T23:59:59.999`).toISOString();
+    const result = await fetchProductLedger(start, end);
+    if (!cancelledRef.current && result.status === "ready") replaceRows(result.rows);
+  };
+
+  const startIso = new Date(`${periodStart}T00:00:00`).toISOString();
+  const endIso = new Date(`${periodEnd}T23:59:59.999`).toISOString();
+
+  return (
+    <ProductLedgerView
+      state={state}
+      onRetry={onRetry}
+      onReplaceRows={replaceRows}
+      onRefresh={refresh}
+      periodStart={startIso}
+      periodEnd={endIso}
+    />
+  );
 }
 
 const FROZEN = "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
@@ -212,6 +260,41 @@ function Td({ children, border, align = "right" }: { children?: React.ReactNode;
   );
 }
 
+/**
+ * Ledger column -> movement reason. `transferredIn`/`transferredOut` are
+ * the two signed directions of one reason, and `nonSales` folds three
+ * (wasted/consumed/given_away); editing that total needs a reason to write
+ * against, and `wasted` is the one the owner means when she says a figure
+ * on that column is wrong — the other two are recorded deliberately at the
+ * time, with a person attached.
+ */
+/** "1 wasted, 1 staff meal" — names what the combined figure is made of. */
+function nonSalesBreakdown(day: ProductLedgerDayData): string {
+  const parts: string[] = [];
+  if (day.wasted) parts.push(`${day.wasted} wasted`);
+  if (day.consumed) parts.push(`${day.consumed} staff meal${day.consumed === 1 ? "" : "s"}`);
+  if (day.givenAway) parts.push(`${day.givenAway} given away`);
+  return parts.join(", ");
+}
+
+function movementReasonFor(column: string): string {
+  switch (column) {
+    case "produced":
+      return "produced";
+    case "received":
+      return "received";
+    case "transferredIn":
+    case "transferredOut":
+      return "transferred";
+    case "sold":
+      return "sold";
+    case "nonSales":
+      return "wasted";
+    default:
+      return column;
+  }
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <ChevronRight
@@ -223,11 +306,24 @@ function Chevron({ open }: { open: boolean }) {
 export function ProductLedgerView({
   state,
   onRetry,
+  onReplaceRows,
+  onRefresh,
+  periodStart = "",
+  periodEnd = "",
   initialExpandedRowKey = null,
   initialQuery = "",
 }: {
   state: LoadState;
   onRetry: () => void;
+  /** Replaces the rows in place after an edit, without remounting — see
+   * ProductLedgerForAttempt's note on why remounting is wrong here. Absent
+   * in Storybook, which stories the view without a network. */
+  onReplaceRows?: (rows: ProductLedgerRowData[]) => void;
+  onRefresh?: () => Promise<void>;
+  /** ISO instants for the period on screen — the amend endpoint recomputes
+   * and returns exactly this window, so the edit and the refresh agree. */
+  periodStart?: string;
+  periodEnd?: string;
   /** Storybook only, for the "row expanded" state — the real page always
    * starts collapsed. */
   initialExpandedRowKey?: string | null;
@@ -241,6 +337,244 @@ export function ProductLedgerView({
   const [expanded, setExpanded] = useState<string | null>(initialExpandedRowKey);
 
   const allRows = useMemo(() => (state.status === "ready" ? state.rows : []), [state]);
+
+  // T4.2 — per-cell in-flight and failure state, keyed by row+column so two
+  // edits in flight at once never mask each other. Errors live on the cell
+  // rather than in a toast: she needs to know *which* figure failed.
+  const [cellState, setCellState] = useState<Record<string, { state: EditableNumState; message?: string }>>({});
+  const [toast, setToast] = useState<{ message: string; undo: () => void } | null>(null);
+  const [confirming, setConfirming] = useState<
+    { c: ConfirmCase; proceed: () => void } | null
+  >(null);
+
+  const editingEnabled = !!onReplaceRows;
+
+  async function submit(cellKey: string, body: Record<string, unknown>, productId: string) {
+    setCellState((s) => ({ ...s, [cellKey]: { state: "saving" } }));
+    try {
+      const response = await fetch("/api/ledger/amend", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, periodStart, periodEnd }),
+      });
+      if (!response.ok) {
+        setCellState((s) => ({
+          ...s,
+          [cellKey]: { state: "error", message: "Couldn't save. The figure is unchanged." },
+        }));
+        return;
+      }
+      const payload = (await response.json()) as {
+        rows: ProductLedgerRowData[];
+        previousRows: ProductLedgerRowData[];
+      };
+      onReplaceRows?.(payload.rows);
+      setCellState((s) => {
+        const next = { ...s };
+        delete next[cellKey];
+        return next;
+      });
+
+      // C7 stage two: real figures, and Undo. Undo is itself an amendment
+      // (C8) — it re-submits the previous value rather than deleting
+      // anything, so the trail records both moves.
+      const summary = summariseAmendment({ productId, previousRows: payload.previousRows, rows: payload.rows });
+      const previousValue = body["newValue"];
+      setToast({
+        message: summary.message,
+        undo: () => {
+          setToast(null);
+          void submit(cellKey, { ...body, newValue: body["undoValue"] ?? previousValue }, productId);
+        },
+      });
+    } catch {
+      setCellState((s) => ({
+        ...s,
+        [cellKey]: { state: "error", message: "Couldn't save. The figure is unchanged." },
+      }));
+    }
+  }
+
+  /**
+   * One ledger cell, wired to its Kind (plan §3.1). This is where C1's
+   * "one write path per kind" pays off: a column declares which kind it
+   * is and the semantics follow, rather than each cell growing its own
+   * handler.
+   *
+   * Kind A columns state the day's total for a reason; Kind B (opening,
+   * closing) state a derived position. `corrected` is deliberately *not*
+   * editable — it is the audit trail of corrections already made, and
+   * editing a correction directly rather than restating the figure it
+   * corrects would put two mechanisms on one number.
+   */
+  function dayCell(
+    row: ProductLedgerRowData,
+    day: ProductLedgerDayData,
+    column:
+      | "opening"
+      | "closing"
+      | "produced"
+      | "received"
+      | "transferredIn"
+      | "transferredOut"
+      | "sold"
+      | "nonSales"
+      | "corrected",
+  ) {
+    const value = day[column];
+    const cellKey = `${row.productId}:${row.locationId}:${day.date}:${column}`;
+    const cell = cellState[cellKey];
+
+    if (column === "corrected") {
+      return (
+        <EditableNum
+          value={value}
+          muted
+          signed
+          notEditableReason="This is a correction already recorded. Edit the figure it corrects instead."
+        />
+      );
+    }
+
+    const isPosition = column === "opening" || column === "closing";
+    const label = `${column} for ${row.productName} on ${day.date}`;
+
+    // Non-sales folds three reasons that mean different things — wastage is
+    // a loss, a staff meal is a benefit with a person attached, a giveaway
+    // is a decision. Plan §3.1 says to edit the thing she is looking at
+    // when there is exactly one thing to edit, and to defer only when it is
+    // genuinely ambiguous which she meant. That is precisely this split:
+    //
+    //   one reason non-zero  -> unambiguous, edit it in place. The common
+    //                           case, and she never learns the column had
+    //                           a breakdown.
+    //   several non-zero     -> silently picking one would file a staff
+    //                           meal under wastage and quietly overstate
+    //                           loss for months. Defer to the breakdown.
+    //   none                 -> nothing recorded yet, so nothing to
+    //                           disambiguate: wastage is the sensible
+    //                           default for a figure she is adding.
+    //
+    // This is the one place the app declines to take an edit, and it says
+    // why rather than being inert.
+    if (column === "nonSales") {
+      const present = ([
+        ["wasted", day.wasted],
+        ["consumed", day.consumed],
+        ["given_away", day.givenAway],
+      ] as const).filter(([, qty]) => qty !== 0);
+
+      if (present.length > 1) {
+        return (
+          <EditableNum
+            value={value}
+            muted
+            tone="danger"
+            notEditableReason={`${nonSalesBreakdown(day)} — correct one of them in the breakdown below.`}
+          />
+        );
+      }
+
+      const reason = present[0]?.[0] ?? "wasted";
+      return (
+        <EditableNum
+          value={value}
+          muted
+          tone="danger"
+          state={cell?.state}
+          errorMessage={cell?.message}
+          label={label}
+          onCommit={
+            editingEnabled
+              ? (next) => {
+                  const editedDate = new Date(`${day.date}T00:00:00.000Z`);
+                  const months = farBackMonths(editedDate);
+                  amend({
+                    cellKey,
+                    productId: row.productId,
+                    escalation: months !== null ? { kind: "farBack", months } : null,
+                    body: {
+                      kind: "dayTotal",
+                      itemType: "product",
+                      itemId: row.productId,
+                      locationId: row.locationId,
+                      date: day.date,
+                      reason,
+                      newValue: next,
+                      undoValue: value,
+                    },
+                  });
+                }
+              : undefined
+          }
+        />
+      );
+    }
+
+    return (
+      <EditableNum
+        value={value}
+        muted={column !== "sold" && !isPosition}
+        state={cell?.state}
+        errorMessage={cell?.message}
+        label={label}
+        onCommit={
+          editingEnabled
+            ? (next) => {
+                const editedDate = new Date(`${day.date}T00:00:00.000Z`);
+                const months = farBackMonths(editedDate);
+                const escalation: ConfirmCase | null = isPosition
+                  ? { kind: "derivedPosition" }
+                  : months !== null
+                    ? { kind: "farBack", months }
+                    : null;
+                amend({
+                  cellKey,
+                  productId: row.productId,
+                  escalation,
+                  body: isPosition
+                    ? {
+                        kind: "derivedPosition",
+                        itemType: "product",
+                        itemId: row.productId,
+                        locationId: row.locationId,
+                        date: day.date,
+                        position: column,
+                        newValue: next,
+                        undoValue: value,
+                      }
+                    : {
+                        kind: "dayTotal",
+                        itemType: "product",
+                        itemId: row.productId,
+                        locationId: row.locationId,
+                        date: day.date,
+                        reason: movementReasonFor(column),
+                        newValue: next,
+                        undoValue: value,
+                      },
+                });
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
+  /** Runs the edit, pausing on C7's three escalations first. */
+  function amend(input: {
+    cellKey: string;
+    productId: string;
+    body: Record<string, unknown>;
+    escalation: ConfirmCase | null;
+  }) {
+    const run = () => void submit(input.cellKey, input.body, input.productId);
+    if (input.escalation) {
+      setConfirming({ c: input.escalation, proceed: () => { setConfirming(null); run(); } });
+      return;
+    }
+    run();
+  }
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -290,6 +624,71 @@ export function ProductLedgerView({
 
   return (
     <div className="rounded-lg border bg-card" data-testid="product-ledger">
+      {/* C7 stage two — real figures, and Undo carrying the screen's one
+          accent (docs/design.md: editable cells stay neutral so this can
+          be the primary thing on the page when it appears). */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-card px-4 py-2.5 text-[13px] shadow-lg"
+          data-testid="amend-toast"
+        >
+          <span>{toast.message}</span>
+          <button
+            onClick={toast.undo}
+            className="rounded-md bg-primary px-2.5 py-1 text-[13px] font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+            data-testid="amend-undo"
+          >
+            Undo
+          </button>
+          <button
+            onClick={() => setToast(null)}
+            aria-label="Dismiss"
+            className="text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* C7's three escalations. Disclosure, never a permission gate — the
+          confirm button always proceeds (D6: warn, never block). */}
+      {confirming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="amend-confirm-title"
+            className="max-w-md rounded-lg border bg-card p-4 shadow-lg"
+            data-testid="amend-confirm"
+          >
+            <h2 id="amend-confirm-title" className="text-sm font-medium">
+              {confirmMessage(confirming.c).title}
+            </h2>
+            <p className="mt-1.5 text-[13px] text-muted-foreground">
+              {confirmMessage(confirming.c).body}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirming(null)}
+                className="rounded-md border px-3 py-1.5 text-[13px] focus-visible:ring-2 focus-visible:ring-ring/50"
+                data-testid="amend-confirm-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirming.proceed}
+                className="rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                data-testid="amend-confirm-proceed"
+              >
+                {confirmMessage(confirming.c).confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="relative min-w-48 flex-1">
           <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -457,18 +856,18 @@ export function ProductLedgerView({
                             <td className={`${CHILD_FROZEN} py-1.5 pr-3 pl-3`}>
                               <Spine label={d.date} />
                             </td>
-                            <Td border><Num value={d.opening} muted /></Td>
+                            <Td border>{dayCell(r, d, "opening")}</Td>
                             <Td />
-                            <Td border><Num value={d.produced} muted /></Td>
-                            <Td><Num value={d.received} muted /></Td>
-                            <Td><Num value={d.transferredIn} muted /></Td>
-                            <Td border><Num value={d.sold} /></Td>
-                            <Td><Num value={d.transferredOut} muted /></Td>
-                            <Td><Num value={d.nonSales} muted tone="danger" /></Td>
-                            <Td><Num value={d.corrected} muted signed /></Td>
+                            <Td border>{dayCell(r, d, "produced")}</Td>
+                            <Td>{dayCell(r, d, "received")}</Td>
+                            <Td>{dayCell(r, d, "transferredIn")}</Td>
+                            <Td border>{dayCell(r, d, "sold")}</Td>
+                            <Td>{dayCell(r, d, "transferredOut")}</Td>
+                            <Td>{dayCell(r, d, "nonSales")}</Td>
+                            <Td>{dayCell(r, d, "corrected")}</Td>
                             <Td border><Num value={d.salesValueMinor} asMoney muted /></Td>
                             <Td /><Td /><Td /><Td />
-                            <Td border><Num value={d.closing} /></Td>
+                            <Td border>{dayCell(r, d, "closing")}</Td>
                             <Td />
                           </tr>
                         );
