@@ -150,8 +150,13 @@ async function priceAndCreateSale(
   // alike; voidSale restores them alike too.
   return db.$transaction(async (tx) => {
     for (const { line } of priced) {
+      // `reversed: false` (editable-ledger T1): a reversed movement keeps
+      // its offsetting partner in the table, so counting it here would
+      // authorise selling stock the reversal says is not there. This is one
+      // of the three availability gates in docs/reversed-filter-audit.md
+      // where a missed filter makes a *write* wrong, not just a report.
       const stock = await tx.stockMovement.aggregate({
-        where: { productId: line.productId, locationId },
+        where: { productId: line.productId, locationId, reversed: false },
         _sum: { quantity: true },
       });
       const available = stock._sum.quantity?.toNumber() ?? 0;

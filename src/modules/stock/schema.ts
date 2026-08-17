@@ -44,6 +44,14 @@ export type StockMovement = {
   // a delivery may mix product and ingredient lines under one receipt id.
   // Null for every other reason.
   receiptId: string | null;
+  // Editable-ledger T1. A reversed movement keeps its offsetting partner
+  // in the table and is invisible to every "how much is there" read;
+  // isAmendment marks a row the owner's editing created, which the UI must
+  // label as a correction rather than a delivery/production/sale.
+  reversed: boolean;
+  reversedAt: Date | null;
+  reversedBy: string | null;
+  isAmendment: boolean;
 };
 
 export type StockLevel = {
@@ -73,6 +81,11 @@ export type IngredientMovement = {
   // group under. Always set for received (ticket 16).
   receiptId: string | null;
   transferId: string | null;
+  // Editable-ledger T1 — see the matching fields on StockMovement.
+  reversed: boolean;
+  reversedAt: Date | null;
+  reversedBy: string | null;
+  isAmendment: boolean;
 };
 
 // One row per delivery event — every line recorded in the same

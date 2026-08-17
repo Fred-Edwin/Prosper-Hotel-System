@@ -115,7 +115,7 @@ export async function sumMovementsByProductAtLocation(
 ): Promise<{ productId: string; quantityOnHand: number }[]> {
   const grouped = await db.stockMovement.groupBy({
     by: ["productId"],
-    where: { locationId },
+    where: { locationId, reversed: false },
     _sum: { quantity: true },
   });
 
@@ -135,7 +135,7 @@ export async function sumMovementsByProductAtLocationAsOf(
 ): Promise<{ productId: string; quantityOnHand: number }[]> {
   const grouped = await db.stockMovement.groupBy({
     by: ["productId"],
-    where: { locationId, occurredAt: { lte: asOf } },
+    where: { locationId, occurredAt: { lte: asOf }, reversed: false },
     _sum: { quantity: true },
   });
 
@@ -216,11 +216,11 @@ export async function createIngredientConsumptionMovement(
 export async function findReceiptsAtLocation(db: PrismaClient, locationId: string): Promise<Receipt[]> {
   const [ingredientMovements, stockMovements] = await Promise.all([
     db.ingredientMovement.findMany({
-      where: { locationId, reason: "received" },
+      where: { locationId, reason: "received", reversed: false },
       orderBy: { occurredAt: "desc" },
     }),
     db.stockMovement.findMany({
-      where: { locationId, reason: "received" },
+      where: { locationId, reason: "received", reversed: false },
       orderBy: { occurredAt: "desc" },
     }),
   ]);
@@ -264,11 +264,15 @@ export async function findReceiptById(
   db: PrismaClient,
   receiptId: string,
 ): Promise<{ receiptId: string; locationId: string } | null> {
-  const ingredientMovement = await db.ingredientMovement.findFirst({ where: { receiptId } });
+  const ingredientMovement = await db.ingredientMovement.findFirst({
+    where: { receiptId, reversed: false },
+  });
   if (ingredientMovement) {
     return { receiptId: ingredientMovement.receiptId as string, locationId: ingredientMovement.locationId };
   }
-  const stockMovement = await db.stockMovement.findFirst({ where: { receiptId } });
+  const stockMovement = await db.stockMovement.findFirst({
+    where: { receiptId, reversed: false },
+  });
   if (!stockMovement) return null;
   return { receiptId: stockMovement.receiptId as string, locationId: stockMovement.locationId };
 }
@@ -279,7 +283,7 @@ export async function sumMovementsByIngredientAtLocation(
 ): Promise<{ ingredientId: string; quantityOnHand: number }[]> {
   const grouped = await db.ingredientMovement.groupBy({
     by: ["ingredientId"],
-    where: { locationId },
+    where: { locationId, reversed: false },
     _sum: { quantity: true },
   });
 
@@ -306,6 +310,7 @@ export async function sumMovementsByProductReasonAtLocationInPeriod(
       locationId,
       reason: { in: reasons },
       occurredAt: { gt: periodStart, lte: periodEnd },
+      reversed: false,
     },
     _sum: { quantity: true },
   });
@@ -327,7 +332,7 @@ export async function sumIngredientMovementsAtLocationAsOf(
 ): Promise<{ ingredientId: string; quantityOnHand: number }[]> {
   const grouped = await db.ingredientMovement.groupBy({
     by: ["ingredientId"],
-    where: { locationId, occurredAt: { lte: asOf } },
+    where: { locationId, occurredAt: { lte: asOf }, reversed: false },
     _sum: { quantity: true },
   });
 
@@ -351,6 +356,7 @@ export async function sumIngredientsBoughtMinorAtLocationInPeriod(
       locationId,
       reason: "received",
       occurredAt: { gt: periodStart, lte: periodEnd },
+      reversed: false,
     },
     select: { quantity: true, unitCostMinor: true },
   });
@@ -373,6 +379,7 @@ export async function sumIngredientsIssuedByIngredientAtLocationInPeriod(
       locationId,
       reason: "issued",
       occurredAt: { gt: periodStart, lte: periodEnd },
+      reversed: false,
     },
     _sum: { quantity: true },
   });
@@ -396,6 +403,7 @@ export async function sumIngredientsPurchasedByIngredientAtLocationInPeriod(
       locationId,
       reason: "received",
       occurredAt: { gt: periodStart, lte: periodEnd },
+      reversed: false,
     },
     select: { ingredientId: true, quantity: true, unitCostMinor: true },
   });
@@ -424,7 +432,12 @@ export async function sumIngredientMovementsByReasonAtLocationInPeriod(
 ): Promise<{ ingredientId: string; reason: StockMovementReason; quantity: number }[]> {
   const grouped = await db.ingredientMovement.groupBy({
     by: ["ingredientId", "reason"],
-    where: { locationId, reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd } },
+    where: {
+      locationId,
+      reason: { in: reasons },
+      occurredAt: { gt: periodStart, lte: periodEnd },
+      reversed: false,
+    },
     _sum: { quantity: true },
   });
   return grouped.map((g) => ({
@@ -448,7 +461,7 @@ export async function sumProductMovementsByReasonAtLocationInPeriod(
 ): Promise<{ productId: string; quantity: number }[]> {
   const grouped = await db.stockMovement.groupBy({
     by: ["productId"],
-    where: { locationId, reason, occurredAt: { gt: periodStart, lte: periodEnd } },
+    where: { locationId, reason, occurredAt: { gt: periodStart, lte: periodEnd }, reversed: false },
     _sum: { quantity: true },
   });
   return grouped.map((g) => ({ productId: g.productId, quantity: g._sum.quantity?.toNumber() ?? 0 }));
@@ -508,6 +521,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
         locationId,
         reason: { in: ["wasted", "consumed", "given_away"] },
         occurredAt: { gt: periodStart, lte: periodEnd },
+        reversed: false,
       },
       select: {
         productId: true,
@@ -525,6 +539,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
         locationId,
         reason: { in: ["wasted", "consumed", "given_away"] },
         occurredAt: { gt: periodStart, lte: periodEnd },
+        reversed: false,
       },
       select: {
         ingredientId: true,
@@ -584,7 +599,7 @@ export async function findAllNonSalesMovementsInPeriod(
 
   const [productMovements, ingredientMovements] = await Promise.all([
     db.stockMovement.findMany({
-      where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd } },
+      where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd }, reversed: false },
       select: {
         productId: true,
         locationId: true,
@@ -598,7 +613,7 @@ export async function findAllNonSalesMovementsInPeriod(
       },
     }),
     db.ingredientMovement.findMany({
-      where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd } },
+      where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd }, reversed: false },
       select: {
         ingredientId: true,
         locationId: true,

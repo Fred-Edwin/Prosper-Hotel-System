@@ -37,6 +37,7 @@ model Location {
   repayments          Repayment[]
   transfersSent       Transfer[]           @relation("TransferFromLocation")
   transfersReceived   Transfer[]           @relation("TransferToLocation")
+  amendments          Amendment[]
 
   @@map("locations")
 }
@@ -72,6 +73,7 @@ model StaffMember {
   repayments          Repayment[]
   transfersSent       Transfer[]           @relation("TransferSentBy")
   transfersConfirmed  Transfer[]           @relation("TransferConfirmedBy")
+  amendments          Amendment[]
 
   @@map("staff_members")
 }
@@ -512,6 +514,26 @@ model StockMovement {
   // product and ingredient lines under one receipt id. Null for every
   // other reason.
   receiptId          String?
+  // Reversal support (editable-ledger T1). Movements were the only
+  // money-touching model without it — every other one has an equivalent
+  // (Sale.voided, Expense.reversed, Repayment.reversed,
+  // Transfer.cancelledAt). A reversed row keeps its offsetting partner in
+  // the table, so every read answering "how much is there" or "what
+  // happened" must filter `reversed: false` — the full enumeration lives
+  // in docs/reversed-filter-audit.md. Reads asking "was this already
+  // reversed" must NOT filter.
+  reversed           Boolean             @default(false)
+  reversedAt         DateTime?
+  reversedBy         String?
+  // True on a row the owner's in-place editing created rather than
+  // ordinary trading — a Kind B opening/closing correction, or the
+  // fallback adjustment where a day had several rows (plan §3.1). The UI
+  // MUST label these as corrections and never render them as a delivery,
+  // production or sale. This is real stock movement, so it is NOT excluded
+  // from any sum. An in-place edit to an existing row does NOT set this —
+  // that row is still the original event, and its change lives in
+  // Amendment.
+  isAmendment        Boolean             @default(false)
 
   @@map("stock_movements")
 }
@@ -527,11 +549,15 @@ model IngredientMovement {
   ingredient         Ingredient          @relation(fields: [ingredientId], references: [id])
   locationId         String
   location           Location            @relation(fields: [locationId], references: [id])
-  // Unsigned in this ticket — receiving is the only reason written so far.
-  // A future issuing/wastage ticket may need this signed, same as
-  // StockMovement.quantity; revisit then rather than guessing the sign
-  // convention now. Decimal(10,2): ingredients are received/issued in
-  // fractional quantities (e.g. 3.50 kg), matching Ingredient.unitOfMeasure.
+  // Signed, exactly like StockMovement.quantity: positive for stock
+  // arriving, negative for stock leaving (recordIngredientIssue writes
+  // `quantity: -line.quantity`). This comment previously claimed the field
+  // was unsigned because receiving was the only reason written at the
+  // time; that stopped being true once issuing shipped, and the stale
+  // comment was corrected by editable-ledger T1. It matters: a wrong sign
+  // here turns an issue into a receipt rather than correcting it.
+  // Decimal(10,2): ingredients are received/issued in fractional
+  // quantities (e.g. 3.50 kg), matching Ingredient.unitOfMeasure.
   quantity           Decimal             @db.Decimal(10, 2)
   reason             StockMovementReason
   // Price paid per unit on this occasion — proposal.md: "prices are
@@ -566,6 +592,13 @@ model IngredientMovement {
   // undoes (ticket 21) — lets the history view mark the original as
   // reversed and refuse to reverse it twice, without a relation table.
   reversedTransferId String?
+  // Reversal + amendment support — see the matching block on
+  // StockMovement for the full note and docs/reversed-filter-audit.md for
+  // the list of reads that must filter `reversed: false`.
+  reversed           Boolean             @default(false)
+  reversedAt         DateTime?
+  reversedBy         String?
+  isAmendment        Boolean             @default(false)
 
   @@map("ingredient_movements")
 }
@@ -789,4 +822,59 @@ model StockCountLine {
   correctedBy      String?
 
   @@map("stock_count_lines")
+}
+
+// Editable-ledger T2 — the amendment trail. One row per field-level edit,
+// on any record type.
+//
+// Generic on purpose: it covers stock quantities, expense amounts, prices,
+// names, days worked and whatever comes next without a column per model.
+// The alternative — an `amendedFrom`/`amendedBy` pair on each of a dozen
+// models — is what left proposal.md §8's "the previous value is retained"
+// unimplemented for two years (BUG-01).
+//
+// `previousValue`/`newValue` are stringified and **display-only**. Nothing
+// recomputes a figure from them; they exist so the owner can read what a
+// record used to say. Typing them per record type would mean a column per
+// shape, which is the design this one replaces.
+//
+// ledgerContext/effectiveDate carry what she was *looking at* when she
+// edited, so Activity can say "opening for beef stew on 16 Aug" rather
+// than naming a movement id. A Kind A edit is stated at day level (plan
+// §3.1), so the trail must record the day-level fact — "received 16 Aug:
+// 3 → 5" — not "movement abc123.quantity changed", which is a true
+// statement about a row and a useless one about her business.
+model Amendment {
+  id            String      @id @default(cuid())
+  // "StockMovement" | "IngredientMovement" | "Expense" | "Product" |
+  // "StaffMember" | "Customer" | ... — a model name, not an enum, so a new
+  // editable record type needs no migration.
+  recordType    String
+  recordId      String
+  // "quantity" | "amountMinor" | "name" | ... For a Kind A day-total edit
+  // this is the ledger reason ("received"), not a column name — the fact
+  // she stated was about the day's total, not about one row's column.
+  field         String
+  previousValue String
+  newValue      String
+  // Human-readable description of the cell she edited, e.g.
+  // "received · Beef stew · restaurant". Null for edits with no ledger
+  // context (a staff member's name, say).
+  ledgerContext String?
+  // The ledger day the edit applies to, where applicable — distinct from
+  // createdAt, which is when she typed it. A 17 Aug edit to 16 Aug's
+  // figures has effectiveDate = 16 Aug and createdAt = 17 Aug. Activity
+  // sorts on createdAt and displays effectiveDate.
+  effectiveDate DateTime?
+  // Set where the amended record belongs to a location, so Activity can
+  // show it in the location column alongside every other row.
+  locationId    String?
+  location      Location?   @relation(fields: [locationId], references: [id])
+  staffMemberId String
+  staffMember   StaffMember @relation(fields: [staffMemberId], references: [id])
+  createdAt     DateTime    @default(now())
+
+  @@index([recordType, recordId])
+  @@index([createdAt])
+  @@map("amendments")
 }
