@@ -54,6 +54,10 @@ const mixedStockProducts = [
   { id: "p4", name: "Githeri", kind: "cooked_food" as const, priceMinor: 120, active: true, locationId: "restaurant-1", onHand: 1 },
   { id: "p5", name: "Tea", kind: "cooked_food" as const, priceMinor: 30, active: true, locationId: "restaurant-1", onHand: 50 },
   { id: "p9", name: "Photocopy (per page)", kind: "service" as const, priceMinor: 5, active: true, locationId: "restaurant-1", onHand: 0 },
+  // A service that carries real stock — mirrors the live catalogue's
+  // "Printing/Papers" at 286, the case that showed blank on the till while
+  // the admin stock screen showed the figure.
+  { id: "p13", name: "Printing/Papers", kind: "service" as const, priceMinor: 10, active: true, locationId: "restaurant-1", onHand: 286 },
 ];
 
 const customers = [
@@ -141,14 +145,24 @@ export const OwnAndTransferredIn: Story = {
 };
 
 /**
- * BUG-15's soft guardrail. Chapati is at 0 — its tile shows "Out of stock"
- * and can't be tapped. Chips and Githeri are low (3 and 1 left) — a warning
- * badge, same isLow/TriangleAlert visual language as the admin stock table.
- * Tea has plenty, no badge. The Photocopy service line never shows a stock
- * badge at all — services aren't stock-tracked.
+ * BUG-15's soft guardrail, plus the client's 2026-08-17 request that the
+ * on-hand number show on *every* tile. Chapati is at 0 — its tile shows
+ * "Out of stock" and can't be tapped. Chips and Githeri are low (3 and 1
+ * left) — a warning badge, same isLow/TriangleAlert visual language as the
+ * admin stock table. Tea has plenty and now shows a plain "50 left" in
+ * muted text rather than nothing, so the cashier can answer "do we still
+ * have any?" without leaving the till.
+ *
+ * The Photocopy service line sits at 0 and so still shows no figure — but
+ * that's now because it *has* no stock, not because it's a service. A
+ * service carrying real stock (the live catalogue's "Printing/Papers", at
+ * 286) shows its number like anything else: the till and the admin stock
+ * screen read the same `onHand` field and must not disagree about it.
+ * Services are still never flagged low/out — a pure-labour line would
+ * otherwise read "Out of stock" forever at 0.
  */
 export const StockLevelsOnTiles: Story = {
-  name: "On-hand quantity — out of stock and low stock",
+  name: "On-hand quantity — healthy, low and out of stock",
   args: {
     state: { status: "ready", products: mixedStockProducts },
     onSubmit: stubSubmit,

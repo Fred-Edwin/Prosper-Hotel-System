@@ -72,6 +72,25 @@ function stockStatus(product: Product): "ok" | "low" | "out" {
   return "ok";
 }
 
+// Client decision, 2026-08-17: show the real on-hand figure whatever the
+// product's kind — the till was hiding it for services, so "Printing/Papers"
+// read as blank on the till while the admin stock screen showed 286 for the
+// same product. Two screens disagreeing about one `onHand` field is the bug.
+//
+// Kind still governs *warnings*, not display: a pure-labour service (Research,
+// SHA & Others) sits at 0 forever, and running it through stockStatus() would
+// brand it "Out of stock" and disable its tile. So a service shows its number
+// when it has one and nothing when it doesn't, but is never low/out.
+//
+// NOTE: a service's figure only ever climbs — sales/logic.ts skips the stock
+// decrement for kind === "service", so receiving raises it and nothing lowers
+// it. Making services decrement is a separate, pending change; until then this
+// shows the true stored value, which is not the same as the true shelf count.
+function stockDisplayQuantity(product: Product): number | null {
+  if (product.kind === "service") return product.onHand > 0 ? product.onHand : null;
+  return product.onHand;
+}
+
 type Customer = { id: string; name: string; phone: string | null };
 
 type PaymentMethod = "cash" | "mpesa" | "credit";
@@ -105,8 +124,9 @@ function BasketQtyInput({ line, onCommit }: { line: Line; onCommit: (qty: number
           event.currentTarget.blur();
         }
       }}
+      onFocus={(event) => event.currentTarget.select()}
       inputMode="numeric"
-      className="h-8 w-10 shrink-0 px-1 text-center text-sm tabular-nums"
+      className="h-10 w-14 shrink-0 border-input bg-background px-1 text-center text-base font-medium tabular-nums"
       aria-label={`Quantity for ${line.product.name}`}
     />
   );
@@ -331,6 +351,7 @@ function ProductTile({
   testId?: string;
 }) {
   const status = stockStatus(product);
+  const quantity = stockDisplayQuantity(product);
   const atLimit = product.kind !== "service" && (inBasket?.qty ?? 0) >= product.onHand;
   const disabled = status === "out" || atLimit;
 
@@ -365,10 +386,28 @@ function ProductTile({
               {product.onHand} left
             </Badge>
           )}
-          {status === "ok" && badge && (
-            <Badge variant="outline" className="text-[10px] font-normal">
-              {badge}
-            </Badge>
+          {status === "ok" && (
+            <>
+              {badge && (
+                <Badge variant="outline" className="text-[10px] font-normal">
+                  {badge}
+                </Badge>
+              )}
+              {/* Client request, 2026-08-17: the on-hand number on every
+               * tile, not only the low/out ones — the till is where she
+               * asks "do we still have any?", so a healthy item showing
+               * nothing left her guessing. Plain muted text rather than a
+               * fourth badge variant: "in stock" is the unremarkable case
+               * and shouldn't compete with the low/out warnings beside it. */}
+              {quantity !== null && (
+                <span
+                  className="text-[10px] text-muted-foreground tabular-nums"
+                  data-testid="till-tile-in-stock"
+                >
+                  {quantity} left
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -402,7 +441,7 @@ function ProductTileGroup({
 }) {
   return (
     <div className={className}>
-      <div className="grid grid-cols-3 gap-2" data-testid={`till-product-grid-${testIdPrefix}`}>
+      <div className="grid grid-cols-2 gap-2" data-testid={`till-product-grid-${testIdPrefix}`}>
         {products.map((p) => (
           <ProductTile
             key={p.id}
@@ -759,7 +798,7 @@ function Till({
             </>
           )
         ) : (
-          <div className="grid grid-cols-3 gap-2" data-testid="till-product-grid">
+          <div className="grid grid-cols-2 gap-2" data-testid="till-product-grid">
             {shown.map((p) => {
               const inBasket = lines.find((l) => l.product.id === p.id);
               return (
@@ -792,7 +831,7 @@ function Till({
                 <Button
                   size="icon"
                   variant="outline"
-                  className="size-8 shrink-0"
+                  className="size-10 shrink-0"
                   onClick={() => bump(l.product.id, -1)}
                   aria-label={`One fewer ${l.product.name}`}
                 >
@@ -802,7 +841,7 @@ function Till({
                 <Button
                   size="icon"
                   variant="outline"
-                  className="size-8 shrink-0"
+                  className="size-10 shrink-0"
                   onClick={() => bump(l.product.id, 1)}
                   disabled={l.product.kind !== "service" && l.qty >= l.product.onHand}
                   aria-label={`One more ${l.product.name}`}
@@ -1222,8 +1261,8 @@ function TillSkeleton() {
   return (
     <div className="p-3" data-testid="till-loading">
       <Skeleton className="mb-3 h-10 w-full rounded-lg" />
-      <div className="grid grid-cols-3 gap-2">
-        {Array.from({ length: 9 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-2">
+        {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-[76px] rounded-lg" />
         ))}
       </div>
