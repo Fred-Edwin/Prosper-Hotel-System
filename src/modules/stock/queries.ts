@@ -423,6 +423,16 @@ export async function sumIngredientsPurchasedByIngredientAtLocationInPeriod(
 // every reason (received/issued/transferred/wasted) for every ingredient
 // in one period at once, grouped the same way the Product ledger groups
 // StockMovement.
+// Grouped by direction as well as reason, and that matters for exactly one
+// reason: `transferred` carries both legs (this location can be either end
+// of a transfer). Netting them into a single row per reason — which this
+// query did until editable-ledger T6 — makes +8 in and -3 out arrive as a
+// single +5, so the caller books transferredIn: 5, transferredOut: 0 and
+// the outbound leg disappears from the ledger entirely. Under-reported
+// both columns for any period where an ingredient moved both ways.
+//
+// Splitting on sign keeps the legs distinct; every single-direction reason
+// is unaffected, since all its rows share one sign.
 export async function sumIngredientMovementsByReasonAtLocationInPeriod(
   db: PrismaClient,
   locationId: string,
@@ -430,21 +440,26 @@ export async function sumIngredientMovementsByReasonAtLocationInPeriod(
   periodStart: Date,
   periodEnd: Date,
 ): Promise<{ ingredientId: string; reason: StockMovementReason; quantity: number }[]> {
-  const grouped = await db.ingredientMovement.groupBy({
-    by: ["ingredientId", "reason"],
+  const rows = await db.ingredientMovement.findMany({
     where: {
       locationId,
       reason: { in: reasons },
       occurredAt: { gt: periodStart, lte: periodEnd },
       reversed: false,
     },
-    _sum: { quantity: true },
+    select: { ingredientId: true, reason: true, quantity: true },
   });
-  return grouped.map((g) => ({
-    ingredientId: g.ingredientId,
-    reason: g.reason,
-    quantity: g._sum.quantity?.toNumber() ?? 0,
-  }));
+
+  const byKey = new Map<string, { ingredientId: string; reason: StockMovementReason; quantity: number }>();
+  for (const row of rows) {
+    const quantity = row.quantity.toNumber();
+    const direction = quantity < 0 ? "out" : "in";
+    const key = `${row.ingredientId}:${row.reason}:${direction}`;
+    const existing = byKey.get(key);
+    if (existing) existing.quantity += quantity;
+    else byKey.set(key, { ingredientId: row.ingredientId, reason: row.reason, quantity });
+  }
+  return Array.from(byKey.values());
 }
 
 // Ticket 25: formulas.md §6's canteen restaurant-food half and §5's

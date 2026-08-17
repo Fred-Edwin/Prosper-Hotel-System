@@ -1101,7 +1101,43 @@ export async function getProductLedger(
 // stock's as-of reads (ground truth), purchased/issued/transferred/
 // spoilage from the same period's per-reason sums, so the two reconcile
 // by construction, same principle as getProductLedger.
-const STORE_OUT_REASONS = ["issued", "transferred", "wasted"] as const;
+// Editable-ledger T6 added "corrected". Before it, this list was
+// ["issued", "transferred", "wasted"] while opening/closing came from
+// getIngredientQuantityAtLocationAsOf, which sums *every* movement
+// regardless of reason — so a `corrected` row moved closing without
+// appearing in any column that explained why, breaking
+// `closing == opening + in - out`. Character-for-character the gap T3
+// found on the Product side (see PRODUCT_CORRECTION_REASONS); it became
+// reachable here the moment amendDerivedPosition could be called with
+// itemType: "ingredient", which is what T6 enables.
+//
+// Like the product side, `corrected` is signed and belongs to neither the
+// in nor the out list — an opening edit may raise or lower the position —
+// so it gets its own column.
+const STORE_OUT_REASONS = ["issued", "transferred", "wasted", "corrected"] as const;
+
+// Editable-ledger T6. The Store tab gained day expansion so the owner has
+// a date to stamp an amendment against: a month's `purchased` total spread
+// over eleven deliveries offers none, and Kind B's opening/closing
+// corrections are defined entirely by their timestamp. Decided with the
+// owner 2026-08-17, over the alternative of period-level-only editing.
+//
+// The design reference's Store ledger has no chevron (see the note above
+// getStoreLedger, and store-ledger.tsx's header); this overrides that
+// deliberately rather than by oversight.
+export type StoreLedgerDay = {
+  date: string;
+  openingQty: number;
+  purchasedQty: number;
+  purchasedValueMinor: number;
+  issuedToKitchen: number;
+  transferredIn: number;
+  transferredOut: number;
+  spoilage: number;
+  /** Signed: positive raises the position, negative lowers it. */
+  corrected: number;
+  closingQty: number;
+};
 
 export type StoreLedgerRow = {
   ingredientId: string;
@@ -1116,11 +1152,49 @@ export type StoreLedgerRow = {
   transferredIn: number;
   transferredOut: number;
   spoilage: number;
+  corrected: number;
   closingQty: number;
   closingValueMinor: number;
   unitCostMinor: number;
   previousUnitCostMinor: number;
+  days: StoreLedgerDay[];
 };
+
+type StoreReasonSums = {
+  issuedToKitchen: number;
+  transferredIn: number;
+  transferredOut: number;
+  spoilage: number;
+  corrected: number;
+};
+
+function emptyStoreReasonSums(): StoreReasonSums {
+  return { issuedToKitchen: 0, transferredIn: 0, transferredOut: 0, spoilage: 0, corrected: 0 };
+}
+
+// Folds one location's ingredient movement lines into the Store ledger's
+// named columns, keyed by ingredient. Out-reason quantities are stored
+// negative (stock leaving); flip to positive "out" figures for the
+// ledger's columns. `transferred` on IngredientMovement carries both
+// directions (see stock's transfer logic) — this location can be either
+// end, so both the positive (inbound) and negative (outbound) sides are
+// folded, the same convention getProductLedger's foldReasonLines uses.
+function foldStoreReasonLines(
+  lines: { ingredientId: string; reason: string; quantity: number }[],
+): Map<string, StoreReasonSums> {
+  const byIngredient = new Map<string, StoreReasonSums>();
+  for (const line of lines) {
+    const sums = byIngredient.get(line.ingredientId) ?? emptyStoreReasonSums();
+    if (line.reason === "issued") sums.issuedToKitchen += -line.quantity;
+    else if (line.reason === "transferred" && line.quantity < 0) sums.transferredOut += -line.quantity;
+    else if (line.reason === "transferred" && line.quantity > 0) sums.transferredIn += line.quantity;
+    else if (line.reason === "wasted") sums.spoilage += -line.quantity;
+    // Signed, and added rather than subtracted — see STORE_OUT_REASONS.
+    else if (line.reason === "corrected") sums.corrected += line.quantity;
+    byIngredient.set(line.ingredientId, sums);
+  }
+  return byIngredient;
+}
 
 export type StoreLedgerResult =
   | { ok: true; rows: StoreLedgerRow[] }
@@ -1152,6 +1226,7 @@ export async function getStoreLedger(
   if (targetLocations.length === 0) return { ok: false, reason: "not_found" };
 
   const rows: StoreLedgerRow[] = [];
+  const days = daysInPeriod(input.periodStart, input.periodEnd);
 
   for (const location of targetLocations) {
     const [openingQuantities, closingQuantities, purchases, movements, previousCosts] =
@@ -1183,29 +1258,40 @@ export async function getStoreLedger(
     );
     const purchasesByIngredient = new Map(purchases.lines.map((p) => [p.ingredientId, p]));
 
-    const outByIngredient = new Map<
-      string,
-      { issuedToKitchen: number; transferredIn: number; transferredOut: number; spoilage: number }
-    >();
-    for (const line of movements.lines) {
-      const sums = outByIngredient.get(line.ingredientId) ?? {
-        issuedToKitchen: 0,
-        transferredIn: 0,
-        transferredOut: 0,
-        spoilage: 0,
-      };
-      // Out-reason quantities are stored negative (stock leaving); flip to
-      // positive "out" figures for the ledger's columns. `transferred` on
-      // IngredientMovement carries both directions (see stock's transfer
-      // logic) — this location can be either end, so both the positive
-      // (inbound) and negative (outbound) sides are folded, same convention
-      // getProductLedger's foldReasonLines uses for products.
-      if (line.reason === "issued") sums.issuedToKitchen += -line.quantity;
-      else if (line.reason === "transferred" && line.quantity < 0) sums.transferredOut += -line.quantity;
-      else if (line.reason === "transferred" && line.quantity > 0) sums.transferredIn += line.quantity;
-      else if (line.reason === "wasted") sums.spoilage += -line.quantity;
-      outByIngredient.set(line.ingredientId, sums);
+    const outByIngredient = foldStoreReasonLines(movements.lines);
+
+    // T6's day expansion. Fetched once per day for the whole location and
+    // folded per ingredient below — days × locations reads, never
+    // days × locations × ingredients. Same batching rule as
+    // buildProductLedgerRow's `dayMovements` parameter.
+    const dayData = await Promise.all(
+      days.map(async (day) => {
+        const [dayMovements, dayPurchases] = await Promise.all([
+          getIngredientMovementsByReasonInPeriod(
+            db,
+            requester,
+            location.id,
+            [...STORE_OUT_REASONS],
+            day.start,
+            day.end,
+          ),
+          getIngredientsPurchasedByIngredient(db, requester, location.id, day.start, day.end),
+        ]);
+        return { day, dayMovements, dayPurchases };
+      }),
+    );
+    for (const { dayMovements, dayPurchases } of dayData) {
+      if (!dayMovements.ok) return dayMovements;
+      if (!dayPurchases.ok) return dayPurchases;
     }
+
+    const foldedDays = dayData.map(({ day, dayMovements, dayPurchases }) => ({
+      label: day.label,
+      sumsByIngredient: foldStoreReasonLines(dayMovements.ok ? dayMovements.lines : []),
+      purchasesByIngredient: new Map(
+        (dayPurchases.ok ? dayPurchases.lines : []).map((p) => [p.ingredientId, p]),
+      ),
+    }));
 
     const ingredientIds = new Set<string>([
       ...openingQuantities.quantities.map((q) => q.ingredientId),
@@ -1225,12 +1311,42 @@ export async function getStoreLedger(
       const openingQty = openingByIngredient.get(ingredientId) ?? 0;
       const closingQty = closingByIngredient.get(ingredientId) ?? openingQty;
       const purchase = purchasesByIngredient.get(ingredientId) ?? { quantity: 0, valueMinor: 0 };
-      const out = outByIngredient.get(ingredientId) ?? {
-        issuedToKitchen: 0,
-        transferredIn: 0,
-        transferredOut: 0,
-        spoilage: 0,
-      };
+      const out = outByIngredient.get(ingredientId) ?? emptyStoreReasonSums();
+
+      // The day chain: each day's opening is the previous day's closing,
+      // starting from the period's opening. Same construction as
+      // buildProductLedgerRow's runningOpening, so the two tabs agree on
+      // what a day boundary means.
+      const ingredientDays: StoreLedgerDay[] = [];
+      let runningOpening = openingQty;
+      for (const folded of foldedDays) {
+        const daySums = folded.sumsByIngredient.get(ingredientId) ?? emptyStoreReasonSums();
+        const dayPurchase = folded.purchasesByIngredient.get(ingredientId) ?? {
+          quantity: 0,
+          valueMinor: 0,
+        };
+        const dayClosing =
+          runningOpening +
+          dayPurchase.quantity +
+          daySums.transferredIn +
+          daySums.corrected -
+          daySums.issuedToKitchen -
+          daySums.transferredOut -
+          daySums.spoilage;
+        ingredientDays.push({
+          date: folded.label,
+          openingQty: runningOpening,
+          purchasedQty: dayPurchase.quantity,
+          purchasedValueMinor: dayPurchase.valueMinor,
+          issuedToKitchen: daySums.issuedToKitchen,
+          transferredIn: daySums.transferredIn,
+          transferredOut: daySums.transferredOut,
+          spoilage: daySums.spoilage,
+          corrected: daySums.corrected,
+          closingQty: dayClosing,
+        });
+        runningOpening = dayClosing;
+      }
 
       const unitCostMinor = ingredient.lastKnownCostMinor ?? 0;
       // No delivery before this period means nothing moved, so the previous
@@ -1251,10 +1367,12 @@ export async function getStoreLedger(
         transferredIn: out.transferredIn,
         transferredOut: out.transferredOut,
         spoilage: out.spoilage,
+        corrected: out.corrected,
         closingQty,
         closingValueMinor: closingQty * unitCostMinor,
         unitCostMinor,
         previousUnitCostMinor: previousCostMinor,
+        days: ingredientDays,
       });
     }
   }

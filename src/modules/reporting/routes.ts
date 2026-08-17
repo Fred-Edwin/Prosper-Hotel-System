@@ -444,8 +444,22 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
     return Response.json({ error: "newValue must be a number" }, { status: 400 });
   }
 
+  // Which ledger to refresh. An ingredient edit belongs to the Store tab,
+  // a product edit to the Product tab — reading the wrong one hands the
+  // client another table's rows and it re-renders with data that has
+  // nothing to do with the cell she just edited.
+  //
+  // A scalar edit carries no itemType (it identifies a record, not a
+  // ledger item), so it falls back to the Product ledger, which is where
+  // Product price/cost scalars are read. T7 revisits this when Cash and
+  // non-sales scalars arrive — those tabs refresh from their own reads.
+  const ledgerFor = (session_: typeof session) =>
+    input.itemType === "ingredient"
+      ? getStoreLedger(db, session_, { periodStart, periodEnd })
+      : getProductLedger(db, session_, { periodStart, periodEnd });
+
   // Read before, so the response can say what actually moved.
-  const before = await getProductLedger(db, session, { periodStart, periodEnd });
+  const before = await ledgerFor(session);
   if (!before.ok) {
     return Response.json({ error: before.reason }, { status: writeStatus(before.reason) });
   }
@@ -499,7 +513,7 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
 
-  const after = await getProductLedger(db, session, { periodStart, periodEnd });
+  const after = await ledgerFor(session);
   if (!after.ok) {
     return Response.json({ error: after.reason }, { status: writeStatus(after.reason) });
   }

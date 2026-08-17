@@ -340,3 +340,261 @@ describe("getStoreLedger", () => {
     expect(result.rows.every((r) => r.ingredientName.toLowerCase().includes("flour"))).toBe(true);
   });
 });
+
+/**
+ * Editable-ledger T6 — day expansion on the Store tab.
+ *
+ * The owner chose day expansion over period-level-only editing
+ * (2026-08-17), which closes the companion plan's open question 2. Editing
+ * needs a day to stamp an amendment against: a month's `purchased` total
+ * spread over eleven deliveries offers no honest date, and Kind B's
+ * opening/closing corrections are defined entirely by their timestamp.
+ *
+ * Two things are being established here, and the second is the one that
+ * bites:
+ *
+ *  1. days[] chains — each day's opening is the previous day's closing,
+ *     and the first day's opening is the period's.
+ *  2. the `corrected` column exists. Before T6 the Store ledger fetched
+ *     ["issued", "transferred", "wasted"] only, while opening/closing come
+ *     from getIngredientQuantityAtLocationAsOf, which sums *every*
+ *     movement regardless of reason. So a `corrected` row moved closing
+ *     without appearing in any column explaining why — exactly the break
+ *     T3 found on the Product side. It was unreachable on the Store tab
+ *     until amendDerivedPosition could be called with
+ *     itemType: "ingredient", which is what T6 enables.
+ *
+ * Boundary semantics, per amend-ledger.integration.test.ts's header: a
+ * ledger day D is (D 00:00, D+1 00:00] (gt/lte), while opening at D is
+ * <= D 00:00 (lte). So a Kind B opening correction at D lands at exactly
+ * D 00:00:00.000 — inside D's opening, outside D's own movement columns,
+ * and inside D−1's window, which is why D−1's closing moves with it.
+ */
+describe("getStoreLedger — day expansion (T6)", () => {
+  const PERIOD_START = new Date("2026-08-14T00:00:00.000Z");
+  const PERIOD_END = new Date("2026-08-18T23:59:59.999Z");
+
+  const at = (iso: string, time: string) => new Date(`${iso}T${time}Z`);
+
+  async function ingredient(name = "Potatoes") {
+    return testDb.ingredient.create({
+      data: { name, unitOfMeasure: "kg", lastKnownCostMinor: 65 },
+    });
+  }
+
+  async function move(
+    ingredientId: string,
+    quantity: number,
+    reason: string,
+    occurredAt: Date,
+    unitCostMinor?: number,
+  ) {
+    return testDb.ingredientMovement.create({
+      data: {
+        ingredientId,
+        locationId: restaurantId,
+        quantity,
+        reason: reason as never,
+        ...(unitCostMinor === undefined ? {} : { unitCostMinor }),
+        staffMemberId: ownerId,
+        occurredAt,
+      },
+    });
+  }
+
+  async function storeRow(ingredientId: string) {
+    const result = await getStoreLedger(testDb, owner(), {
+      periodStart: PERIOD_START,
+      periodEnd: PERIOD_END,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return undefined;
+    return result.rows.find((r) => r.ingredientId === ingredientId && r.locationId === restaurantId);
+  }
+
+  test("returns one day entry per calendar day in the period, labelled by date", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 20, "received", at("2026-08-14", "09:00:00.000"), 65);
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    expect(row!.days.map((d) => d.date)).toEqual([
+      "2026-08-14",
+      "2026-08-15",
+      "2026-08-16",
+      "2026-08-17",
+      "2026-08-18",
+    ]);
+  });
+
+  test("each day's opening is the previous day's closing, and the chain spans the period", async () => {
+    const potatoes = await ingredient();
+    // Opening stock before the period.
+    await move(potatoes.id, 30, "received", at("2026-08-13", "12:00:00.000"), 60);
+    await move(potatoes.id, 12, "received", at("2026-08-15", "08:00:00.000"), 65);
+    await move(potatoes.id, -7, "issued", at("2026-08-16", "10:00:00.000"));
+    await move(potatoes.id, -1, "wasted", at("2026-08-17", "11:00:00.000"));
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+
+    expect(row!.days[0]!.openingQty).toBe(30);
+    let expectedOpening = row!.openingQty;
+    for (const day of row!.days) {
+      expect(day.openingQty).toBeCloseTo(expectedOpening, 6);
+      expectedOpening = day.closingQty;
+    }
+    // The last day's closing is the period's closing — the two derivations
+    // must agree, since they come from separate reads.
+    expect(expectedOpening).toBeCloseTo(row!.closingQty, 6);
+    expect(row!.closingQty).toBe(30 + 12 - 7 - 1);
+  });
+
+  test("attributes each movement to its own day, not to the period as a whole", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 10, "received", at("2026-08-15", "08:00:00.000"), 65);
+    await move(potatoes.id, -4, "issued", at("2026-08-16", "10:00:00.000"));
+    await move(potatoes.id, -2, "wasted", at("2026-08-17", "11:00:00.000"));
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    const byDate = new Map(row!.days.map((d) => [d.date, d]));
+
+    expect(byDate.get("2026-08-15")).toMatchObject({ purchasedQty: 10, issuedToKitchen: 0, spoilage: 0 });
+    expect(byDate.get("2026-08-16")).toMatchObject({ purchasedQty: 0, issuedToKitchen: 4, spoilage: 0 });
+    expect(byDate.get("2026-08-17")).toMatchObject({ purchasedQty: 0, issuedToKitchen: 0, spoilage: 2 });
+    expect(byDate.get("2026-08-14")).toMatchObject({ purchasedQty: 0, issuedToKitchen: 0, spoilage: 0 });
+  });
+
+  test("carries purchased value per day, at the cost actually paid that day", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 10, "received", at("2026-08-15", "08:00:00.000"), 65);
+    await move(potatoes.id, 20, "received", at("2026-08-17", "08:00:00.000"), 70);
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    const byDate = new Map(row!.days.map((d) => [d.date, d]));
+
+    expect(byDate.get("2026-08-15")!.purchasedValueMinor).toBe(10 * 65);
+    expect(byDate.get("2026-08-17")!.purchasedValueMinor).toBe(20 * 70);
+    // The period total is the sum of the days, not a re-valuation at the
+    // current cost — this is the T8/costing-change promise.
+    expect(row!.purchasedValueMinor).toBe(10 * 65 + 20 * 70);
+  });
+
+  test("splits transferred in and out by sign, on the right days", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 8, "transferred", at("2026-08-15", "09:00:00.000"));
+    await move(potatoes.id, -3, "transferred", at("2026-08-16", "09:00:00.000"));
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    const byDate = new Map(row!.days.map((d) => [d.date, d]));
+
+    expect(byDate.get("2026-08-15")).toMatchObject({ transferredIn: 8, transferredOut: 0 });
+    expect(byDate.get("2026-08-16")).toMatchObject({ transferredIn: 0, transferredOut: 3 });
+    expect(row!.transferredIn).toBe(8);
+    expect(row!.transferredOut).toBe(3);
+  });
+
+  /**
+   * The gap described in this describe block's header. A `corrected` row
+   * must appear in a column of its own, signed, or closing moves with
+   * nothing on screen to explain it.
+   */
+  test("surfaces a corrected movement in its own signed column rather than silently moving closing", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 10, "received", at("2026-08-14", "09:00:00.000"), 65);
+    await move(potatoes.id, 4, "corrected", at("2026-08-16", "10:00:00.000"));
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    const byDate = new Map(row!.days.map((d) => [d.date, d]));
+
+    expect(byDate.get("2026-08-16")!.corrected).toBe(4);
+    expect(row!.corrected).toBe(4);
+    // And it must not be misfiled as a purchase or a transfer.
+    expect(byDate.get("2026-08-16")).toMatchObject({ purchasedQty: 0, transferredIn: 0 });
+    expect(row!.closingQty).toBe(14);
+  });
+
+  test("a negative correction lowers the position and reads as a negative in the same column", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 10, "received", at("2026-08-14", "09:00:00.000"), 65);
+    await move(potatoes.id, -3, "corrected", at("2026-08-16", "10:00:00.000"));
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    expect(row!.corrected).toBe(-3);
+    // Not folded into spoilage or issues — a correction is neither.
+    expect(row!.spoilage).toBe(0);
+    expect(row!.issuedToKitchen).toBe(0);
+    expect(row!.closingQty).toBe(7);
+  });
+
+  test("excludes reversed movements from every day column", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 10, "received", at("2026-08-15", "08:00:00.000"), 65);
+    const doomed = await move(potatoes.id, 5, "received", at("2026-08-15", "09:00:00.000"), 65);
+    await testDb.ingredientMovement.update({
+      where: { id: doomed.id },
+      data: { reversed: true },
+    });
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    const byDate = new Map(row!.days.map((d) => [d.date, d]));
+    expect(byDate.get("2026-08-15")!.purchasedQty).toBe(10);
+    expect(row!.purchasedQty).toBe(10);
+  });
+
+  test("reconciles per day: closing == opening + purchased + in + corrected − issued − out − spoilage", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 40, "received", at("2026-08-13", "12:00:00.000"), 60);
+    await move(potatoes.id, 15, "received", at("2026-08-14", "08:00:00.000"), 65);
+    await move(potatoes.id, -9, "issued", at("2026-08-14", "10:00:00.000"));
+    await move(potatoes.id, 6, "transferred", at("2026-08-15", "09:00:00.000"));
+    await move(potatoes.id, -2, "transferred", at("2026-08-16", "09:00:00.000"));
+    await move(potatoes.id, -1, "wasted", at("2026-08-16", "15:00:00.000"));
+    await move(potatoes.id, 3, "corrected", at("2026-08-17", "00:00:00.000"));
+    await move(potatoes.id, -5, "issued", at("2026-08-18", "10:00:00.000"));
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+
+    for (const day of row!.days) {
+      const closing =
+        day.openingQty +
+        day.purchasedQty +
+        day.transferredIn +
+        day.corrected -
+        day.issuedToKitchen -
+        day.transferredOut -
+        day.spoilage;
+      expect(day.closingQty).toBeCloseTo(closing, 6);
+    }
+
+    const periodClosing =
+      row!.openingQty +
+      row!.purchasedQty +
+      row!.transferredIn +
+      row!.corrected -
+      row!.issuedToKitchen -
+      row!.transferredOut -
+      row!.spoilage;
+    expect(periodClosing).toBeCloseTo(row!.closingQty, 6);
+  });
+
+  test("a day with no movement carries its opening straight through to its closing", async () => {
+    const potatoes = await ingredient();
+    await move(potatoes.id, 12, "received", at("2026-08-14", "09:00:00.000"), 65);
+
+    const row = await storeRow(potatoes.id);
+    expect(row).toBeDefined();
+    const quiet = row!.days.filter((d) => d.date !== "2026-08-14");
+    for (const day of quiet) {
+      expect(day.closingQty).toBe(day.openingQty);
+      expect(day.closingQty).toBe(12);
+    }
+  });
+});
