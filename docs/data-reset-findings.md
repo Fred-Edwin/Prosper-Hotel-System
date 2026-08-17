@@ -3,11 +3,14 @@
 Written 2026-08-17, after the owner asked to clear a weekend of inaccurate
 trading data while keeping the catalogue, prices and current stock figures.
 
-**Nothing in this document has been run against production.** It records
-what was learned reading the code and inspecting the live droplet, so the
-next attempt doesn't rediscover it. Scripts written during that session were
-deliberately deleted — they were untested, and a fresh implementation
-informed by these findings is better than inherited code nobody has run.
+**Executed successfully against production on 2026-08-17.** This document
+was written before that run, from reading the code and inspecting the
+droplet; the run confirmed all five traps were real and the sequence sound.
+See "What actually happened" at the foot of this file for the outcome and
+the two things the findings did not anticipate.
+
+The tooling is now in `scripts/reset-snapshot.ts`,
+`scripts/reset-wipe-and-replay.ts` and `scripts/reset-verify.ts`.
 
 Read this before writing any reset tooling.
 
@@ -230,3 +233,54 @@ Owner opens an item, types the correct number, gives a reason — five seconds,
 writes a correcting movement underneath, history survives. That was the
 recommendation. **The owner has not yet accepted or rejected it**; if they
 still want stored levels after hearing this, that's their call to make.
+
+---
+
+## What actually happened — 2026-08-17
+
+The reset ran and verified. African Tea reads 32 / 32; 96 items reloaded at
+their pre-reset quantities; catalogue, prices and staff PINs untouched.
+
+**All five traps were real.** Each was confirmed against the code before the
+run, and the sequence above needed no correction. Two things this document
+did not anticipate:
+
+**1. One item held negative stock.** "Mandazi (15)" at the canteen derived
+to −5: 271 received, all 271 booked sold by a stock count, then 5 booked
+`consumed` twelve minutes later against stock the count had already zeroed.
+The five were already inside the 271 — a double-count, not five missing
+mandazi. The owner accepted it reloading at 0. `reset-snapshot.ts` grew a
+`--zero-out "<item name>"` flag for exactly this: the decision is recorded
+on the snapshot and printed on the sign-off sheet, so an item going to zero
+is signed off rather than silently excluded. Preflight caught it before the
+wipe, which is the whole point of preflight.
+
+**2. Timezone.** The replay stamp is parsed in the *operator's laptop's*
+timezone; production computes day boundaries in UTC. It worked, with more
+margin than intended, but by luck. Full write-up in `docs/gotchas.md` —
+read it before re-running this tooling from a different machine.
+
+**A note on the delete list:** `Recipe` and `RecipeLine` are in the *keep*
+list above and were never touched, but both were already empty (0 rows) on
+this database before the reset — confirmed against the pre-reset `pg_dump`.
+A verify that asserts "catalogue tables are non-empty" therefore reports a
+false failure. `reset-verify.ts` compares against pre-reset counts instead,
+which is the real requirement: unchanged, not non-zero.
+
+**Deviations from the sequence above, all deliberate:**
+
+- Wipe and replay are one *script*, not two steps — the replay cannot be
+  invoked without the wipe, and both run in a single `db.$transaction`.
+- Preflight gates the wipe programmatically and aborts with a fix plan,
+  rather than being a step a human eyeballs.
+- `occurredAt` is re-stamped *inside* the wipe/replay transaction, not as a
+  follow-up pass, so the data is never briefly wrong.
+- A failed correction aborts the transaction. The August 2026 load logged
+  failures and carried on (`scripts/load-closing-stock.ts`), which is how
+  items silently reloaded at zero — the behaviour Trap 4 warns about.
+
+**Still owed:** the stock adjustment screen (below) remains unbuilt and
+undecided. Also, `reporting/ui/opening-balance.ts` still hardcodes
+2026-08-14 as the opening-balance load day; that day's data no longer
+exists, so the workaround is probably removable — needs a moment's thought
+about whether the new 2026-08-16 artifact day wants the same treatment.

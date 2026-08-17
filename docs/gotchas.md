@@ -421,3 +421,30 @@ real improvement. Scoped out of the 2026-08-15 canteen count-derived-sales
 UI pass as a different screen than the one item 3 named; pick up as its
 own small ticket if the owner finds herself second-guessing a canteen row.
 **Added:** 2026-08-15
+
+## Reset tooling runs in the operator's timezone; production runs UTC
+
+The reset scripts (`scripts/reset-*.ts`) run **from a laptop over an SSH
+tunnel**, not on the droplet — so `new Date("...")` without a `Z` is parsed
+in the *laptop's* timezone, while every date boundary the app computes
+(`setHours(0,0,0,0)` in `reporting/logic.ts`) uses the *container's*, which
+is UTC. No `TZ` is set in `docker-compose.prod.yml` or `.env`.
+
+On 2026-08-17 the replay stamp was written as
+`new Date("2026-08-16T23:59:00")` meaning "yesterday, Nairobi". Parsed on an
+EAT (UTC+3) laptop it became `2026-08-16T20:59:00Z` — which is still safely
+before production's `2026-08-17T00:00:00Z` day boundary, so the reset was
+correct, with three hours of margin rather than the sixty seconds a literal
+`23:59Z` would have given. That margin was luck, not design.
+
+**If you re-run this tooling from a machine in a different timezone, make
+the stamp explicit.** A laptop at UTC+5 would parse the same literal as
+`18:59Z` (fine), but one *behind* UTC would push it past midnight into
+today's period — which is exactly the Trap 2 failure that produces a large
+negative cost-of-goods-sold (see `docs/data-reset-findings.md`, and the
+workaround in `reporting/ui/opening-balance.ts`).
+
+Verify the boundary rather than assuming it: `reset-verify.ts` prints the
+stamp every movement carries, and reproducing the ledger's own
+opening/closing sums for one known item is a five-line script.
+**Added:** 2026-08-17

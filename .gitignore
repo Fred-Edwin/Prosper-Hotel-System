@@ -34,3 +34,9 @@ blob-report
 .mcp.json
 
 .scratch/
+
+# Reset snapshots and sign-off sheets — a full stock position for a real
+# trading day, produced by scripts/reset-snapshot.ts. Kept out of the repo
+# deliberately: the artifacts belong with the operator running the reset,
+# alongside the pg_dump, not in version control.
+scripts/reset/
