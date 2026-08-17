@@ -61,9 +61,19 @@ type Product = {
   onHand: number;
 };
 
-// BUG-15's soft guardrail. A "service" line (e.g. delivery) has no stock
-// concept at all — recordCounterSale never decrements it — so it's never
-// treated as low/out of stock regardless of its onHand value.
+// BUG-15's soft guardrail.
+//
+// A service is deliberately never marked low/out, even though (since
+// 2026-08-17) recordCounterSale decrements it like anything else. A
+// pure-labour service (Research, SHA & Others) is never received, so it sits
+// at 0 on hand forever; routing it through here would brand it "Out of stock"
+// and disable its tile, making it unsellable.
+//
+// The cost of that choice: a stock-holding service such as "Printing/Papers"
+// gets no advance warning, and an oversell surfaces as the server's
+// insufficient_stock at submit instead. Telling the two apart needs a
+// stock-tracked flag on the product — `kind` cannot express it, and after
+// 2026-08-17 `kind` no longer governs stock at all. Tracked as a follow-up.
 const LOW_STOCK_THRESHOLD = 5;
 function stockStatus(product: Product): "ok" | "low" | "out" {
   if (product.kind === "service") return "ok";
@@ -82,10 +92,11 @@ function stockStatus(product: Product): "ok" | "low" | "out" {
 // brand it "Out of stock" and disable its tile. So a service shows its number
 // when it has one and nothing when it doesn't, but is never low/out.
 //
-// NOTE: a service's figure only ever climbs — sales/logic.ts skips the stock
-// decrement for kind === "service", so receiving raises it and nothing lowers
-// it. Making services decrement is a separate, pending change; until then this
-// shows the true stored value, which is not the same as the true shelf count.
+// Since 2026-08-17 a service's figure moves both ways — sales/logic.ts
+// decrements every line whatever its kind. Note this shows the stored value,
+// which for a product sold before that change is still short by whatever was
+// sold under the old rule: those sales wrote no movement and cannot be
+// reconstructed. Only a physical stock count can correct such a figure.
 function stockDisplayQuantity(product: Product): number | null {
   if (product.kind === "service") return product.onHand > 0 ? product.onHand : null;
   return product.onHand;
@@ -352,7 +363,11 @@ function ProductTile({
 }) {
   const status = stockStatus(product);
   const quantity = stockDisplayQuantity(product);
-  const atLimit = product.kind !== "service" && (inBasket?.qty ?? 0) >= product.onHand;
+  // Since 2026-08-17 the basket caps every kind at available stock, services
+  // included. The `onHand > 0` term keeps a labour-only service (never
+  // received, permanently at 0) addable — capping it at 0 would disable its
+  // tile, the same regression stockStatus() avoids above.
+  const atLimit = product.onHand > 0 && (inBasket?.qty ?? 0) >= product.onHand;
   const disabled = status === "out" || atLimit;
 
   return (
@@ -577,7 +592,7 @@ function Till({
       const next = ls
         .map((l) =>
           l.product.id === id
-            ? { ...l, qty: Math.max(0, l.product.kind !== "service" ? Math.min(qty, l.product.onHand) : qty) }
+            ? { ...l, qty: Math.max(0, l.product.onHand > 0 ? Math.min(qty, l.product.onHand) : qty) }
             : l
         )
         .filter((l) => l.qty > 0);
@@ -843,10 +858,10 @@ function Till({
                   variant="outline"
                   className="size-10 shrink-0"
                   onClick={() => bump(l.product.id, 1)}
-                  disabled={l.product.kind !== "service" && l.qty >= l.product.onHand}
+                  disabled={l.product.onHand > 0 && l.qty >= l.product.onHand}
                   aria-label={`One more ${l.product.name}`}
                   title={
-                    l.product.kind !== "service" && l.qty >= l.product.onHand
+                    l.product.onHand > 0 && l.qty >= l.product.onHand
                       ? `Only ${l.product.onHand} in stock`
                       : undefined
                   }

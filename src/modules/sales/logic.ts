@@ -142,9 +142,14 @@ async function priceAndCreateSale(
   // recordTransfer's insufficient_stock guard (stock/logic.ts). Sale
   // creation and stock decrement now happen in the one transaction, so a
   // failure partway through can't leave a Sale with no matching movement.
+  //
+  // 2026-08-17: `kind` no longer takes part in any of this. Services used to
+  // skip both the check and the decrement, so a service that consumes real
+  // stock ("Printing/Papers") only ever climbed — receiving raised it and
+  // selling never lowered it. Every line is now guarded and decremented
+  // alike; voidSale restores them alike too.
   return db.$transaction(async (tx) => {
-    for (const { line, product } of priced) {
-      if (product!.kind === "service") continue;
+    for (const { line } of priced) {
       const stock = await tx.stockMovement.aggregate({
         where: { productId: line.productId, locationId },
         _sum: { quantity: true },
@@ -170,8 +175,7 @@ async function priceAndCreateSale(
       correctionReason: saleAttribution.correctionReason,
     });
 
-    for (const { line, product } of priced) {
-      if (product!.kind === "service") continue;
+    for (const { line } of priced) {
       await recordStockMovement(tx, requester, {
         productId: line.productId,
         locationId,
@@ -528,14 +532,11 @@ export async function voidSale(
     if (closed) return { ok: false, reason: "day_closed" };
   }
 
-  const products = await findProductsByIds(
-    db,
-    sale.lines.map((line) => line.productId),
-  );
-  const productById = new Map(products.map((p) => [p.id, p]));
-
+  // 2026-08-17: every line restores, whatever its kind. This is the
+  // counterpart to the decrement in recordCounterSale — if selling took the
+  // stock but voiding left it taken, a voided sale would destroy stock
+  // permanently.
   for (const line of sale.lines) {
-    if (productById.get(line.productId)?.kind === "service") continue;
     await recordStockMovement(db, requester, {
       productId: line.productId,
       locationId: sale.locationId,

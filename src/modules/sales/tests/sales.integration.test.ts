@@ -19,6 +19,7 @@ let restaurantId: string;
 let canteenId: string;
 let sodaId: string;
 let photocopyId: string;
+let labourOnlyServiceId: string;
 
 function staffAt(
   role: "owner" | "cashier" | "store_manager",
@@ -92,6 +93,15 @@ beforeAll(async () => {
     data: { name: "Photocopy per page", kind: "service", priceMinor: 5, locationId: restaurantId },
   });
   photocopyId = photocopy.id;
+
+  // A service that consumes no stock and is never received — the
+  // "Research"/"SHA & Others" shape, permanently at zero on hand. Kept
+  // separate from photocopyId (which is now stocked, see beforeEach) so the
+  // zero-stock case stays testable.
+  const labourOnly = await testDb.product.create({
+    data: { name: "Research", kind: "service", priceMinor: 300, locationId: restaurantId },
+  });
+  labourOnlyServiceId = labourOnly.id;
 });
 
 // BUG-15's hard guard now rejects a sale line that exceeds on-hand stock,
@@ -99,6 +109,12 @@ beforeAll(async () => {
 // generous enough that no individual test (max line quantity used anywhere
 // below is 5) runs it out.
 const SEEDED_STOCK = 100;
+
+// 2026-08-17: `kind` no longer affects stock movement at all — a service
+// decrements, guards against oversell and restores on void exactly like
+// goods. So a stock-holding service ("Printing/Papers", photocopying off a
+// paper stock) needs seeded stock to sell from, same as sodaId above.
+const SEEDED_SERVICE_STOCK = 200;
 
 beforeEach(async () => {
   await testDb.repayment.deleteMany({});
@@ -113,6 +129,9 @@ beforeEach(async () => {
   });
   await testDb.stockMovement.create({
     data: { productId: sodaId, locationId: canteenId, quantity: SEEDED_STOCK, reason: "received", staffMemberId: "staff-1" },
+  });
+  await testDb.stockMovement.create({
+    data: { productId: photocopyId, locationId: restaurantId, quantity: SEEDED_SERVICE_STOCK, reason: "received", staffMemberId: "staff-1" },
   });
 });
 
@@ -202,16 +221,24 @@ describe("recordCounterSale", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 3 }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 3 }),
+      ]),
+    );
   });
 
-  test("creates no stock movement for a service product", async () => {
-    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+  // Replaces "creates no stock movement for a service product" (in force
+  // until 2026-08-17). Client decision that day: a service decrements like
+  // anything else, because services such as "Printing/Papers" consume real
+  // stock — under the old rule their on-hand only ever climbed, since
+  // receiving raised it and selling never lowered it.
+  test("decrements stock for a service product, the same as any other kind", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
       lines: [{ productId: photocopyId, quantity: 5 }],
       paymentLines: [{ method: "cash", amountMinor: 25 }],
     });
+    expect(result.ok).toBe(true);
 
     const stock = await getCurrentStockAtLocation(
       testDb,
@@ -220,9 +247,15 @@ describe("recordCounterSale", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          productId: photocopyId,
+          quantityOnHand: SEEDED_SERVICE_STOCK - 5,
+        }),
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+      ]),
+    );
   });
 
   test("a sale is recorded at the staff member's own session location, ignoring any other location requested", async () => {
@@ -365,23 +398,113 @@ describe("recordCounterSale — insufficient stock", () => {
     const stock = await getCurrentStockAtLocation(testDb, staffAt("cashier", restaurantId), restaurantId);
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+      ]),
+    );
   });
 
   test("a sale within stock succeeds even when another line in the same sale would have failed alone", async () => {
     // Sanity check that the guard checks each line independently against
-    // its own product's stock, not some combined/aggregate figure.
+    // its own product's stock, not some combined/aggregate figure. The
+    // service line's 150 exceeds sodaId's 100 but sits inside the service's
+    // own 200 — so a combined or cross-product check would wrongly reject.
     const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
       lines: [
         { productId: sodaId, quantity: 2 },
-        { productId: photocopyId, quantity: 100 },
+        { productId: photocopyId, quantity: 150 },
       ],
-      paymentLines: [{ method: "cash", amountMinor: 660 }],
+      paymentLines: [{ method: "cash", amountMinor: 2 * 80 + 150 * 5 }],
     });
 
     expect(result.ok).toBe(true);
+  });
+});
+
+// 2026-08-17: `kind` no longer affects stock movement. A service is guarded,
+// decremented and restored exactly like goods — see the client decision
+// recorded on the sale/void tests above.
+describe("recordCounterSale — services and stock", () => {
+  test("rejects a service line that would oversell, naming the product and quantity available", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: photocopyId, quantity: SEEDED_SERVICE_STOCK + 1 }],
+      paymentLines: [{ method: "cash", amountMinor: (SEEDED_SERVICE_STOCK + 1) * 5 }],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "insufficient_stock",
+      productId: photocopyId,
+      available: SEEDED_SERVICE_STOCK,
+    });
+  });
+
+  test("writes nothing when a service line is rejected for insufficient stock", async () => {
+    await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: photocopyId, quantity: SEEDED_SERVICE_STOCK + 1 }],
+      paymentLines: [{ method: "cash", amountMinor: (SEEDED_SERVICE_STOCK + 1) * 5 }],
+    });
+
+    expect(await testDb.sale.count()).toBe(0);
+    const stock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", restaurantId),
+      restaurantId,
+    );
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          productId: photocopyId,
+          quantityOnHand: SEEDED_SERVICE_STOCK,
+        }),
+      ]),
+    );
+  });
+
+  test("a service line may take the stock down to exactly zero", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: photocopyId, quantity: SEEDED_SERVICE_STOCK }],
+      paymentLines: [{ method: "cash", amountMinor: SEEDED_SERVICE_STOCK * 5 }],
+    });
+
+    expect(result.ok).toBe(true);
+    const stock = await getCurrentStockAtLocation(
+      testDb,
+      staffAt("cashier", restaurantId),
+      restaurantId,
+    );
+    expect(stock.ok).toBe(true);
+    if (!stock.ok) return;
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: photocopyId, quantityOnHand: 0 }),
+      ]),
+    );
+  });
+
+  // The known, accepted consequence of dropping the kind guard: a
+  // pure-labour service (Research, SHA & Others) is never received, so it
+  // sits at zero on hand forever and can no longer be sold through this
+  // path. The till still offers it — stockStatus() in ui/new-sale.tsx
+  // deliberately keeps returning "ok" for services so its tile isn't
+  // disabled — so the rejection surfaces at submit, not before. Tracked as
+  // a follow-up; fixing it needs the schema to distinguish a stock-holding
+  // service from a labour-only one, which `kind` alone cannot express.
+  test("a labour-only service at zero stock is rejected rather than silently sold", async () => {
+    const result = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
+      lines: [{ productId: labourOnlyServiceId, quantity: 1 }],
+      paymentLines: [{ method: "cash", amountMinor: 300 }],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "insufficient_stock",
+      productId: labourOnlyServiceId,
+      available: 0,
+    });
   });
 });
 
@@ -601,9 +724,11 @@ describe("recordCounterSale — delivery", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 2 }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 2 }),
+      ]),
+    );
   });
 });
 
@@ -734,9 +859,11 @@ describe("voidSale", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+      ]),
+    );
   });
 
   test("voiding a delivery sale reverses stock the same as a counter sale, fee included", async () => {
@@ -765,12 +892,19 @@ describe("voidSale", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+      ]),
+    );
   });
 
-  test("voiding a sale with a service line creates no stock movement for it", async () => {
+  // Replaces "voiding a sale with a service line creates no stock movement
+  // for it" (in force until 2026-08-17). This is the dangerous half of the
+  // 2026-08-17 change: selling now decrements a service, so voiding MUST
+  // restore it. If it didn't, every voided sale would destroy that stock
+  // permanently — a worse bug than the one the change fixes.
+  test("voiding a sale with a service line restores the service's stock", async () => {
     const recorded = await recordCounterSale(testDb, staffAt("cashier", restaurantId), {
       lines: [{ productId: photocopyId, quantity: 5 }],
       paymentLines: [{ method: "cash", amountMinor: 25 }],
@@ -788,9 +922,15 @@ describe("voidSale", () => {
     );
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          productId: photocopyId,
+          quantityOnHand: SEEDED_SERVICE_STOCK,
+        }),
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK }),
+      ]),
+    );
   });
 
   test("voiding an already-void sale is rejected", async () => {
@@ -1171,9 +1311,11 @@ describe("recordSaleCorrection", () => {
     const stock = await getCurrentStockAtLocation(testDb, staffAt("owner", restaurantId), restaurantId);
     expect(stock.ok).toBe(true);
     if (!stock.ok) return;
-    expect(stock.levels).toEqual([
-      expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 2 }),
-    ]);
+    expect(stock.levels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ productId: sodaId, quantityOnHand: SEEDED_STOCK - 2 }),
+      ]),
+    );
   });
 
   test("the corrected day's original sale is unchanged", async () => {

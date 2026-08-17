@@ -93,29 +93,37 @@ async function fetchCountableItems(locationId: string, isCanteen: boolean): Prom
       return { status: "error" };
     }
     const items: Item[] = [
-      ...productsBody.products
-        .filter((p: { kind: string }) => p.kind !== "service")
-        .map(
-          (p: {
-            id: string;
-            name: string;
-            onHand: number;
-            priceMinor: number | null;
-            locationId: string;
-          }) => ({
-            id: p.id,
-            name: p.name,
-            itemType: "product" as const,
-            unit: "unit",
-            locationId: p.locationId,
-            // getSellableProductsAtLocation already returns onHand/priceMinor
-            // for every caller — not the count-record comparison the blind-
-            // count rule protects, just the live stock level new-sale.tsx
-            // shows staff too. Restaurant ignores both fields; only the
-            // canteen path below reads them.
-            ...(isCanteen ? { expectedQuantity: p.onHand, priceMinor: p.priceMinor } : {}),
-          }),
-        ),
+      // Every active product is countable, services included (Edwinfred,
+      // 2026-08-17). Services used to be filtered out here on the assumption
+      // that a service holds no stock. But `kind` is the client's own label,
+      // and she may file a real stocked thing under services — "Printing/
+      // Papers" is exactly that — or simply not share the app's reading of the
+      // word. Excluding by kind meant the one screen that can correct a wrong
+      // figure couldn't reach those products at all. A service with nothing to
+      // count is a harmless extra row; a stocked service that cannot be
+      // counted is an uncorrectable number. Same principle as sales/logic.ts:
+      // kind is for grouping and reporting, never for stock behaviour.
+      ...productsBody.products.map(
+        (p: {
+          id: string;
+          name: string;
+          onHand: number;
+          priceMinor: number | null;
+          locationId: string;
+        }) => ({
+          id: p.id,
+          name: p.name,
+          itemType: "product" as const,
+          unit: "unit",
+          locationId: p.locationId,
+          // getSellableProductsAtLocation already returns onHand/priceMinor
+          // for every caller — not the count-record comparison the blind-
+          // count rule protects, just the live stock level new-sale.tsx
+          // shows staff too. Restaurant ignores both fields; only the
+          // canteen path below reads them.
+          ...(isCanteen ? { expectedQuantity: p.onHand, priceMinor: p.priceMinor } : {}),
+        }),
+      ),
       ...ingredientsBody.ingredients.map(
         (i: { id: string; name: string; unitOfMeasure: string }) => ({
           id: i.id,
