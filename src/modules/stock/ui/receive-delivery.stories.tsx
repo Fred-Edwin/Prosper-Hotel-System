@@ -21,20 +21,25 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// Quantities cover the three cases the on-hand line has to read well in:
+// a healthy figure, a fractional one (kg/litres — the till only ever showed
+// whole units), and zero, which must read as "None on hand" without ever
+// disabling the tile. i6/p4 pair a zero with a never-bought item, which is
+// how a newly catalogued item looks on its first delivery.
 const ingredients = [
-  { id: "i1", name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 8000, active: true },
-  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 25000, active: true },
-  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 6000, active: true },
-  { id: "i4", name: "Tea leaves", unitOfMeasure: "packet", lastKnownCostMinor: 15000, active: true },
-  { id: "i5", name: "Sugar", unitOfMeasure: "kg", lastKnownCostMinor: 12000, active: true },
-  { id: "i6", name: "Printing paper", unitOfMeasure: "ream", lastKnownCostMinor: null, active: true },
+  { id: "i1", name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 8000, active: true, quantityOnHand: 24 },
+  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 25000, active: true, quantityOnHand: 2.5 },
+  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 6000, active: true, quantityOnHand: 0 },
+  { id: "i4", name: "Tea leaves", unitOfMeasure: "packet", lastKnownCostMinor: 15000, active: true, quantityOnHand: 7 },
+  { id: "i5", name: "Sugar", unitOfMeasure: "kg", lastKnownCostMinor: 12000, active: true, quantityOnHand: 0.75 },
+  { id: "i6", name: "Printing paper", unitOfMeasure: "ream", lastKnownCostMinor: null, active: true, quantityOnHand: 0 },
 ];
 
 const products = [
-  { id: "p1", name: "Soda (500ml)", lastKnownCostMinor: 5000, active: true },
-  { id: "p2", name: "Biscuits", lastKnownCostMinor: 3500, active: true },
-  { id: "p3", name: "Airtime scratch card", lastKnownCostMinor: 10000, active: true },
-  { id: "p4", name: "Bottled water", lastKnownCostMinor: null, active: true },
+  { id: "p1", name: "Soda (500ml)", lastKnownCostMinor: 5000, active: true, quantityOnHand: 48 },
+  { id: "p2", name: "Biscuits", lastKnownCostMinor: 3500, active: true, quantityOnHand: 3 },
+  { id: "p3", name: "Airtime scratch card", lastKnownCostMinor: 10000, active: true, quantityOnHand: 0 },
+  { id: "p4", name: "Bottled water", lastKnownCostMinor: null, active: true, quantityOnHand: 0 },
 ];
 
 const stubSubmit = async () => ({ ok: true as const });

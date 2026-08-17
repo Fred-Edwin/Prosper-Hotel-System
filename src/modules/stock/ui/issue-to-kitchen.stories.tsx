@@ -18,17 +18,34 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// Quantities cover a healthy figure, fractional ones (kg/litres — the till
+// only ever showed whole units) and a zero, which must read as "None on
+// hand" while leaving the tile enabled.
 const ingredients = [
-  { id: "i1", name: "Flour", unitOfMeasure: "kg", active: true },
-  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", active: true },
-  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", active: true },
-  { id: "i4", name: "Tea leaves", unitOfMeasure: "packet", active: true },
-  { id: "i5", name: "Sugar", unitOfMeasure: "kg", active: true },
+  { id: "i1", name: "Flour", unitOfMeasure: "kg", active: true, quantityOnHand: 24 },
+  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", active: true, quantityOnHand: 2.5 },
+  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", active: true, quantityOnHand: 0 },
+  { id: "i4", name: "Tea leaves", unitOfMeasure: "packet", active: true, quantityOnHand: 7 },
+  { id: "i5", name: "Sugar", unitOfMeasure: "kg", active: true, quantityOnHand: 0.75 },
 ];
 
 const stubSubmit = async () => ({ ok: true as const });
 
 export const Default: Story = {
+  args: {
+    state: { status: "ready", ingredients },
+    onSubmit: stubSubmit,
+  },
+};
+
+/**
+ * The over-stock guard: add Cooking oil (2.5 litres on hand) and type 5.
+ * The line shows "Only 2.5 litre in stock" and Record issue stays disabled
+ * — the typed figure is left alone rather than clamped, so the store
+ * manager sees what they asked for and decides.
+ */
+export const OverStock: Story = {
+  name: "Asking for more than the store holds",
   args: {
     state: { status: "ready", ingredients },
     onSubmit: stubSubmit,

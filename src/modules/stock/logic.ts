@@ -20,6 +20,7 @@ import {
   findIngredientsByIds,
   findProductsByIds,
   findProductsAtLocation,
+  listIngredients,
   getCurrentRecipe,
   recordIngredientCost,
   recordProductCost,
@@ -349,24 +350,80 @@ export type TransferableItem = {
   unit: string;
 };
 
-export async function getTransferableItems(
+/** A picker row: the item, plus how much of it is actually here. */
+export type PickableItem = TransferableItem;
+
+export type PickableItemsOptions = {
+  /**
+   * Transfer filters to quantityOnHand > 0 — you cannot send what you do not
+   * hold. Every other picker must show the zero instead of dropping the row:
+   * on Receiving, being out of something is precisely the reason to receive
+   * it, and on Issue/Wastage a vanished row reads as a missing item rather
+   * than an empty one.
+   *
+   * Including zeroes also widens the candidate set beyond the ledger: an item
+   * catalogued but never received has no movement rows at all, so it has no
+   * sum to join against and would otherwise never appear.
+   */
+  includeZeroStock: boolean;
+  /**
+   * The caller's write-time role rule, so a picker never offers an item the
+   * user's subsequent write would refuse (issuing bars cashiers, receiving
+   * admits attendants, transferring bars cashiers). Omitted means any role
+   * that can reach the location may read it.
+   */
+  permit?: (role: string) => boolean;
+};
+
+/**
+ * The shared picker reader behind Receiving, Issue to Kitchen, Wastage and
+ * Transfer — the fix for blind picking, where those screens read the
+ * catalogue (what exists) and so could not show how much was here.
+ *
+ * Products are scoped to the location the same way getSellableProductsAtLocation
+ * scopes them (home location here, or positive stock here per the ledger);
+ * ingredients are location-agnostic in the catalogue, so all active ones are
+ * candidates and the ledger supplies each one's quantity at this location.
+ */
+export async function getPickableItemsAtLocation(
   db: PrismaClient,
   requester: AuthenticatedStaff,
   locationId: string,
-): Promise<{ ok: true; items: TransferableItem[] } | { ok: false; reason: "forbidden" }> {
-  if (requester.staff.role === "cashier" || !canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+  options: PickableItemsOptions,
+): Promise<{ ok: true; items: PickableItem[] } | { ok: false; reason: "forbidden" }> {
+  const { includeZeroStock, permit } = options;
+  if (
+    (permit && !permit(requester.staff.role)) ||
+    !canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)
+  ) {
     return { ok: false, reason: "forbidden" };
   }
+
   const [productSums, ingredientSums] = await Promise.all([
     sumMovementsByProductAtLocation(db, locationId),
     sumMovementsByIngredientAtLocation(db, locationId),
   ]);
-  const [products, ingredients] = await Promise.all([
-    findProductsByIds(db, productSums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.productId)),
-    findIngredientsByIds(db, ingredientSums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.ingredientId)),
-  ]);
   const productQuantity = new Map(productSums.map((sum) => [sum.productId, sum.quantityOnHand]));
   const ingredientQuantity = new Map(ingredientSums.map((sum) => [sum.ingredientId, sum.quantityOnHand]));
+
+  const [products, ingredients] = await Promise.all([
+    includeZeroStock
+      ? // Union of both sources, as in getSellableProductsAtLocation: home
+        // location here (even with no movements yet), or stock moved in.
+        Promise.all([
+          findProductsAtLocation(db, locationId),
+          findProductsByIds(db, productSums.map((sum) => sum.productId)),
+        ]).then(([home, moved]) => {
+          const byId = new Map<string, Product>();
+          for (const product of [...home, ...moved]) byId.set(product.id, product);
+          return [...byId.values()];
+        })
+      : findProductsByIds(db, productSums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.productId)),
+    includeZeroStock
+      ? listIngredients(db)
+      : findIngredientsByIds(db, ingredientSums.filter((sum) => sum.quantityOnHand > 0).map((sum) => sum.ingredientId)),
+  ]);
+
   return {
     ok: true,
     items: [
@@ -374,6 +431,17 @@ export async function getTransferableItems(
       ...ingredients.filter((ingredient) => ingredient.active).map((ingredient) => ({ itemType: "ingredient" as const, itemId: ingredient.id, name: ingredient.name, quantityOnHand: ingredientQuantity.get(ingredient.id) ?? 0, unit: ingredient.unitOfMeasure })),
     ].sort((a, b) => a.name.localeCompare(b.name)),
   };
+}
+
+export async function getTransferableItems(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+): Promise<{ ok: true; items: TransferableItem[] } | { ok: false; reason: "forbidden" }> {
+  return getPickableItemsAtLocation(db, requester, locationId, {
+    includeZeroStock: false,
+    permit: (role) => role !== "cashier",
+  });
 }
 
 export type SellableProduct = Product & { onHand: number };

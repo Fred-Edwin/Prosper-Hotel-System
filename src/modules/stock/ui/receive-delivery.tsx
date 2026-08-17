@@ -14,6 +14,16 @@
  * visit (e.g. the canteen receiving printer paper and airtime scratch
  * cards together) — an Ingredients/Products toggle filters which picker
  * is shown, but lines from both kinds can sit together in one delivery.
+ *
+ * 2026-08-17 (blind picking): every tile now carries what is already on
+ * hand. This screen read the catalogue — what exists — and so could not
+ * say how much was here, leaving staff to receive against a figure they
+ * had to remember or go and look up.
+ *
+ * The figure is informational only, unlike New sale's, where it gates the
+ * tile and caps the stepper. You can always receive more of anything, and
+ * being out of something is the very reason to receive it — so a zero
+ * shows as "None on hand" and nothing is ever disabled or warned about.
  */
 
 import { useEffect, useState } from "react";
@@ -30,6 +40,8 @@ type Ingredient = {
   unitOfMeasure: string;
   lastKnownCostMinor: number | null;
   active: boolean;
+  /** From the movement ledger, not the catalogue — see the header note. */
+  quantityOnHand: number;
 };
 
 type Product = {
@@ -37,6 +49,7 @@ type Product = {
   name: string;
   lastKnownCostMinor: number | null;
   active: boolean;
+  quantityOnHand: number;
 };
 
 type Item =
@@ -58,22 +71,49 @@ export type LoadState =
   | { status: "error" }
   | { status: "ready"; ingredients: Ingredient[]; products: Product[] };
 
+/**
+ * Two sources, deliberately: the catalogue owns last-known cost (what the
+ * item is), stock owns quantity on hand (how much is here). Rather than
+ * blur that boundary by teaching the catalogue about the ledger, this
+ * merges the two reads by id — the pickable-items call supplies every
+ * quantity, including the zeroes and the never-received items.
+ */
 async function fetchIngredientsAndProducts(locationId: string): Promise<LoadState> {
   try {
-    const [ingredientsResponse, productsResponse] = await Promise.all([
+    const [ingredientsResponse, productsResponse, onHandResponse] = await Promise.all([
       fetch("/api/catalogue/ingredients/active"),
       fetch(`/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`),
+      fetch("/api/stock/pickable-items?purpose=receive"),
     ]);
-    if (!ingredientsResponse.ok || !productsResponse.ok) return { status: "error" };
-    const ingredientsBody = await ingredientsResponse.json();
-    const productsBody = await productsResponse.json();
-    if (!Array.isArray(ingredientsBody?.ingredients) || !Array.isArray(productsBody?.products)) {
+    if (!ingredientsResponse.ok || !productsResponse.ok || !onHandResponse.ok) {
       return { status: "error" };
     }
+    const ingredientsBody = await ingredientsResponse.json();
+    const productsBody = await productsResponse.json();
+    const onHandBody = await onHandResponse.json();
+    if (
+      !Array.isArray(ingredientsBody?.ingredients) ||
+      !Array.isArray(productsBody?.products) ||
+      !Array.isArray(onHandBody?.items)
+    ) {
+      return { status: "error" };
+    }
+
+    const quantityByItemId = new Map<string, number>(
+      (onHandBody.items as { itemId: string; quantityOnHand: number }[]).map((item) => [
+        item.itemId,
+        item.quantityOnHand,
+      ]),
+    );
+    const withQuantity = <T extends { id: string }>(item: T) => ({
+      ...item,
+      quantityOnHand: quantityByItemId.get(item.id) ?? 0,
+    });
+
     return {
       status: "ready",
-      ingredients: ingredientsBody.ingredients,
-      products: productsBody.products,
+      ingredients: ingredientsBody.ingredients.map(withQuantity),
+      products: productsBody.products.map(withQuantity),
     };
   } catch {
     return { status: "error" };
@@ -363,6 +403,10 @@ function Receiving({
                   ? item.ingredient.lastKnownCostMinor
                   : item.product.lastKnownCostMinor;
               const unit = item.itemType === "ingredient" ? item.ingredient.unitOfMeasure : "unit";
+              const quantityOnHand =
+                item.itemType === "ingredient"
+                  ? item.ingredient.quantityOnHand
+                  : item.product.quantityOnHand;
               const inLines = lines.some((l) => l.itemId === itemId);
               return (
                 <button
@@ -371,13 +415,17 @@ function Receiving({
                   title={name}
                   disabled={inLines}
                   data-testid="receive-item-tile"
-                  className={`relative flex h-[64px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 disabled:opacity-50 ${
+                  className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 disabled:opacity-50 ${
                     inLines ? "border-neutral-400" : "active:bg-accent"
                   }`}
                 >
                   <span className="line-clamp-2 text-[13px] leading-tight font-medium">{name}</span>
                   <span className="text-[11px] text-muted-foreground">
-                    {unit}
+                    {/* Informational only — never a warning. Being out of
+                        something is a reason to receive it, not a blocker. */}
+                    <span data-testid="receive-item-onhand">
+                      {quantityOnHand > 0 ? `${quantityOnHand} ${unit} on hand` : "None on hand"}
+                    </span>
                     {lastKnownCostMinor != null && ` · last ${money(lastKnownCostMinor)}`}
                   </span>
                   {inLines && (
@@ -509,7 +557,7 @@ function ReceivingSkeleton() {
       <Skeleton className="mb-3 h-10 w-full rounded-lg" />
       <div className="grid grid-cols-2 gap-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-[64px] rounded-lg" />
+          <Skeleton key={i} className="h-[76px] rounded-lg" />
         ))}
       </div>
     </div>

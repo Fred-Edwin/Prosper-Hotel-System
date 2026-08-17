@@ -20,6 +20,15 @@
  * Category is a three-way pill group, same styling as New sale's
  * counter/delivery toggle — the screen's one accent element stays the
  * final "Record" action, not the pills.
+ *
+ * 2026-08-17 (blind picking): every tile now carries what is on hand, and
+ * the quantity is capped at it. This screen read the catalogue — what
+ * exists — so staff recorded a loss without being shown how much there
+ * was to lose.
+ *
+ * A soft constraint, as on Issue to Kitchen: you cannot waste more than
+ * you hold, so an over-quantity blocks the submit, but a zero-stock tile
+ * stays enabled rather than vanishing from the picker.
  */
 
 import { useEffect, useState } from "react";
@@ -36,6 +45,8 @@ type Product = {
   kind: "goods" | "cooked_food" | "service" | "packaging";
   priceMinor: number | null;
   active: boolean;
+  /** From the movement ledger, not the catalogue — see the header note. */
+  quantityOnHand: number;
 };
 
 type Ingredient = {
@@ -44,6 +55,7 @@ type Ingredient = {
   unitOfMeasure: string;
   lastKnownCostMinor: number | null;
   active: boolean;
+  quantityOnHand: number;
 };
 
 type Item =
@@ -52,24 +64,58 @@ type Item =
 
 type Category = "wasted" | "consumed" | "given_away";
 
+/** An ingredient carries its own unit of measure; a product is counted in
+ * bare units, so it has no word of its own. */
+function unitFor(entry: Item): string {
+  return entry.type === "ingredient" ? entry.item.unitOfMeasure : "";
+}
+
 export type LoadState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ready"; products: Product[]; ingredients: Ingredient[] };
 
+/**
+ * Two sources, as on Receiving: the catalogue owns what an item is worth
+ * (selling price, last-known cost — this screen values the loss), stock
+ * owns how much of it is here. Merged by id rather than teaching the
+ * catalogue about the ledger.
+ */
 async function fetchItems(locationId: string): Promise<LoadState> {
   try {
-    const [productsRes, ingredientsRes] = await Promise.all([
+    const [productsRes, ingredientsRes, onHandRes] = await Promise.all([
       fetch(`/api/catalogue/products/active?locationId=${encodeURIComponent(locationId)}`),
       fetch("/api/catalogue/ingredients/active"),
+      fetch("/api/stock/pickable-items?purpose=wastage"),
     ]);
-    if (!productsRes.ok || !ingredientsRes.ok) return { status: "error" };
+    if (!productsRes.ok || !ingredientsRes.ok || !onHandRes.ok) return { status: "error" };
     const productsBody = await productsRes.json();
     const ingredientsBody = await ingredientsRes.json();
-    if (!Array.isArray(productsBody?.products) || !Array.isArray(ingredientsBody?.ingredients)) {
+    const onHandBody = await onHandRes.json();
+    if (
+      !Array.isArray(productsBody?.products) ||
+      !Array.isArray(ingredientsBody?.ingredients) ||
+      !Array.isArray(onHandBody?.items)
+    ) {
       return { status: "error" };
     }
-    return { status: "ready", products: productsBody.products, ingredients: ingredientsBody.ingredients };
+
+    const quantityByItemId = new Map<string, number>(
+      (onHandBody.items as { itemId: string; quantityOnHand: number }[]).map((item) => [
+        item.itemId,
+        item.quantityOnHand,
+      ]),
+    );
+    const withQuantity = <T extends { id: string }>(item: T) => ({
+      ...item,
+      quantityOnHand: quantityByItemId.get(item.id) ?? 0,
+    });
+
+    return {
+      status: "ready",
+      products: productsBody.products.map(withQuantity),
+      ingredients: ingredientsBody.ingredients.map(withQuantity),
+    };
   } catch {
     return { status: "error" };
   }
@@ -218,7 +264,12 @@ function Wastage({
     ? items.filter((i) => i.item.name.toLowerCase().includes(query.trim().toLowerCase()))
     : items;
 
-  const canComplete = selected != null && Number(quantity) > 0 && !submitting;
+  // As on Issue to Kitchen: an over-quantity blocks the submit rather than
+  // being silently clamped, so staff see the figure they typed and decide.
+  const overStock = selected != null && Number(quantity) > selected.item.quantityOnHand;
+
+  const canComplete =
+    selected != null && Number(quantity) > 0 && !overStock && !submitting;
 
   const complete = async () => {
     if (!selected) return;
@@ -292,14 +343,26 @@ function Wastage({
                   onClick={() => setSelected(entry)}
                   title={entry.item.name}
                   data-testid="wastage-item-tile"
-                  className={`relative flex h-[64px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 ${
+                  className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 ${
                     isSelected ? "border-neutral-400" : "active:bg-accent"
                   }`}
                 >
                   <span className="line-clamp-2 text-[13px] leading-tight font-medium">
                     {entry.item.name}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">{subtitle}</span>
+                  {/* Zero stays enabled and unstyled — information, not a
+                      warning. The over-quantity guard below does the work. */}
+                  <span className="text-[11px] text-muted-foreground">
+                    {subtitle}
+                    {" · "}
+                    <span data-testid="wastage-item-onhand">
+                      {entry.item.quantityOnHand > 0
+                        ? [entry.item.quantityOnHand, unitFor(entry), "left"]
+                            .filter(Boolean)
+                            .join(" ")
+                        : "none left"}
+                    </span>
+                  </span>
                   {isSelected && (
                     <span className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-white">
                       <Check className="size-3" />
@@ -326,6 +389,14 @@ function Wastage({
                 data-testid="wastage-quantity"
               />
             </div>
+
+            {overStock && (
+              <p className="text-[11px] text-destructive" data-testid="wastage-overstock">
+                Only{" "}
+                {[selected.item.quantityOnHand, unitFor(selected)].filter(Boolean).join(" ")} in
+                stock.
+              </p>
+            )}
 
             <div className="flex gap-1 rounded-lg bg-muted p-1">
               {categories.map((c) => {
@@ -379,7 +450,7 @@ function WastageConfirmation({
   onDone: () => void;
 }) {
   const categoryLabel = categories.find((c) => c.key === entry.category)?.label ?? entry.category;
-  const unit = entry.item.type === "ingredient" ? entry.item.item.unitOfMeasure : "";
+  const unit = unitFor(entry.item);
 
   return (
     <div className="flex min-h-full flex-col" data-testid="wastage-confirmation">
@@ -410,7 +481,7 @@ function WastageSkeleton() {
       <Skeleton className="mb-3 h-10 w-full rounded-lg" />
       <div className="grid grid-cols-2 gap-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-[64px] rounded-lg" />
+          <Skeleton key={i} className="h-[76px] rounded-lg" />
         ))}
       </div>
     </div>

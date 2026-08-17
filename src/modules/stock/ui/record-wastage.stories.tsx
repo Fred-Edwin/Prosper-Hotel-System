@@ -20,22 +20,37 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// Quantities cover a healthy figure, fractional ones (kg/litres) and zero,
+// which reads as "none left" without disabling the tile.
 const products = [
-  { id: "p1", name: "Sodas (500ml)", kind: "goods" as const, priceMinor: 10000, active: true },
-  { id: "p2", name: "Chips", kind: "cooked_food" as const, priceMinor: 25000, active: true },
-  { id: "p3", name: "Mukimo", kind: "cooked_food" as const, priceMinor: 20000, active: true },
-  { id: "p4", name: "Biscuits", kind: "goods" as const, priceMinor: 5000, active: true },
+  { id: "p1", name: "Sodas (500ml)", kind: "goods" as const, priceMinor: 10000, active: true, quantityOnHand: 48 },
+  { id: "p2", name: "Chips", kind: "cooked_food" as const, priceMinor: 25000, active: true, quantityOnHand: 3 },
+  { id: "p3", name: "Mukimo", kind: "cooked_food" as const, priceMinor: 20000, active: true, quantityOnHand: 0 },
+  { id: "p4", name: "Biscuits", kind: "goods" as const, priceMinor: 5000, active: true, quantityOnHand: 12 },
 ];
 
 const ingredients = [
-  { id: "i1", name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 8000, active: true },
-  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 25000, active: true },
-  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 6000, active: true },
+  { id: "i1", name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 8000, active: true, quantityOnHand: 24 },
+  { id: "i2", name: "Cooking oil", unitOfMeasure: "litre", lastKnownCostMinor: 25000, active: true, quantityOnHand: 2.5 },
+  { id: "i3", name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 6000, active: true, quantityOnHand: 0 },
 ];
 
 const stubSubmit = async () => ({ ok: true as const });
 
 export const Default: Story = {
+  args: {
+    state: { status: "ready", products, ingredients },
+    onSubmit: stubSubmit,
+  },
+};
+
+/**
+ * The over-quantity guard: tap Chips (3 left) and type 5. "Only 3 in
+ * stock." appears and Record stays disabled — the typed figure is left
+ * alone rather than clamped.
+ */
+export const OverStock: Story = {
+  name: "Recording more than is in stock",
   args: {
     state: { status: "ready", products, ingredients },
     onSubmit: stubSubmit,

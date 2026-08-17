@@ -12,6 +12,7 @@ import {
   getProductStockValueAtLocation,
   getSellableProductsAtLocation,
   getTransferableItems,
+  getPickableItemsAtLocation,
   getLatestStockCount,
   getStockCount,
   recordIngredientIssue,
@@ -209,6 +210,50 @@ export async function transferableItemsRoute(): Promise<Response> {
     items: result.items,
     toLocation: locations.find((location) => location.id !== session.staff.locationId) ?? null,
   });
+}
+
+// The blind-picking fix: Receiving, Issue to Kitchen and Wastage each read
+// the catalogue and so could not show how much was on hand. They now share
+// this one reader, differing only in the two ways their screens differ —
+// which roles may use them, and whether a zero-stock item belongs in the
+// list. Each purpose's `permit` mirrors its write-time gate in logic.ts
+// (canReceive, canIssue, and recordNonSalesConsumption's location-only
+// check), so a picker never offers an item the write would then refuse.
+const PICKER_PURPOSES = {
+  receive: {
+    // Zero stock is the very reason to receive something.
+    includeZeroStock: true,
+    permit: (role: string) => role === "owner" || role === "store_manager" || role === "attendant",
+  },
+  issue: {
+    // Show the zero rather than drop the row — a vanished ingredient reads
+    // as missing from the catalogue rather than merely out of stock.
+    includeZeroStock: true,
+    permit: (role: string) => role === "owner" || role === "store_manager",
+  },
+  wastage: {
+    // recordNonSalesConsumption gates on location only, so this does too.
+    includeZeroStock: true,
+    permit: undefined,
+  },
+} as const;
+
+export async function pickableItemsRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const purpose = new URL(request.url).searchParams.get("purpose");
+  if (!purpose || !(purpose in PICKER_PURPOSES)) {
+    return Response.json({ error: "invalid_purpose" }, { status: 400 });
+  }
+  const { includeZeroStock, permit } = PICKER_PURPOSES[purpose as keyof typeof PICKER_PURPOSES];
+
+  const result = await getPickableItemsAtLocation(db, session, session.staff.locationId, {
+    includeZeroStock,
+    permit,
+  });
+  if (!result.ok) return Response.json({ error: result.reason }, { status: 403 });
+  return Response.json({ items: result.items });
 }
 
 export async function transferHistoryRoute(): Promise<Response> {

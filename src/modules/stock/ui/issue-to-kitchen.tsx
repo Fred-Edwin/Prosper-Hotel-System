@@ -7,6 +7,17 @@
  * ingredient, add it as a line, enter quantity, confirm. Simpler than
  * Receiving in one respect — issuing isn't a loss or a purchase, so there's
  * no cost/price field per line, just quantity.
+ *
+ * 2026-08-17 (blind picking): every tile now carries what is on hand, and
+ * a line's quantity is capped at it. This screen read the catalogue — what
+ * exists — so the store manager was issuing flour without being told how
+ * much flour there was.
+ *
+ * A soft constraint, between Receiving's purely informational figure and
+ * New sale's hard one: you cannot issue more than you hold, so the
+ * quantity is capped, but a zero-stock tile stays enabled — dropping it
+ * would read as the ingredient having vanished from the catalogue rather
+ * than merely being out.
  */
 
 import { useEffect, useState } from "react";
@@ -21,6 +32,8 @@ type Ingredient = {
   name: string;
   unitOfMeasure: string;
   active: boolean;
+  /** From the movement ledger, not the catalogue — see the header note. */
+  quantityOnHand: number;
 };
 
 type Line = { ingredient: Ingredient; quantity: string };
@@ -30,13 +43,32 @@ export type LoadState =
   | { status: "error" }
   | { status: "ready"; ingredients: Ingredient[] };
 
+// One read, not two: unlike Receiving, issuing needs no last-known cost, so
+// everything this screen shows (name, unit, quantity) comes from stock.
 async function fetchIngredients(): Promise<LoadState> {
   try {
-    const response = await fetch("/api/catalogue/ingredients/active");
+    const response = await fetch("/api/stock/pickable-items?purpose=issue");
     if (!response.ok) return { status: "error" };
     const body = await response.json();
-    if (!Array.isArray(body?.ingredients)) return { status: "error" };
-    return { status: "ready", ingredients: body.ingredients };
+    if (!Array.isArray(body?.items)) return { status: "error" };
+    const ingredients: Ingredient[] = (
+      body.items as {
+        itemType: "product" | "ingredient";
+        itemId: string;
+        name: string;
+        quantityOnHand: number;
+        unit: string;
+      }[]
+    )
+      .filter((item) => item.itemType === "ingredient")
+      .map((item) => ({
+        id: item.itemId,
+        name: item.name,
+        unitOfMeasure: item.unit,
+        active: true,
+        quantityOnHand: item.quantityOnHand,
+      }));
+    return { status: "ready", ingredients };
   } catch {
     return { status: "error" };
   }
@@ -160,8 +192,14 @@ function Issuing({
   const setQuantity = (id: string, quantity: string) =>
     setLines((ls) => ls.map((l) => (l.ingredient.id === id ? { ...l, quantity } : l)));
 
+  // A line asking for more than the store holds blocks the submit rather
+  // than being silently clamped — the store manager should see the number
+  // they typed and decide, not have it changed under them. Matches how New
+  // sale words its own over-quantity guard ("Only N in stock").
+  const overStock = (l: Line) => Number(l.quantity) > l.ingredient.quantityOnHand;
+
   const linesComplete = lines.length > 0 && lines.every((l) => Number(l.quantity) > 0);
-  const canComplete = linesComplete && !submitting;
+  const canComplete = linesComplete && !lines.some(overStock) && !submitting;
 
   const complete = async () => {
     setSubmitting(true);
@@ -229,14 +267,21 @@ function Issuing({
                   title={i.name}
                   disabled={inLines}
                   data-testid="issue-ingredient-tile"
-                  className={`relative flex h-[64px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 disabled:opacity-50 ${
+                  className={`relative flex h-[76px] flex-col items-start justify-between rounded-lg border bg-card p-2 text-left transition-colors duration-100 disabled:opacity-50 ${
                     inLines ? "border-neutral-400" : "active:bg-accent"
                   }`}
                 >
                   <span className="line-clamp-2 text-[13px] leading-tight font-medium">
                     {i.name}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">{i.unitOfMeasure}</span>
+                  {/* Zero stays enabled and unstyled — "none left" is
+                      information the store manager needs to see, not a
+                      warning to act on. */}
+                  <span className="text-[11px] text-muted-foreground" data-testid="issue-ingredient-onhand">
+                    {i.quantityOnHand > 0
+                      ? `${i.quantityOnHand} ${i.unitOfMeasure} on hand`
+                      : "None on hand"}
+                  </span>
                   {inLines && (
                     <span className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-neutral-700 text-white">
                       <Check className="size-3" />
@@ -266,6 +311,14 @@ function Issuing({
                       data-testid={`issue-quantity-${l.ingredient.id}`}
                     />
                     <span className="text-[11px] text-muted-foreground">{l.ingredient.unitOfMeasure}</span>
+                    {overStock(l) && (
+                      <span
+                        className="text-[11px] text-destructive"
+                        data-testid={`issue-overstock-${l.ingredient.id}`}
+                      >
+                        Only {l.ingredient.quantityOnHand} {l.ingredient.unitOfMeasure} in stock
+                      </span>
+                    )}
                   </div>
                 </div>
                 <Button
@@ -344,7 +397,7 @@ function IssuingSkeleton() {
       <Skeleton className="mb-3 h-10 w-full rounded-lg" />
       <div className="grid grid-cols-2 gap-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-[64px] rounded-lg" />
+          <Skeleton key={i} className="h-[76px] rounded-lg" />
         ))}
       </div>
     </div>
