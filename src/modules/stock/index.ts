@@ -12,6 +12,10 @@ export {
   getPendingTransfersAtLocation,
   getConfirmedTransfersSentFromLocation,
   reverseTransfer,
+  reverseMovement,
+  amendDayTotal,
+  amendDerivedPosition,
+  amendScalar,
   listTransfersAtLocation,
   recordStockMovement,
   recordIngredientReceipt,
@@ -45,6 +49,8 @@ export {
   getStockCountsForActivity,
 } from "./logic";
 export type {
+  ReverseMovementResult,
+  AmendResult,
   ProductCostBasis,
   StockAccessResult,
   SellableProductsResult,

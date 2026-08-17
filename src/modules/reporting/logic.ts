@@ -674,6 +674,7 @@ export type ProductLedgerDay = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  corrected: number;
   salesValueMinor: number;
   closing: number;
 };
@@ -691,6 +692,7 @@ export type ProductLedgerRow = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  corrected: number;
   salesValueMinor: number;
   unitCostMinor: number | null;
   isEstimated: boolean;
@@ -713,6 +715,19 @@ const PRODUCT_IN_REASONS = ["produced", "received", "transferred"] as const;
 // directly, the same as the restaurant, so "sold" alone is the complete
 // picture — see docs/proposal.md §4.
 const PRODUCT_OUT_REASONS = ["sold", "transferred", "wasted", "consumed", "given_away"] as const;
+// Editable-ledger T3. A `corrected` movement is signed like `transferred`
+// — the owner's Kind B opening/closing edit may raise or lower the
+// position — so it belongs to neither the in nor the out list, and gets
+// its own ledger column.
+//
+// Before T3 this reason was fetched by no ledger query at all, while
+// opening/closing (which sum *every* movement, unfiltered by reason) did
+// include it. That combination silently broke the reconciliation identity
+// `closing == opening + in - out`: a corrected row moved closing without
+// appearing in any column that explains why. reverseTransfer and
+// correctStockCount have written `corrected` rows since ticket 21, so
+// this was reachable before the editable ledger existed.
+const PRODUCT_CORRECTION_REASONS = ["corrected"] as const;
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -745,10 +760,22 @@ type ReasonSums = {
   transferredOut: number;
   sold: number;
   nonSales: number;
+  // Signed: positive raises the position, negative lowers it. Kept out of
+  // the in/out pair deliberately — a correction is not a delivery and must
+  // never be presented as one (plan §3.1's Kind B note).
+  corrected: number;
 };
 
 function emptyReasonSums(): ReasonSums {
-  return { produced: 0, received: 0, transferredIn: 0, transferredOut: 0, sold: 0, nonSales: 0 };
+  return {
+    produced: 0,
+    received: 0,
+    transferredIn: 0,
+    transferredOut: 0,
+    sold: 0,
+    nonSales: 0,
+    corrected: 0,
+  };
 }
 
 // Folds one product's movement-by-reason lines (both signed `transferred`
@@ -767,7 +794,7 @@ function foldReasonLines(
     } else if (line.reason === "sold") sums.sold += -line.quantity;
     else if (line.reason === "wasted" || line.reason === "consumed" || line.reason === "given_away") {
       sums.nonSales += -line.quantity;
-    }
+    } else if (line.reason === "corrected") sums.corrected += line.quantity;
   }
   return sums;
 }
@@ -819,7 +846,9 @@ async function buildProductLedgerRow(
       runningOpening +
       daySums.produced +
       daySums.received +
-      daySums.transferredIn -
+      daySums.transferredIn +
+      // Signed, and added rather than subtracted — see PRODUCT_CORRECTION_REASONS.
+      daySums.corrected -
       daySums.sold -
       daySums.transferredOut -
       daySums.nonSales;
@@ -832,6 +861,7 @@ async function buildProductLedgerRow(
       sold: daySums.sold,
       transferredOut: daySums.transferredOut,
       nonSales: daySums.nonSales,
+      corrected: daySums.corrected,
       salesValueMinor: product.priceMinor != null ? daySums.sold * product.priceMinor : 0,
       closing: dayClosing,
     });
@@ -851,6 +881,7 @@ async function buildProductLedgerRow(
     sold: sums.sold,
     transferredOut: sums.transferredOut,
     nonSales: sums.nonSales,
+    corrected: sums.corrected,
     salesValueMinor,
     unitCostMinor: basis?.costBasisMinor ?? null,
     isEstimated: basis?.isEstimated ?? false,
@@ -893,7 +924,7 @@ export async function getProductLedger(
         db,
         requester,
         location.id,
-        [...PRODUCT_IN_REASONS, ...PRODUCT_OUT_REASONS],
+        [...PRODUCT_IN_REASONS, ...PRODUCT_OUT_REASONS, ...PRODUCT_CORRECTION_REASONS],
         input.periodStart,
         input.periodEnd,
       ),
@@ -934,7 +965,7 @@ export async function getProductLedger(
           db,
           requester,
           location.id,
-          [...PRODUCT_IN_REASONS, ...PRODUCT_OUT_REASONS],
+          [...PRODUCT_IN_REASONS, ...PRODUCT_OUT_REASONS, ...PRODUCT_CORRECTION_REASONS],
           day.start,
           day.end,
         ),

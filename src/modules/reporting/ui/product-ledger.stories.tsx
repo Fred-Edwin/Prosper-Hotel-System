@@ -24,6 +24,7 @@ const chipsRow: ProductLedgerRowData = {
   sold: 52,
   transferredOut: 5,
   nonSales: 2,
+  corrected: 0,
   salesValueMinor: 520000,
   unitCostMinor: 4100,
   isEstimated: false,
@@ -42,6 +43,7 @@ const chipsRow: ProductLedgerRowData = {
       sold: 26,
       transferredOut: 3,
       nonSales: 1,
+      corrected: 0,
       salesValueMinor: 260000,
       closing: 14,
     },
@@ -54,6 +56,7 @@ const chipsRow: ProductLedgerRowData = {
       sold: 26,
       transferredOut: 2,
       nonSales: 1,
+      corrected: 0,
       salesValueMinor: 260000,
       closing: 5,
     },
@@ -73,6 +76,7 @@ const sodaRow: ProductLedgerRowData = {
   sold: 60,
   transferredOut: 0,
   nonSales: 0,
+  corrected: 0,
   salesValueMinor: 480000,
   unitCostMinor: 5800,
   isEstimated: false,
@@ -91,6 +95,7 @@ const sodaRow: ProductLedgerRowData = {
       sold: 60,
       transferredOut: 0,
       nonSales: 0,
+      corrected: 0,
       salesValueMinor: 480000,
       closing: 84,
     },
@@ -110,6 +115,7 @@ const beefStewRow: ProductLedgerRowData = {
   sold: 18,
   transferredOut: 0,
   nonSales: 0,
+  corrected: 0,
   salesValueMinor: 324000,
   unitCostMinor: null,
   isEstimated: false,
@@ -128,6 +134,7 @@ const beefStewRow: ProductLedgerRowData = {
       sold: 18,
       transferredOut: 0,
       nonSales: 0,
+      corrected: 0,
       salesValueMinor: 324000,
       closing: 9,
     },
@@ -165,6 +172,36 @@ export const RowExpanded: Story = {
   args: {
     state: { status: "ready", rows: [chipsRow, sodaRow], categories, locations },
     initialExpandedRowKey: `${chipsRow.productId}:${chipsRow.locationId}`,
+  },
+};
+
+/**
+ * Editable-ledger T3. A day whose opening the owner corrected upward by 4.
+ * The `corrected` column exists so that adjustment is visible and the row
+ * still reconciles on screen: without it, closing moved for no reason any
+ * visible column explained, which reads as a bug rather than a correction.
+ * Signed (+4) deliberately — a bare "4" next to a delivery of 4 would read
+ * as another delivery, which is exactly what plan §3.1 forbids.
+ */
+export const WithCorrection: Story = {
+  name: "Owner correction — signed adjustment column",
+  args: {
+    state: {
+      status: "ready",
+      rows: [
+        {
+          ...beefStewRow,
+          corrected: 4,
+          closingQty: beefStewRow.closingQty + 4,
+          days: beefStewRow.days.map((d, i) =>
+            i === 0 ? { ...d, corrected: 4, closing: d.closing + 4 } : { ...d, opening: d.opening + 4, closing: d.closing + 4 },
+          ),
+        },
+      ],
+      categories,
+      locations,
+    },
+    initialExpandedRowKey: `${beefStewRow.productId}:${beefStewRow.locationId}`,
   },
 };
 

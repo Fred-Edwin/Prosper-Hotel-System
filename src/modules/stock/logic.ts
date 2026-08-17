@@ -14,6 +14,7 @@ import {
   findLocationById,
   findStaffMembersByIds,
   listLocations,
+  recordAmendment,
   type AuthenticatedStaff,
 } from "@/modules/people";
 import {
@@ -577,8 +578,10 @@ export async function recordTransfers(
         if (!product) return { ok: false, reason: "not_found" } as const;
         if (!product.active) return { ok: false, reason: "inactive_item" } as const;
 
+        // `reversed: false` — see docs/reversed-filter-audit.md's
+        // availability-gate note.
         const stock = await tx.stockMovement.aggregate({
-          where: { productId: product.id, locationId: input.fromLocationId },
+          where: { productId: product.id, locationId: input.fromLocationId, reversed: false },
           _sum: { quantity: true },
         });
         if ((stock._sum.quantity?.toNumber() ?? 0) < line.quantity) {
@@ -613,8 +616,10 @@ export async function recordTransfers(
       if (!ingredient) return { ok: false, reason: "not_found" } as const;
       if (!ingredient.active) return { ok: false, reason: "inactive_item" } as const;
 
+      // `reversed: false` — see docs/reversed-filter-audit.md's
+      // availability-gate note.
       const stock = await tx.ingredientMovement.aggregate({
-        where: { ingredientId: ingredient.id, locationId: input.fromLocationId },
+        where: { ingredientId: ingredient.id, locationId: input.fromLocationId, reversed: false },
         _sum: { quantity: true },
       });
       if ((stock._sum.quantity?.toNumber() ?? 0) < line.quantity) {
@@ -948,6 +953,117 @@ export async function reverseTransfer(
           ];
     return { ok: true, movements } as const;
   });
+}
+
+export type ReverseMovementResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "not_found" | "already_reversed" };
+
+/**
+ * Editable-ledger T1 — undo a single wrong movement.
+ *
+ * Movements were the only money-touching model in the schema with no way
+ * to undo one: a delivery recorded at the wrong quantity, or against the
+ * wrong item, could not be taken back. Every other model has an equivalent
+ * (Sale.voided, Expense.reversed, Repayment.reversed,
+ * Transfer.cancelledAt).
+ *
+ * Two rows, never one. The original keeps its quantity and is *marked*
+ * reversed; an offsetting `corrected` row carries the opposite quantity.
+ * Reversal does not rewrite history, it offsets it — which is why the
+ * offsetting row is stamped with the **original's** `occurredAt` rather
+ * than now(). A reversal of a 16 Aug delivery belongs to 16 Aug's figures;
+ * stamping it today would leave 16 Aug still showing the wrong delivery
+ * and dump the correction into an unrelated day, which is precisely the
+ * bug that made the old `effectiveAt` mechanism useless (plan D5).
+ *
+ * **Both rows carry `reversed: true`, and that is deliberate.** Marking
+ * only the original would leave the offsetting −10 visible to every sum
+ * while the +10 it cancels was filtered out — subtracting the reversal a
+ * second time and driving stock negative. The pair is excluded together,
+ * so it nets to nothing by *absence* rather than to zero by arithmetic.
+ * The audit tests assert this directly: after reversing a lone +10
+ * delivery, stock is 0 because neither row is counted, not because they
+ * happen to cancel.
+ *
+ * The rows stay visible to reads that ask "was this reversed" and are
+ * invisible to every read that asks "how much is there" — see
+ * docs/reversed-filter-audit.md.
+ *
+ * Owner-only at the logic layer, per the existing convention
+ * (`correctStockCount`) — routes are not the security boundary.
+ */
+export async function reverseMovement(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { movementType: "product" | "ingredient"; movementId: string },
+): Promise<ReverseMovementResult> {
+  if (requester.staff.role !== "owner") return { ok: false, reason: "forbidden" };
+
+  const existing =
+    input.movementType === "product"
+      ? await db.stockMovement.findUnique({ where: { id: input.movementId } })
+      : await db.ingredientMovement.findUnique({ where: { id: input.movementId } });
+  if (!existing) return { ok: false, reason: "not_found" };
+  if (existing.reversed) return { ok: false, reason: "already_reversed" };
+
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, existing.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const offsettingQuantity = existing.quantity.negated();
+  const reversedAt = new Date();
+
+  // C2: the mark and its offsetting row commit together or not at all. A
+  // half-applied reversal would double-count or vanish stock.
+  await db.$transaction(async (tx) => {
+    if (input.movementType === "product") {
+      const row = existing as PrismaStockMovement;
+      await tx.stockMovement.update({
+        where: { id: row.id },
+        data: { reversed: true, reversedAt, reversedBy: requester.staff.id },
+      });
+      await tx.stockMovement.create({
+        data: {
+          productId: row.productId,
+          locationId: row.locationId,
+          quantity: offsettingQuantity,
+          reason: "corrected",
+          staffMemberId: requester.staff.id,
+          occurredAt: row.occurredAt,
+          isAmendment: true,
+          // Excluded from sums alongside the row it cancels — see the
+          // note above on why marking only the original is wrong.
+          reversed: true,
+          reversedAt,
+          reversedBy: requester.staff.id,
+        },
+      });
+      return;
+    }
+    const row = existing as PrismaIngredientMovement;
+    await tx.ingredientMovement.update({
+      where: { id: row.id },
+      data: { reversed: true, reversedAt, reversedBy: requester.staff.id },
+    });
+    await tx.ingredientMovement.create({
+      data: {
+        ingredientId: row.ingredientId,
+        locationId: row.locationId,
+        quantity: offsettingQuantity,
+        reason: "corrected",
+        staffMemberId: requester.staff.id,
+        occurredAt: row.occurredAt,
+        isAmendment: true,
+        // See the product branch above.
+        reversed: true,
+        reversedAt,
+        reversedBy: requester.staff.id,
+      },
+    });
+  });
+
+  return { ok: true };
 }
 
 export type TransferHistoryLine = {
@@ -2280,4 +2396,385 @@ export async function getStockCountsForActivity(
   }
   const counts = await listStockCountsInPeriod(db, periodStart, periodEnd);
   return { ok: true, counts };
+}
+
+// ---------------------------------------------------------------------------
+// Editable-ledger T3 — the three write functions.
+//
+// Every editable ledger cell routes to exactly one of these (plan C1), so
+// a new editable figure declares its kind and inherits the semantics
+// rather than growing a fifteenth bespoke edit handler. That is the
+// failure mode BUG-10 came from: two code paths for one figure.
+//
+// All three are owner-gated *here*, in logic.ts, not at the route — the
+// existing convention (correctStockCount). All three write their trail row
+// inside the same transaction as the data change (C2): an untrailed edit
+// is worse than no edit.
+//
+// ## The two boundary instants, and why they are what they are
+//
+// A ledger day D is the half-open interval `(D 00:00, D+1 00:00]`
+// (reporting's `daysInPeriod`, plus every period query's
+// `occurredAt: { gt: periodStart, lte: periodEnd }`), while *opening* at D
+// is `occurredAt <= D 00:00` (the `...AsOf` reads, which use `lte`). The
+// two conventions disagree about which side of midnight a row falls on, so
+// a Kind B correction has exactly one correct instant:
+//
+//   opening on D  -> D 00:00:00.000     (inside opening's lte, outside the
+//                                        day's own gt, so it shifts the
+//                                        position without appearing as one
+//                                        of D's movements)
+//   closing on D  -> D+1 00:00:00.000   (the lte end of D, so it is inside D)
+//
+// A millisecond either way breaks one of the two. The property-based
+// reconciliation test in amend-ledger.integration.test.ts is what holds
+// this honest.
+// ---------------------------------------------------------------------------
+
+/** Ledger reasons whose movement quantity is stored negative (stock leaving). */
+const OUT_REASONS: readonly StockMovementReason[] = [
+  "sold",
+  "wasted",
+  "consumed",
+  "given_away",
+  "issued",
+];
+
+function isOutReason(reason: StockMovementReason): boolean {
+  return OUT_REASONS.includes(reason);
+}
+
+/** Midnight UTC at the start of the day containing `date`. */
+function dayStart(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+function nextDayStart(date: Date): Date {
+  const d = dayStart(date);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d;
+}
+
+export type AmendResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "not_found" | "field_not_editable" | "invalid_value" };
+
+type AmendItemType = "product" | "ingredient";
+
+async function itemNameFor(
+  db: PrismaClient,
+  itemType: AmendItemType,
+  itemId: string,
+): Promise<string | null> {
+  if (itemType === "product") {
+    const [product] = await findProductsByIds(db, [itemId]);
+    return product?.name ?? null;
+  }
+  const [ingredient] = await findIngredientsByIds(db, [itemId]);
+  return ingredient?.name ?? null;
+}
+
+/**
+ * Kind A — "the day's total for this reason should be N".
+ *
+ * She edits the day's total; the app makes the total equal what she typed.
+ * She is never asked which underlying row was wrong (plan §3.1), so this
+ * takes item + location + date + reason + new total, never a movement id.
+ * Row selection lives here rather than in the UI so it is one tested
+ * decision instead of something each ledger tab re-derives.
+ *
+ *   exactly one row  -> edit it in place (the common case; one delivery is
+ *                       what happened, so the list must keep showing one)
+ *   several rows     -> the most recent absorbs the difference,
+ *                       deterministically, never a prompt
+ *   zero rows        -> write one new movement, flagged isAmendment
+ *
+ * The accepted cost of the several-rows case is that one row now carries a
+ * quantity that wasn't what that particular delivery brought. That is
+ * deliberate: the day total is correct, the trail is truthful about what
+ * she changed, and the alternative was a prompt she explicitly rejected.
+ * Nothing reads a single `received` row as authoritative about one
+ * delivery — receipts are grouped by receiptId and read as a group.
+ */
+export async function amendDayTotal(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    itemType: AmendItemType;
+    itemId: string;
+    locationId: string;
+    date: Date;
+    reason: StockMovementReason;
+    newTotal: number;
+  },
+): Promise<AmendResult> {
+  if (requester.staff.role !== "owner") return { ok: false, reason: "forbidden" };
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (!Number.isFinite(input.newTotal) || input.newTotal < 0) {
+    return { ok: false, reason: "invalid_value" };
+  }
+
+  const start = dayStart(input.date);
+  const end = nextDayStart(input.date);
+  const out = isOutReason(input.reason);
+
+  const where =
+    input.itemType === "product"
+      ? { productId: input.itemId, locationId: input.locationId, reason: input.reason,
+          occurredAt: { gt: start, lte: end }, reversed: false }
+      : { ingredientId: input.itemId, locationId: input.locationId, reason: input.reason,
+          occurredAt: { gt: start, lte: end }, reversed: false };
+
+  const existing =
+    input.itemType === "product"
+      ? await db.stockMovement.findMany({ where, orderBy: { occurredAt: "desc" } })
+      : await db.ingredientMovement.findMany({ where, orderBy: { occurredAt: "desc" } });
+
+  // The ledger states out-reasons as positive "out" figures while the rows
+  // are stored negative, so compare in the ledger's terms and convert once
+  // at the write.
+  const currentSigned = existing.reduce((sum, m) => sum + m.quantity.toNumber(), 0);
+  const currentTotal = out ? -currentSigned : currentSigned;
+  if (currentTotal === input.newTotal) return { ok: true };
+
+  const itemName = await itemNameFor(db, input.itemType, input.itemId);
+  const location = await findLocationById(db, input.locationId);
+  const ledgerContext = `${input.reason} · ${itemName ?? "item"} · ${location?.code ?? "location"}`;
+
+  const delta = input.newTotal - currentTotal;
+  const target = existing[0];
+
+  await db.$transaction(async (tx) => {
+    if (target) {
+      // Edit in place. With several rows the most recent absorbs the whole
+      // difference; with one row this simply sets it.
+      const newSigned = target.quantity.toNumber() + (out ? -delta : delta);
+      if (input.itemType === "product") {
+        await tx.stockMovement.update({ where: { id: target.id }, data: { quantity: newSigned } });
+      } else {
+        await tx.ingredientMovement.update({
+          where: { id: target.id },
+          data: { quantity: newSigned },
+        });
+      }
+    } else {
+      // Nothing to edit, so a row is added — and flagged, so the UI labels
+      // it a correction rather than dressing it as an ordinary delivery.
+      const quantity = out ? -input.newTotal : input.newTotal;
+      // Mid-day, so it sits inside the day's (start, end] window on any
+      // reading. The day is the fact she stated; the time within it is not.
+      const occurredAt = new Date(start.getTime() + 12 * 60 * 60 * 1000);
+      if (input.itemType === "product") {
+        await tx.stockMovement.create({
+          data: {
+            productId: input.itemId,
+            locationId: input.locationId,
+            quantity,
+            reason: input.reason,
+            staffMemberId: requester.staff.id,
+            occurredAt,
+            isAmendment: true,
+          },
+        });
+      } else {
+        await tx.ingredientMovement.create({
+          data: {
+            ingredientId: input.itemId,
+            locationId: input.locationId,
+            quantity,
+            reason: input.reason,
+            staffMemberId: requester.staff.id,
+            occurredAt,
+            isAmendment: true,
+          },
+        });
+      }
+    }
+
+    // The trail is day-level, because the day's total is the fact she
+    // stated. "movement abc123.quantity changed" would be a true statement
+    // about a row and a useless one about her business.
+    await recordAmendment(tx, {
+      recordType: input.itemType === "product" ? "StockMovement" : "IngredientMovement",
+      recordId: target?.id ?? input.itemId,
+      field: input.reason,
+      previousValue: String(currentTotal),
+      newValue: String(input.newTotal),
+      ledgerContext,
+      effectiveDate: start,
+      locationId: input.locationId,
+      staffMemberId: requester.staff.id,
+    });
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Kind B — "opening/closing on this date should be N".
+ *
+ * Neither figure is stored: opening is the sum of everything before the
+ * date, closing is opening plus the day's movements. There is no row to
+ * edit, so this is the one case where a row is *added* — and it is
+ * labelled `corrected`, never dressed as a delivery or a production.
+ *
+ * That labelling is what makes the row truthful rather than a fiction: the
+ * correction is itself a real, datable fact about the owner's knowledge of
+ * the shelf. The UI requirement in T5/T6 to render it as a correction is
+ * part of this design, not a nicety.
+ */
+export async function amendDerivedPosition(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    itemType: AmendItemType;
+    itemId: string;
+    locationId: string;
+    date: Date;
+    position: "opening" | "closing";
+    newValue: number;
+  },
+): Promise<AmendResult> {
+  if (requester.staff.role !== "owner") return { ok: false, reason: "forbidden" };
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, input.locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  if (!Number.isFinite(input.newValue)) return { ok: false, reason: "invalid_value" };
+
+  // See the header note: opening lands on D 00:00:00.000, closing on
+  // D+1 00:00:00.000. Both are the `lte` boundary of the window whose
+  // position they set.
+  const asOf = input.position === "opening" ? dayStart(input.date) : nextDayStart(input.date);
+
+  const where =
+    input.itemType === "product"
+      ? { productId: input.itemId, locationId: input.locationId, occurredAt: { lte: asOf }, reversed: false }
+      : { ingredientId: input.itemId, locationId: input.locationId, occurredAt: { lte: asOf }, reversed: false };
+
+  const aggregate =
+    input.itemType === "product"
+      ? await db.stockMovement.aggregate({ where, _sum: { quantity: true } })
+      : await db.ingredientMovement.aggregate({ where, _sum: { quantity: true } });
+
+  const current = aggregate._sum.quantity?.toNumber() ?? 0;
+  const delta = input.newValue - current;
+  if (delta === 0) return { ok: true };
+
+  const itemName = await itemNameFor(db, input.itemType, input.itemId);
+  const location = await findLocationById(db, input.locationId);
+  const ledgerContext = `${input.position} · ${itemName ?? "item"} · ${location?.code ?? "location"}`;
+
+  await db.$transaction(async (tx) => {
+    const data = {
+      locationId: input.locationId,
+      quantity: delta,
+      reason: "corrected" as StockMovementReason,
+      staffMemberId: requester.staff.id,
+      occurredAt: asOf,
+      isAmendment: true,
+    };
+    if (input.itemType === "product") {
+      await tx.stockMovement.create({ data: { ...data, productId: input.itemId } });
+    } else {
+      await tx.ingredientMovement.create({ data: { ...data, ingredientId: input.itemId } });
+    }
+
+    await recordAmendment(tx, {
+      recordType: input.itemType === "product" ? "StockMovement" : "IngredientMovement",
+      recordId: input.itemId,
+      field: input.position,
+      previousValue: String(current),
+      newValue: String(input.newValue),
+      ledgerContext,
+      effectiveDate: dayStart(input.date),
+      locationId: input.locationId,
+      staffMemberId: requester.staff.id,
+    });
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Kind C — a scalar on a single record.
+ *
+ * Prices, costs, expense amounts, handover actuals, days worked. These are
+ * genuinely single stored values, so the column is edited in place; an
+ * offsetting row would be a fiction (a "balancing +200 gas payment"
+ * invents a purchase that never happened).
+ *
+ * The allow-list is the security boundary. Without it a ledger cell id
+ * becomes an arbitrary column write, which is a much larger hole than the
+ * feature needs.
+ */
+const EDITABLE_SCALARS: Record<string, readonly string[]> = {
+  Product: ["priceMinor", "lastKnownCostMinor", "lowStockLevel"],
+  Ingredient: ["lastKnownCostMinor", "lowStockLevel"],
+};
+
+export async function amendScalar(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    recordType: keyof typeof EDITABLE_SCALARS | string;
+    recordId: string;
+    field: string;
+    newValue: number;
+    locationId?: string;
+    ledgerContext?: string;
+  },
+): Promise<AmendResult> {
+  if (requester.staff.role !== "owner") return { ok: false, reason: "forbidden" };
+
+  const allowed = EDITABLE_SCALARS[input.recordType];
+  if (!allowed || !allowed.includes(input.field)) {
+    return { ok: false, reason: "field_not_editable" };
+  }
+  if (!Number.isFinite(input.newValue)) return { ok: false, reason: "invalid_value" };
+
+  const current =
+    input.recordType === "Product"
+      ? await db.product.findUnique({ where: { id: input.recordId } })
+      : await db.ingredient.findUnique({ where: { id: input.recordId } });
+  if (!current) return { ok: false, reason: "not_found" };
+
+  const previous = (current as Record<string, unknown>)[input.field];
+  const previousNumber =
+    previous && typeof previous === "object" && "toNumber" in previous
+      ? (previous as { toNumber: () => number }).toNumber()
+      : previous === null || previous === undefined
+        ? null
+        : Number(previous);
+  if (previousNumber === input.newValue) return { ok: true };
+
+  await db.$transaction(async (tx) => {
+    if (input.recordType === "Product") {
+      await tx.product.update({
+        where: { id: input.recordId },
+        data: { [input.field]: input.newValue },
+      });
+    } else {
+      await tx.ingredient.update({
+        where: { id: input.recordId },
+        data: { [input.field]: input.newValue },
+      });
+    }
+
+    await recordAmendment(tx, {
+      recordType: input.recordType,
+      recordId: input.recordId,
+      field: input.field,
+      previousValue: previousNumber === null ? "" : String(previousNumber),
+      newValue: String(input.newValue),
+      ledgerContext: input.ledgerContext ?? null,
+      locationId: input.locationId ?? null,
+      staffMemberId: requester.staff.id,
+    });
+  });
+
+  return { ok: true };
 }

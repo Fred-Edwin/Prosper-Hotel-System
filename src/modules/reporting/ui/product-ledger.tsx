@@ -36,6 +36,10 @@ export type ProductLedgerDayData = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  // Editable-ledger T3: signed owner corrections to opening/closing. Shown
+  // as its own column so the row still reconciles on screen — a correction
+  // that moved closing without appearing anywhere would read as a bug.
+  corrected: number;
   salesValueMinor: number;
   closing: number;
 };
@@ -53,6 +57,7 @@ export type ProductLedgerRowData = {
   sold: number;
   transferredOut: number;
   nonSales: number;
+  corrected: number;
   salesValueMinor: number;
   unitCostMinor: number | null;
   isEstimated: boolean;
@@ -168,18 +173,26 @@ function Num({
   muted,
   tone,
   strong,
+  signed,
 }: {
   value: number | null;
   asMoney?: boolean;
   muted?: boolean;
   tone?: "danger";
   strong?: boolean;
+  /** Show an explicit + on positive figures. Only the corrections column
+   * uses this: a correction's direction is the whole point of it, and an
+   * unsigned "4" next to a delivery of 4 reads as another delivery. */
+  signed?: boolean;
 }) {
   if (value === null) return <span className="text-muted-foreground">—</span>;
   if (value === 0 && muted) return <span className="text-muted-foreground">—</span>;
   const cls = tone === "danger" ? "text-danger" : "";
+  const rendered = asMoney ? money(value) : value;
   return (
-    <span className={`tabular ${cls} ${strong ? "font-medium" : ""}`}>{asMoney ? money(value) : value}</span>
+    <span className={`tabular ${cls} ${strong ? "font-medium" : ""}`}>
+      {signed && value > 0 ? `+${rendered}` : rendered}
+    </span>
   );
 }
 
@@ -340,13 +353,13 @@ export function ProductLedgerView({
         // No overflow-x-auto wrapper — see record-table.tsx's comment on
         // why that would break the thead's sticky positioning.
         <>
-          <table className="w-full min-w-[1180px] text-[13px]">
+          <table className="w-full min-w-[1260px] text-[13px]">
             <thead className="sticky top-0 z-10">
               <tr className="border-b bg-muted text-[11px] text-muted-foreground">
                 <th className={`${FROZEN_HEAD} px-3 py-1.5 text-left font-medium`}>Item</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={2}>Opening</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={3}>In</th>
-                <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={3}>Out</th>
+                <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={4}>Out</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={5}>Money</th>
                 <th className="border-l px-2 py-1.5 text-center font-medium" colSpan={2}>Closing</th>
               </tr>
@@ -360,6 +373,7 @@ export function ProductLedgerView({
                 <Th border>Sold</Th>
                 <Th>Transf. out</Th>
                 <Th>Non-sales</Th>
+                <Th>Corrected</Th>
                 <Th border>Sales value</Th>
                 <Th>Unit cost</Th>
                 <Th>Price</Th>
@@ -402,6 +416,7 @@ export function ProductLedgerView({
                       <Td border><Num value={r.sold} strong /></Td>
                       <Td><Num value={r.transferredOut} muted /></Td>
                       <Td><Num value={r.nonSales} muted tone="danger" /></Td>
+                      <Td><Num value={r.corrected} muted signed /></Td>
                       <Td border><Num value={r.salesValueMinor} asMoney strong /></Td>
                       <Td>
                         <span className="tabular">
@@ -450,6 +465,7 @@ export function ProductLedgerView({
                             <Td border><Num value={d.sold} /></Td>
                             <Td><Num value={d.transferredOut} muted /></Td>
                             <Td><Num value={d.nonSales} muted tone="danger" /></Td>
+                            <Td><Num value={d.corrected} muted signed /></Td>
                             <Td border><Num value={d.salesValueMinor} asMoney muted /></Td>
                             <Td /><Td /><Td /><Td />
                             <Td border><Num value={d.closing} /></Td>
