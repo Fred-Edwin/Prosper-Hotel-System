@@ -52,7 +52,7 @@ present on site.
 The following are restricted to the owner:
 
 - Setting and amending selling prices
-- Recording payments out, including stock purchases and running costs
+- Recording payments out, including stock purchases and operating costs
 - Correcting a stock count
 - Amending any record after a day has been closed
 - Adding and deactivating staff, and setting daily rates
@@ -264,12 +264,14 @@ running cash balance. The calculation is set out in section 10.
 Each payment is recorded under one of four headings, as they are treated differently:
 
 - **Stock** — goods and ingredients purchased from suppliers.
-- **Running costs** — gas, charcoal, electricity, rent and wages.
+- **Operating costs** — gas, charcoal, electricity, rent and wages.
 - **Equipment and furniture** — items the business retains after purchase.
 - **Owner's drawings** — money taken by the owner for personal use.
 
-All four reduce the cash the owner should be holding. Only stock and running costs reduce
-reported profit; the reasons are given in section 10.
+All four reduce the cash the owner should be holding. They reach reported profit differently:
+operating costs reduce it in the period they are paid; stock reduces it when the stock sells,
+through cost of goods sold, not when it is bought; equipment and owner's drawings never reduce
+it. The reasons are given in section 10.
 
 Owner's drawings are additionally recorded as an amount owed to the business, and the
 outstanding balance is available at any time.
@@ -279,7 +281,7 @@ outstanding balance is available at any time.
 ## 7. Reporting
 
 **Profitability.** By day, week or month, per location and for the business as a whole:
-revenue, less the cost of goods sold, less running costs. Available daily and exact at both
+revenue, less the cost of goods sold, less operating costs. Available daily and exact at both
 locations, as described in section 10.
 
 **Daily handover.** Amounts handed over against amounts expected, by person and by day, with
@@ -425,14 +427,14 @@ Sales revenue             KSh 24,000
 Cost of goods sold      − KSh 14,880
 Gross profit              KSh  9,120
 
-Running costs           − KSh  2,300
+Operating costs         − KSh  2,300
 Net profit                KSh  6,820
 ```
 
 **Gross profit** shows whether pricing is right. **Net profit** shows whether the business is
 earning.
 
-Running costs are gas, charcoal, electricity, rent and wages.
+Operating costs are gas, charcoal, electricity, rent and wages.
 
 **Three things are not deducted here:**
 

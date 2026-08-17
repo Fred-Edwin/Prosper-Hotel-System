@@ -25,7 +25,7 @@ export const helpContent: Record<string, HelpEntry> = {
         summary: "Today's figures, at a glance.",
         points: [
           "Switch between Day / Week / Month.",
-          "Revenue minus Cost of goods sold minus Running costs equals Net profit. Tap any figure to see how it's built up.",
+          "Revenue minus Cost of goods sold minus Operating costs equals Net profit. Tap any figure to see how it's built up.",
           "Marked “partly provisional”: the canteen doesn't record every sale individually, so its cost of goods is partly an estimate based on your last stock count there. It corrects itself once you count again.",
           "Below that, the same figures broken down by location — Restaurant and Canteen side by side.",
         ],
@@ -136,14 +136,15 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   "money-out": {
-    title: "Money out",
+    title: "Expenses",
     sections: [
       {
-        heading: "Money out",
+        heading: "Expenses",
         summary: "Every payment you make out of the business — you're the only one who records this, which is what makes your cash balance trustworthy.",
         points: [
-          "Record an expense: choose a category — stock, running cost (electricity, gas, rent), an asset (equipment/furniture), or a personal drawing.",
-          "Asset purchases and personal drawings don't count against profit — they still cost cash, just not business expense.",
+          "Record an expense: choose a category — stock, operating cost (electricity, gas, rent), an asset (equipment/furniture), or a personal drawing.",
+          "Operating costs come off profit when you pay them. Stock comes off profit when it sells, not when you buy it.",
+          "Asset purchases and personal drawings never count against profit — they still cost cash, just not business expense.",
           "A drawing is tracked as a debt you owe back to the business.",
           "Made a mistake? Reverse the entry — it stays on record, just marked cancelled and excluded from your totals.",
         ],

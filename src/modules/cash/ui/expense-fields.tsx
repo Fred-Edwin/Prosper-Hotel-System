@@ -28,13 +28,13 @@ export type ReceiptOption = {
 
 const categoryLabel: Record<ExpenseView["category"], string> = {
   stock: "Stock",
-  running: "Running cost",
+  running: "Operating cost",
   asset: "Asset",
   drawing: "Drawing",
 };
 
 const categoryHint: Record<ExpenseView["category"], string> = {
-  stock: "Goods or ingredients bought from a supplier. Reduces profit.",
+  stock: "Goods or ingredients bought from a supplier. Reduces profit when it sells, not now.",
   running: "Gas, charcoal, electricity, rent. Reduces profit in this period.",
   asset: "Furniture, utensils, equipment. Reduces cash, not profit — the business still owns it.",
   drawing: "Money you take for yourself. Not a business expense — recorded as a debt owed back.",

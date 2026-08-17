@@ -69,10 +69,10 @@ const base: Omit<Destination, "count" | "tone">[] = [
   },
   {
     key: "money-out",
-    label: "Money out",
+    label: "Expenses",
     href: "/money-out",
     icon: Banknote,
-    hint: "Purchases, running costs, assets, drawings",
+    hint: "Purchases, operating costs, assets, drawings",
   },
   {
     key: "people",

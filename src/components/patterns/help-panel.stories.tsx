@@ -11,9 +11,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Desktop width — opens as a slide-over from the right, single-topic content (Money out has one section). */
+/** Desktop width — opens as a slide-over from the right, single-topic content (Expenses has one section). */
 export const SlideOverSingleSection: Story = {
-  name: "Slide-over — single section (Money out)",
+  name: "Slide-over — single section (Expenses)",
   args: { topic: "money-out" },
   parameters: { viewport: { defaultViewport: "desktop" } },
   render: (args) => <HelpPanel {...args} />,

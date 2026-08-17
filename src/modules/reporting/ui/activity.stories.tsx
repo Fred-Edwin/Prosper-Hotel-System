@@ -30,7 +30,7 @@ const rows: ActivityRowData[] = [
     kind: "expense",
     who: "Janiffer",
     whoId: "staff-janiffer",
-    what: "Money out — stock — Charcoal, 2 sacks",
+    what: "Expense — stock — Charcoal, 2 sacks",
     locationName: "Restaurant",
     amountMinor: 1600,
     reason: null,

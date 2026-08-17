@@ -1274,7 +1274,7 @@ export type CashLedgerResult =
 
 const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   stock: "Stock",
-  running: "Running cost",
+  running: "Operating cost",
   asset: "Asset",
   drawing: "Drawing",
 };
@@ -1769,7 +1769,7 @@ function cashToActivityRows(
       kind: "expense",
       who: nameFor(e.staffMemberId),
       whoId: e.staffMemberId,
-      what: e.note ? `Money out — ${e.category} — ${e.note}` : `Money out — ${e.category}`,
+      what: e.note ? `Expense — ${e.category} — ${e.note}` : `Expense — ${e.category}`,
       locationName: locationNameById.get(e.locationId) ?? null,
       amountMinor: e.amountMinor,
       reason: null,

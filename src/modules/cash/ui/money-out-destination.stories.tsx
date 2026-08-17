@@ -9,7 +9,7 @@ import type {
 } from "./drawing-repayment-card";
 
 /**
- * Money out — sheet record form chosen at the ticket 16 checkpoint, matching
+ * Expenses — sheet record form chosen at the ticket 16 checkpoint, matching
  * how Catalogue's product/ingredient/recipe forms already open.
  *
  * Content only, no AdminShell — same split Catalogue uses in its own

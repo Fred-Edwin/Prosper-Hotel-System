@@ -96,7 +96,7 @@ export const WithoutToolbar: Story = {
     subtitle: "Today's figures, and what needs you",
     actions: (
       <Button size="sm" className="h-8">
-        Record money out
+        Record an expense
       </Button>
     ),
     children: body,

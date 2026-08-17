@@ -41,12 +41,8 @@ export const ThreeUp: Story = {
     columns: 3,
     items: [
       { label: "Paid out this period", value: money(48600), sub: "12 entries" },
-      { label: "Reduced profit", value: money(31200), sub: "stock and running costs" },
-      {
-        label: "Reduced cash only",
-        value: money(17400),
-        sub: "equipment and drawings — the money left, the profit did not",
-      },
+      { label: "Assets", value: money(31200), sub: "equipment the business owns" },
+      { label: "Drawings", value: money(17400), sub: "owed back to the business" },
     ],
   },
 };

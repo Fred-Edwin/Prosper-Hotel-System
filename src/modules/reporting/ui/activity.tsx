@@ -72,7 +72,7 @@ const kindLabel: Record<ActivityKind, string> = {
   movement: "Stock",
   handover: "Handover",
   takings: "Takings",
-  expense: "Money out",
+  expense: "Expense",
   repayment: "Repayment",
   days_worked: "People",
 };

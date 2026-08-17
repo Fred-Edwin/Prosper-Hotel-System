@@ -295,15 +295,35 @@ Transfers cancel between the two, so this total is unaffected by how they are va
 
 ```
 sales revenue  −  cost of goods sold  =  gross profit
-gross profit   −  running costs       =  net profit
+gross profit   −  operating costs     =  net profit
 ```
 
 **Sales revenue** is recorded sales at both locations — see `docs/proposal.md` §4.
 
-**Running costs** are gas, charcoal, electricity, rent and wages.
+**Operating costs** are gas, charcoal, electricity, rent and wages.
 
 **Gross profit** answers whether pricing is right. **Net profit** answers whether the business
 is earning.
+
+### When each kind of payment reaches profit
+
+The four expense categories (`docs/proposal.md` §8) do not reach profit at the same moment, and
+two of them never do. This is the single most misread part of these formulas:
+
+| Payment | Reaches profit | How |
+|---|---|---|
+| **Operating cost** | When paid | Subtracted directly, in the period it falls |
+| **Stock** | When it *sells* | Through cost of goods sold (§6) — never when bought |
+| **Equipment** | Never | Cash converted into something still owned |
+| **Owner's drawing** | Never | Not a business cost; a debt back to the business |
+
+**Stock is the one that catches people out.** Buying KSh 61,500 of stock does not reduce profit
+by KSh 61,500 that day. It reduces cash immediately (§9), and reaches profit only as the stock
+sells — measured by movement (opening + bought − closing, §6), not by what the supplier was
+paid. Stock bought and still on the shelf has not touched profit at all.
+
+This is why §7 and §9 give different answers from the same payments, and why a stock purchase
+appears in both without being counted twice.
 
 **Example, one day.**
 
@@ -312,12 +332,17 @@ Sales revenue                    KSh 24,000
 Cost of goods sold             − KSh  9,600   (restaurant)
                                − KSh  3,630   (canteen)
 Gross profit                    KSh 10,770
-Running costs                  − KSh  2,300
+Operating costs                − KSh  2,300
 Net profit                       KSh  8,470
 ```
 
+Note what is absent: no line for stock bought that day. Stock enters this calculation only
+through cost of goods sold, on the line above.
+
 ### Not subtracted here
 
+- **Stock bought but not yet sold** — reaches profit when it sells, through cost of goods sold.
+  See the table above and §6.
 - **Equipment and furniture** — cash converted into something still owned.
 - **Owner's drawings** — not a business cost; recorded as a debt to the business.
 - **Stock not sold** (wastage, staff meals, complimentary, corrections) — already inside cost
@@ -383,7 +408,7 @@ recipe, the §4 estimate is used and labelled.
 ```
 handovers received
 − stock bought
-− running costs
+− operating costs
 − equipment and furniture
 − owner's drawings
 = what should be in hand
@@ -403,6 +428,10 @@ Expected cash                    KSh  23,200
 **Everything paid out reduces cash**, including equipment and drawings — this question is about
 where the money physically is, not about profit. That is why a business can be profitable and
 still have cash missing.
+
+All four categories appear here, unlike §7 where only two of them reach profit and stock does
+so on a delay. A stock purchase reducing cash here and profit later (as it sells) is one
+payment measured by two different questions, not double-counting — see §7's table.
 
 M-Pesa is tracked the same way as its own separate balance.
 

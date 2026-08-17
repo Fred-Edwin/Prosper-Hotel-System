@@ -281,7 +281,7 @@ function DashboardProfitViewForPeriod({
     },
     {
       key: "running",
-      label: "Running costs",
+      label: "Operating costs",
       value: data.runningCostsMinor,
       width: pct(data.runningCostsMinor),
       colour: "var(--color-warning)",
@@ -376,7 +376,7 @@ function DashboardProfitViewForPeriod({
           )}
           {open === "running" && (
             <Detail title="What the business spent to keep running">
-              <Term label="Running costs" value={data.runningCostsMinor} rule strong />
+              <Term label="Operating costs" value={data.runningCostsMinor} rule strong />
               <p className="mt-3 text-xs text-muted-foreground">
                 Equipment and your drawings are not here — they reduce cash but not profit.
               </p>
@@ -387,7 +387,7 @@ function DashboardProfitViewForPeriod({
               <Term label="Revenue" value={data.revenue.total} />
               <Term label="Cost of goods sold" value={data.costOfGoods.total} sign="−" muted />
               <Term label="Gross profit" value={data.grossProfitMinor} rule strong />
-              <Term label="Running costs" value={data.runningCostsMinor} sign="−" muted />
+              <Term label="Operating costs" value={data.runningCostsMinor} sign="−" muted />
               <Term label="Net profit" value={data.netProfitMinor} rule strong />
             </Detail>
           )}
@@ -421,7 +421,7 @@ function ByLocation({ byLocation }: { byLocation: DashboardProfitData["byLocatio
                 <LocationCell label="Revenue" value={l.revenueMinor} />
                 <LocationCell label="Cost of goods" value={l.costOfGoodsMinor} />
                 <LocationCell label="Gross profit" value={l.grossProfitMinor} />
-                <LocationCell label="Running costs" value={l.runningCostsMinor} />
+                <LocationCell label="Operating costs" value={l.runningCostsMinor} />
                 <LocationCell
                   label="Net profit"
                   value={l.netProfitMinor}

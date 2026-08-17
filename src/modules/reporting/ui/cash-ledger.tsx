@@ -62,7 +62,7 @@ const categoryLabel: Record<CashTransactionCategory, string> = {
   handover: "Handover",
   repayment: "Repayment",
   stock: "Stock",
-  running: "Running cost",
+  running: "Operating cost",
   asset: "Asset",
   drawing: "Drawing",
 };

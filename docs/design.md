@@ -189,13 +189,13 @@ row types that matter instead.
 the breakdown elsewhere on the page.
 
 **A sequence of related figures is one instrument, not several widgets.** Where
-figures form an arithmetic — revenue − cost of goods − running costs = net
+figures form an arithmetic — revenue − cost of goods − operating costs = net
 profit — they are drawn as a continuous band: hairline dividers rather than
 borders, proportion bars flush to the cell edges, selection lifting to a raised
 surface with a rule in the term's own colour, and explicit operators between
 cells.
 
-**Cost of goods sold and running costs carry weight.** They are the two terms
+**Cost of goods sold and operating costs carry weight.** They are the two terms
 Lucy can act on — revenue is the market's answer, but what she pays for stock and
 burns on gas are hers to change.
 

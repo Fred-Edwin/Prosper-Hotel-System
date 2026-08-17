@@ -184,7 +184,7 @@ both locations).
 ### Stage 6 — Cash: money paid out, running balance, drawings
 
 **Delivers:** proposal.md §6 in full — the four expense categories
-(stock, running costs, equipment, drawings), the running cash balance,
+(stock, operating costs, equipment, drawings), the running cash balance,
 drawings as a debt.
 
 **Why after handover, not before.** §6's running balance is built from

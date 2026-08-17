@@ -33,17 +33,9 @@ export type ExpenseView = {
 
 export const categoryLabel: Record<ExpenseView["category"], string> = {
   stock: "Stock",
-  running: "Running cost",
+  running: "Operating cost",
   asset: "Asset",
   drawing: "Drawing",
-};
-
-/** Which categories reduce profit — CONTEXT.md's Expense categories. */
-const reducesProfit: Record<ExpenseView["category"], boolean> = {
-  stock: true,
-  running: true,
-  asset: false,
-  drawing: false,
 };
 
 function date(iso: string) {
@@ -74,10 +66,10 @@ export function MoneyOutList({
   const totals = active.reduce(
     (a, e) => ({
       all: a.all + e.amountMinor,
-      profit: a.profit + (reducesProfit[e.category] ? e.amountMinor : 0),
-      cashOnly: a.cashOnly + (reducesProfit[e.category] ? 0 : e.amountMinor),
+      asset: a.asset + (e.category === "asset" ? e.amountMinor : 0),
+      drawing: a.drawing + (e.category === "drawing" ? e.amountMinor : 0),
     }),
-    { all: 0, profit: 0, cashOnly: 0 },
+    { all: 0, asset: 0, drawing: 0 },
   );
 
   const columns: Column<ExpenseView>[] = [
@@ -112,16 +104,6 @@ export function MoneyOutList({
       cell: (e) => <Num value={e.amountMinor} money strong muted={e.reversed} />,
     },
     {
-      key: "effect",
-      header: "Reduces",
-      align: "left",
-      cell: (e) => (
-        <span className="text-[11px] text-muted-foreground">
-          {reducesProfit[e.category] ? "profit and cash" : "cash only"}
-        </span>
-      ),
-    },
-    {
       key: "status",
       header: "Status",
       align: "left",
@@ -153,12 +135,8 @@ export function MoneyOutList({
           columns={3}
           items={[
             { label: "Paid out", value: money(totals.all), sub: `${active.length} entries` },
-            { label: "Reduced profit", value: money(totals.profit), sub: "stock and running costs" },
-            {
-              label: "Reduced cash only",
-              value: money(totals.cashOnly),
-              sub: "assets and drawings — the money left, the profit did not",
-            },
+            { label: "Assets", value: money(totals.asset), sub: "equipment the business owns" },
+            { label: "Drawings", value: money(totals.drawing), sub: "owed back to the business" },
           ]}
         />
       </div>
@@ -167,14 +145,14 @@ export function MoneyOutList({
         rows={rows}
         columns={columns}
         rowKey={(e) => e.id}
-        minWidth={880}
-        footnote="Assets and drawings reduce cash but not profit — you still own the equipment, and a drawing is owed back to the business. Only stock and running costs reduce what the business made."
+        minWidth={760}
+        footnote="Operating costs reduce profit when you pay them. Stock reduces profit when it sells, not when you buy it. Assets and drawings never reduce profit — you still own the equipment, and a drawing is owed back to the business."
         empty={
           expenses.length === 0 ? (
             <EmptyFirstUse
               icon={<BanknoteArrowDown className="size-4" />}
               title="Nothing paid out yet"
-              body="Every stock purchase, running cost, asset and drawing you record will be listed here with what it reduced."
+              body="Every stock purchase, operating cost, asset and drawing you record will be listed here."
             />
           ) : (
             <EmptyFiltered onClear={onClearFilters} noun="payments" />

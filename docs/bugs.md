@@ -984,3 +984,72 @@ Per the QA checklist's step 9 ("today's restaurant handovers... and the
 canteen's combined-figure handover... all show, correctly
 distinguished") — the two-table split satisfies "distinguished" more
 directly than one table with a location column would.
+
+## BUG-19: Money out screen wrongly claimed stock purchases reduce profit
+**Severity:** normal
+**Discovered:** client questioning during review, 2026-08-17 — she asked
+whether stock was being double-counted, which surfaced the false claim
+**Status:** fixed — 2026-08-17
+
+### Description
+The Money out screen (now "Expenses") stated in three places that a
+stock purchase reduces profit at the moment it is paid for. It does
+not. Profit is `revenue − costOfGoods − runningCosts`
+(`reporting/logic.ts:321`), and `runningCosts` sums `category:
+"running"` only (`cash/queries.ts:174-190`). Stock reaches profit
+through cost of goods sold, measured from stock movement (opening +
+bought − closing, `docs/formulas.md` §6) — that is, when the stock
+*sells*, not when it is bought.
+
+The false claim appeared in:
+- the stat bar's "Reduced profit" box, summing stock + running
+  (`money-out-list.tsx:150-165`)
+- the per-row "Reduces" column printing "profit and cash" for every
+  stock row (`money-out-list.tsx:115-123`)
+- the table footnote's closing sentence, and the empty state's "listed
+  here with what it reduced" framing
+
+All three were driven by one `reducesProfit` map marking `stock: true`
+(`money-out-list.tsx:41-47`), which was the root of the error.
+
+### Repro steps
+1. Log in as owner, open Money out.
+2. Record (or view) a stock purchase.
+3. Compare the "Reduced profit" figure against the Dashboard's net
+   profit for the same period.
+
+### Expected vs actual
+Expected: the screen agrees with the Dashboard about what reduces
+profit — operating costs when paid, stock when sold, assets and
+drawings never.
+Actual: the screen counted stock purchases as an immediate reduction in
+profit, contradicting the Dashboard and implying stock was being
+double-counted.
+
+### Impact
+**No stored data was affected, and the Dashboard's profit figure was
+correct throughout.** This was a display error only — the wrong figure
+was computed in the browser for the stat bar, never persisted and never
+fed into any profit calculation. No schema change, no migration, no
+logic change was needed to fix it.
+
+### Fix (2026-08-17)
+Display-only. The `running` enum value in the database is unchanged.
+- `reducesProfit` deleted, along with the per-row "Reduces" column it
+  fed (table 7 → 6 columns, `minWidth` 880 → 760, `LoadingTable
+  columns` 8 → 6).
+- Stat bar's middle/right boxes replaced with per-category totals:
+  Assets ("equipment the business owns") and Drawings ("owed back to
+  the business"). Reversed entries stay excluded, per
+  `docs/formulas.md`'s opening rule.
+- Footnote and empty state rewritten to state the real behaviour.
+- Page renamed "Money out" → "Expenses" (display only — the
+  `/money-out` URL and route folder are unchanged, so saved links keep
+  working).
+- Category renamed "Running cost" → "Operating cost" across all six
+  label maps (the four named in the ticket, plus
+  `reporting/logic.ts`'s `EXPENSE_CATEGORY_LABEL` and
+  `lib/fixtures.ts`'s `cashCategoryLabel`, both found by grep), the
+  Dashboard's own four profit labels, and the spec docs.
+- `proposal.md:271` carried the same false claim in prose and was
+  corrected alongside the screen.

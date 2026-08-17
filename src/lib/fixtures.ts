@@ -857,7 +857,7 @@ export const cashLedger: CashLedgerDay[] = [
 export const cashCategoryLabel: Record<CashCategory, string> = {
   handover: "Handover",
   stock: "Stock",
-  running: "Running cost",
+  running: "Operating cost",
   asset: "Asset",
   drawing: "Drawing",
   repayment: "Repayment",

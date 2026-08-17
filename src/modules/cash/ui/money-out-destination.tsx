@@ -345,13 +345,13 @@ export function MoneyOutContentView({
 
   let content: React.ReactNode;
   if (state.status === "loading") {
-    content = <LoadingTable summary={3} rows={8} columns={8} />;
+    content = <LoadingTable summary={3} rows={8} columns={6} />;
   } else if (state.status === "error") {
-    content = <ErrorState what="money out" onRetry={onRetry} />;
+    content = <ErrorState what="expenses" onRetry={onRetry} />;
   } else if (state.status === "denied") {
     content = (
       <PermissionDenied
-        title="Money out is owner-only"
+        title="Expenses is owner-only"
         body="Only the owner records what the business pays out."
       />
     );
@@ -445,8 +445,8 @@ export function MoneyOutDestinationView({
       destinations={getDestinations()}
       active="money-out"
       staffName={staffName}
-      title="Money out"
-      subtitle="Purchases, running costs, assets, drawings"
+      title="Expenses"
+      subtitle="Purchases, operating costs, assets, drawings"
       actions={<HelpPanel topic="money-out" />}
     >
       <MoneyOutContentView

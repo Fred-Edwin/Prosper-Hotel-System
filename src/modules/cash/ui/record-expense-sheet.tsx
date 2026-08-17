@@ -53,7 +53,7 @@ export function RecordExpenseSheet({
   return (
     <>
       <Button size="sm" className="h-8" onClick={() => setOpen(true)} data-testid="record-expense-open">
-        <Plus className="size-3.5" /> Record money out
+        <Plus className="size-3.5" /> Record an expense
       </Button>
 
       <EditSheet
@@ -62,7 +62,7 @@ export function RecordExpenseSheet({
           setOpen(v);
           if (!v) reset();
         }}
-        title="Record money out"
+        title="Record an expense"
         description="What the business paid, and why."
         saveLabel="Record payment"
         saving={saving}

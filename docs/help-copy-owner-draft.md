@@ -20,7 +20,7 @@ that needs your attention.
 - Switch between **Day / Week / Month**.
 - Four figures, in order: **Revenue** (everything taken in) minus
   **Cost of goods sold** (what it cost you to sell it) minus
-  **Running costs** (electricity, gas, rent — not equipment, not your
+  **Operating costs** (electricity, gas, rent — not equipment, not your
   own drawings) equals **Net profit**.
 - Tap any figure to see how it's built up.
 - Marked **"partly provisional"**: the canteen doesn't record every sale
@@ -118,7 +118,7 @@ figure on the Dashboard — sale by sale, shilling by shilling. Four tabs:
 business — you're the only one who records this, which is what makes
 your cash balance trustworthy.
 
-- **Record an expense**: choose a category — stock, running cost
+- **Record an expense**: choose a category — stock, operating cost
   (electricity, gas, rent), an asset (equipment/furniture), or a
   personal drawing.
 - Asset purchases and personal drawings don't count against profit —
