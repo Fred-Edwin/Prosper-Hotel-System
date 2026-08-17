@@ -23,6 +23,9 @@ touching UI.
   `docs/release.md`
 - Every secret/credential and how to rotate it → `docs/infrastructure.md`
 - Hit something strange? → `docs/gotchas.md`
+- Clearing trading data while keeping catalogue/stock → **read
+  `docs/data-reset-findings.md` first** — stock is derived from movements,
+  so a naive wipe zeroes every item
 - Infra learnings (deploy, backups, rollback, Sentry) → `docs/architecture.md`
   under Environments/Observability
 - Logged bugs / feature requests awaiting triage → `docs/bugs.md` /

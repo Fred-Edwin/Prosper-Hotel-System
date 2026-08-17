@@ -1,3 +1,13 @@
+> **HISTORICAL — August 2026. Do not execute this.** This prompt describes
+> the one-off legacy catalogue import, which is long since done. It is kept
+> only for the reasoning in "Why stock-count correction, not
+> receiving/delivery" below, which still holds.
+>
+> It references `scripts/clear-transactions-keep-catalog.ts`, **which no
+> longer exists** (deleted 2026-08-17). Anything about resetting trading data
+> while keeping stock now lives in `docs/data-reset-findings.md` — read that
+> instead.
+
 I want to start completely fresh with the local database's catalog and stock data. Here's the full context and the plan we already agreed on — please execute it (confirming any remaining open point with me first if you find one).
 
 ## Background
