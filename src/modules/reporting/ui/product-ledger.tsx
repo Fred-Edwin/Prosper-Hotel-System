@@ -27,12 +27,11 @@ import { ErrorState, PermissionDenied, EmptyFiltered, LoadingTable } from "@/com
 import { EditableNum, type EditableNumState } from "./editable-num";
 import {
   summariseAmendment,
-  confirmMessage,
   farBackMonths,
   type ConfirmCase,
   type LedgerRowAccessors,
 } from "./amend-feedback";
-import { AmendToast, type AmendToastState } from "./amend-toast";
+import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
 import { ChevronRight, Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -360,9 +359,7 @@ export function ProductLedgerView({
   // rather than in a toast: she needs to know *which* figure failed.
   const [cellState, setCellState] = useState<Record<string, { state: EditableNumState; message?: string }>>({});
   const [toast, setToast] = useState<AmendToastState | null>(null);
-  const [confirming, setConfirming] = useState<
-    { c: ConfirmCase; proceed: () => void } | null
-  >(null);
+  const [confirming, setConfirming] = useState<AmendConfirmState | null>(null);
   // §3.3's two-button choice, pending her answer. Not a confirmation
   // dialog and not a reason prompt: two buttons naming two different real
   // situations, on this one cell only.
@@ -835,40 +832,7 @@ export function ProductLedgerView({
 
       {/* C7's three escalations. Disclosure, never a permission gate — the
           confirm button always proceeds (D6: warn, never block). */}
-      {confirming && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="amend-confirm-title"
-            className="max-w-md rounded-lg border bg-card p-4 shadow-lg"
-            data-testid="amend-confirm"
-          >
-            <h2 id="amend-confirm-title" className="text-sm font-medium">
-              {confirmMessage(confirming.c).title}
-            </h2>
-            <p className="mt-1.5 text-[13px] text-muted-foreground">
-              {confirmMessage(confirming.c).body}
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setConfirming(null)}
-                className="rounded-md border px-3 py-1.5 text-[13px] focus-visible:ring-2 focus-visible:ring-ring/50"
-                data-testid="amend-confirm-cancel"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirming.proceed}
-                className="rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-                data-testid="amend-confirm-proceed"
-              >
-                {confirmMessage(confirming.c).confirmLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AmendConfirm confirming={confirming} onCancel={() => setConfirming(null)} />
 
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="relative min-w-48 flex-1">
