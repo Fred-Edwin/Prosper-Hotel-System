@@ -184,7 +184,7 @@ describe("getStoreLedger", () => {
     );
   });
 
-  test("shows the running-average cost move when a purchase changes the weighted average within the period", async () => {
+  test("shows the cost move when a purchase changes the unit cost within the period", async () => {
     const flour = await testDb.ingredient.create({
       data: { name: "Maize flour", unitOfMeasure: "kg", lastKnownCostMinor: 79 },
     });
@@ -205,9 +205,11 @@ describe("getStoreLedger", () => {
       },
     });
 
-    // A purchase within the period at a higher unit cost — moves the
-    // ingredient's current running average (lastKnownCostMinor, stamped
-    // at 78 in the fixture above) up from the previous 74.
+    // A purchase within the period at a higher unit cost. The previous
+    // cost is the 74 actually paid on the delivery before the period —
+    // read off that delivery (formulas.md §3, 2026-08-17), not
+    // reconstructed by un-averaging, which used to yield 73.64 and never
+    // matched any price really paid.
     await testDb.ingredientMovement.create({
       data: {
         ingredientId: flour.id,
@@ -227,7 +229,7 @@ describe("getStoreLedger", () => {
     const row = result.rows.find((r) => r.ingredientId === flour.id && r.locationId === restaurantId);
     expect(row).toBeDefined();
     expect(row!.unitCostMinor).toBe(79);
-    expect(row!.previousUnitCostMinor).toBe(73.64);
+    expect(row!.previousUnitCostMinor).toBe(74);
   });
 
   test("an ingredient with no purchases or movements this period, and no prior cost, shows no cost-move indicator", async () => {

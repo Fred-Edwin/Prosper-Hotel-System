@@ -111,7 +111,7 @@ Two related subtleties in `stock/logic.ts`:
 
 ## Trap 5: replay as `corrected`, never as `received`
 
-Receiving mutates `lastKnownCostMinor` via the running-average cost update
+Receiving mutates `lastKnownCostMinor` via the latest-price cost update
 AND feeds `sumIngredientsBoughtMinorAtLocationInPeriod`, the "bought" term in
 cost-of-goods-sold. Loading a physical count as a purchase fabricates spend
 the owner never made and distorts COGS — including the cost basis of every

@@ -142,24 +142,40 @@ describe("getIngredientStockValueAtLocation — values at the cost in force at t
     expect(await valueAt(at("2026-08-15"))).toBe(1000);
   });
 
-  test("the running average as at a date uses only deliveries up to it", async () => {
+  test("each delivery keeps its own price as at a date", async () => {
     await ingredient(999);
     await delivery(10, 100, at("2026-08-14"));
     await delivery(10, 200, at("2026-08-16"));
 
-    // After both: 20 kg, average (10*100 + 10*200) / 20 = 150.
-    expect(await valueAt(at("2026-08-17"))).toBe(20 * 150);
+    // Latest-price-wins (formulas.md §3, 2026-08-17): the two deliveries
+    // stay separate layers, so the pile is worth 10*100 + 10*200. Averaging
+    // gave 20 * 150 — the same total here only because nothing was issued
+    // between them; it diverges the moment stock moves.
+    expect(await valueAt(at("2026-08-17"))).toBe(10 * 100 + 10 * 200);
     // Before the second: 10 kg at 100.
     expect(await valueAt(at("2026-08-15"))).toBe(10 * 100);
   });
 
-  test("issues consume stock without disturbing the average", async () => {
+  test("issues draw down the oldest delivery first", async () => {
     await ingredient(999);
     await delivery(10, 100, at("2026-08-14"));
     await issue(4, at("2026-08-15"));
 
     // 6 kg left, still bought at 100.
     expect(await valueAt(at("2026-08-16"))).toBe(600);
+  });
+
+  test("a price rise leaves earlier stock at its own cost once some is issued", async () => {
+    // Where averaging and layers actually part company. 10 @ 100, then
+    // 10 @ 300, then 10 issued. Oldest-first leaves 10 @ 300 = 3000;
+    // averaging would have left 10 @ 200 = 2000, having quietly moved
+    // value from the new delivery onto the old stock.
+    await ingredient(999);
+    await delivery(10, 100, at("2026-08-14"));
+    await delivery(10, 300, at("2026-08-16"));
+    await issue(10, at("2026-08-17"));
+
+    expect(await valueAt(at("2026-08-18"))).toBe(3000);
   });
 
   test("editing the ingredient's current cost leaves past valuations alone", async () => {
@@ -178,12 +194,35 @@ describe("getIngredientStockValueAtLocation — values at the cost in force at t
     expect(await valueAt(at("2026-08-15"))).toBe(before);
   });
 
-  test("an ingredient with stock but no delivery on record contributes nothing", async () => {
-    // No delivery means no cost was ever in force, so there is no honest
-    // figure to state. Borrowing today's lastKnownCostMinor is what this
-    // ticket removes — formulas.md's "not zero, not a guess" applies to
-    // the cost, and the quantity is still visible on the Store ledger.
+  test("stock with no delivery falls back to the owner's own recorded cost", async () => {
+    // Revised 2026-08-17. T8 originally withheld this figure entirely, on
+    // the grounds that no delivery meant no cost was ever in force. But a
+    // hand-entered lastKnownCostMinor is real data — the owner typed what
+    // she paid — and 30 of the 38 production ingredients have exactly that
+    // and no delivery yet. Excluding them understated stock she can see on
+    // the shelf. It is used at both period boundaries, so it cannot invent
+    // a cost-of-goods-sold movement either way.
     await ingredient(500);
+    await testDb.ingredientMovement.create({
+      data: {
+        ingredientId,
+        locationId: restaurantId,
+        quantity: 5,
+        reason: "corrected",
+        staffMemberId: ownerId,
+        occurredAt: at("2026-08-14"),
+        isAmendment: true,
+      },
+    });
+
+    expect(await valueAt(at("2026-08-15"))).toBe(5 * 500);
+  });
+
+  test("stock with no delivery and no recorded cost still contributes nothing", async () => {
+    // The genuine "not zero, not a guess" case survives: with no price
+    // anywhere, there is no honest figure to state. The quantity is still
+    // visible on the Store ledger; only its valuation is withheld.
+    await ingredient(null);
     await testDb.ingredientMovement.create({
       data: {
         ingredientId,

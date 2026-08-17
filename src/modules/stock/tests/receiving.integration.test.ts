@@ -274,10 +274,15 @@ describe("recordIngredientReceipt", () => {
     expect(product?.lastKnownCostMinor?.toNumber()).toBe(5000);
   });
 
-  test("the running average applies correctly to a product line given quantity already on hand", async () => {
+  // formulas.md §3 (revised 2026-08-17): the delivery price becomes the
+  // cost outright. Averaging re-priced stock already on hand, which is what
+  // produced a −72.6 cost of goods sold on a day nothing was sold.
+  test("a later delivery sets the cost to its own price, whatever is already on hand", async () => {
     const requester = staffAt("store_manager", restaurantId, storeManagerId);
 
-    // 10 on hand at 80 (via an initial receipt), then buy 20 at 95 -> 90.
+    // 10 on hand at 80, then buy 20 at 95. Averaging gave 90; the cost is
+    // now the 95 actually paid, and the 10 already on hand keep their 80
+    // in the ledger's valuation (see historical-valuation tests).
     const first = await recordIngredientReceipt(testDb, requester, {
       locationId: restaurantId,
       lines: [{ itemType: "product", itemId: sodaId, quantity: 10, unitCostMinor: 8000 }],
@@ -291,12 +296,12 @@ describe("recordIngredientReceipt", () => {
     expect(second.ok).toBe(true);
 
     const product = await testDb.product.findUnique({ where: { id: sodaId } });
-    expect(product?.lastKnownCostMinor?.toNumber()).toBe(9000);
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(9500);
   });
 
-  // The running average is cent-precise, not rounded to whole shillings —
-  // (10*80 + 5*95.50) / 15 = 85.17 (2dp), not 85.
-  test("the running average keeps cent precision, not whole-shilling rounding", async () => {
+  // Cent precision still matters: real supplier prices are cent-precise
+  // (Decimal(10,2)), and the price paid must survive storage exactly.
+  test("the delivery price keeps cent precision, not whole-shilling rounding", async () => {
     const requester = staffAt("store_manager", restaurantId, storeManagerId);
 
     const first = await recordIngredientReceipt(testDb, requester, {
@@ -312,19 +317,17 @@ describe("recordIngredientReceipt", () => {
     expect(second.ok).toBe(true);
 
     const product = await testDb.product.findUnique({ where: { id: sodaId } });
-    expect(product?.lastKnownCostMinor?.toNumber()).toBe(85.17);
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(95.5);
   });
 
-  // Review finding (PR #6): quantity-on-hand was read once, up front, for
-  // the whole call — a second line for the same item saw the same stale
-  // pre-delivery quantity as the first, instead of accounting for what the
-  // first line had just delivered. Two lines for the same item in one call
-  // must produce the same result as two sequential calls.
-  test("two lines for the same product in one call apply the running average sequentially, matching two separate calls", async () => {
+  // Review finding (PR #6): the cost of a multi-line receipt must be the
+  // *last* line's price, not the first's — line order decides the outcome,
+  // and one call must match two sequential calls. Under averaging this
+  // caught a stale quantity-on-hand read; under latest-price-wins it
+  // catches the lines being applied out of order.
+  test("two lines for the same product in one call leave the last line's price, matching two separate calls", async () => {
     const requester = staffAt("store_manager", restaurantId, storeManagerId);
 
-    // 0 on hand, buy 10 at 80, then buy 20 at 95 -> 90 (same worked example
-    // as the sequential-calls test above, but both lines in one call).
     const result = await recordIngredientReceipt(testDb, requester, {
       locationId: restaurantId,
       lines: [
@@ -335,13 +338,12 @@ describe("recordIngredientReceipt", () => {
     expect(result.ok).toBe(true);
 
     const product = await testDb.product.findUnique({ where: { id: sodaId } });
-    expect(product?.lastKnownCostMinor?.toNumber()).toBe(9000);
+    expect(product?.lastKnownCostMinor?.toNumber()).toBe(9500);
   });
 
-  test("two lines for the same ingredient in one call apply the running average sequentially", async () => {
+  test("two lines for the same ingredient in one call leave the last line's price", async () => {
     const requester = staffAt("store_manager", restaurantId, storeManagerId);
 
-    // Flour starts at 0 on hand. Buy 10 at 80, then buy 20 at 95 -> 90.
     const result = await recordIngredientReceipt(testDb, requester, {
       locationId: restaurantId,
       lines: [
@@ -352,7 +354,7 @@ describe("recordIngredientReceipt", () => {
     expect(result.ok).toBe(true);
 
     const ingredient = await testDb.ingredient.findUnique({ where: { id: flourId } });
-    expect(ingredient?.lastKnownCostMinor?.toNumber()).toBe(9000);
+    expect(ingredient?.lastKnownCostMinor?.toNumber()).toBe(9500);
   });
 
   test("rejects a line for an inactive product", async () => {

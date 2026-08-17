@@ -448,3 +448,46 @@ Verify the boundary rather than assuming it: `reset-verify.ts` prints the
 stamp every movement carries, and reproducing the ledger's own
 opening/closing sums for one known item is a five-line script.
 **Added:** 2026-08-17
+
+---
+
+## A weighted average values new stock above what was paid for it
+
+**Symptom.** The ledger reports a negative cost of goods sold on a day
+nothing was sold — production showed **−72.6** with `salesValueMinor: 0`.
+Distinct from the timezone/boundary cause documented above: here the period
+boundaries are correct and the arithmetic is doing exactly what it was told.
+
+**Cause.** Costing used a running average (the old `formulas.md` §3), and
+§6 values stock at both period boundaries using the item's cost while
+purchases enter at the price actually paid. The average made those two
+disagree: a delivery's own units were valued at the blend, not at what was
+paid for them. Potatoes: 3.5 units carrying the owner's hand-entered
+KSh 326.79, then 12 received at KSh 300 — average KSh 306.05, so the 12 new
+units cost 300 each and were valued at 306.05:
+
+```
+12 × (306.05 − 300) = 72.60
+```
+
+The trigger is a price *difference* on an item with stock already on hand.
+It cannot happen when the price is unchanged, which is why Peas (12 @ 90
+onto 6 @ 90) was fine on the same day and only Potatoes showed it.
+
+**Why it hid for weeks.** Nothing about the movement rows is wrong — the
+figure is derived on read. And it only surfaces once a priced delivery
+lands on top of pre-existing stock, which for most items had not happened
+yet: 30 of 38 ingredients had a hand-entered cost and no delivery at all.
+
+**Fixed 2026-08-17** by dropping the average — the delivery price becomes
+the cost outright, so purchases and valuation agree — together with T8's
+historical valuation, which keeps stock already on hand at what it cost.
+**Both halves are required.** Dropping the average alone stamps the new
+price on the older units too, turning a −72.60 into a +93.77. See
+`formulas.md` §3 and `stock/tests/latest-price-costing.integration.test.ts`.
+
+**The invariant worth keeping.** A period with no sales, no waste and no
+issues must produce a cost of goods sold of exactly zero. That one
+assertion catches this entire class of bug, and is now a test.
+
+**Added:** 2026-08-17

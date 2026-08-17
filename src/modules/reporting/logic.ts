@@ -14,6 +14,7 @@ import {
 import { getCurrentRecipe, findProductsByIds, findIngredientsByIds } from "@/modules/catalogue";
 import {
   getIngredientStockValueAtLocation,
+  getPreviousDeliveryCostAtLocation,
   getIngredientQuantityAtLocationAsOf,
   getIngredientsBoughtMinor,
   getIngredientsPurchasedByIngredient,
@@ -128,7 +129,7 @@ export type RestaurantCostOfGoodsResult =
 // formulas.md §6, restaurant — exact, daily:
 //   opening ingredients + ingredients bought − closing ingredients − food sent to canteen
 // Opening/closing are ingredient stock *value* (§12) at the day's two
-// boundaries, valued at each ingredient's current running-average cost —
+// boundaries, valued at each ingredient's cost layers as they stood then —
 // same simplification correctStockCount already makes, since no
 // historical per-batch cost is kept (§3).
 // Finding 5: `precomputedTransfer` lets a caller that also needs the
@@ -1125,27 +1126,12 @@ export type StoreLedgerResult =
   | { ok: true; rows: StoreLedgerRow[] }
   | { ok: false; reason: "forbidden" | "not_found" };
 
-// The reference shows the *previous* running-average cost alongside the
-// current one to indicate movement (formulas.md §3's weighted average has
-// no historical snapshots). Reconstructed algebraically by reversing this
-// period's purchases out of the current average, treating them as a
-// single combined delivery — the running-average formula is linear, so
-// this reverse is exact even though the real average may have moved in
-// several individual steps during the period.
-function previousUnitCostMinor(input: {
-  currentAverageMinor: number;
-  closingQty: number;
-  purchasedQty: number;
-  purchasedValueMinor: number;
-}): number {
-  const { currentAverageMinor, closingQty, purchasedQty, purchasedValueMinor } = input;
-  const qtyBeforePurchases = closingQty - purchasedQty;
-  if (purchasedQty <= 0 || qtyBeforePurchases <= 0) return currentAverageMinor;
-
-  const valueBeforePurchases = closingQty * currentAverageMinor - purchasedValueMinor;
-  if (valueBeforePurchases < 0) return currentAverageMinor;
-  return Math.round((valueBeforePurchases / qtyBeforePurchases) * 100) / 100;
-}
+// The reference shows the *previous* unit cost alongside the current one to
+// indicate movement. Under formulas.md §3's latest-price-wins rule this is
+// read straight off the last delivery before the period
+// (getPreviousDeliveryCostAtLocation) rather than reconstructed by
+// un-averaging the current figure — the old approach only worked because a
+// weighted average is linear and kept no history of its own.
 
 export async function getStoreLedger(
   db: PrismaClient,
@@ -1168,23 +1154,26 @@ export async function getStoreLedger(
   const rows: StoreLedgerRow[] = [];
 
   for (const location of targetLocations) {
-    const [openingQuantities, closingQuantities, purchases, movements] = await Promise.all([
-      getIngredientQuantityAtLocationAsOf(db, requester, location.id, input.periodStart),
-      getIngredientQuantityAtLocationAsOf(db, requester, location.id, input.periodEnd),
-      getIngredientsPurchasedByIngredient(db, requester, location.id, input.periodStart, input.periodEnd),
-      getIngredientMovementsByReasonInPeriod(
-        db,
-        requester,
-        location.id,
-        [...STORE_OUT_REASONS],
-        input.periodStart,
-        input.periodEnd,
-      ),
-    ]);
+    const [openingQuantities, closingQuantities, purchases, movements, previousCosts] =
+      await Promise.all([
+        getIngredientQuantityAtLocationAsOf(db, requester, location.id, input.periodStart),
+        getIngredientQuantityAtLocationAsOf(db, requester, location.id, input.periodEnd),
+        getIngredientsPurchasedByIngredient(db, requester, location.id, input.periodStart, input.periodEnd),
+        getIngredientMovementsByReasonInPeriod(
+          db,
+          requester,
+          location.id,
+          [...STORE_OUT_REASONS],
+          input.periodStart,
+          input.periodEnd,
+        ),
+        getPreviousDeliveryCostAtLocation(db, requester, location.id, input.periodStart),
+      ]);
     if (!openingQuantities.ok) return openingQuantities;
     if (!closingQuantities.ok) return closingQuantities;
     if (!purchases.ok) return purchases;
     if (!movements.ok) return movements;
+    if (!previousCosts.ok) return previousCosts;
 
     const openingByIngredient = new Map(
       openingQuantities.quantities.map((q) => [q.ingredientId, q.quantityOnHand]),
@@ -1244,12 +1233,10 @@ export async function getStoreLedger(
       };
 
       const unitCostMinor = ingredient.lastKnownCostMinor ?? 0;
-      const previousCostMinor = previousUnitCostMinor({
-        currentAverageMinor: unitCostMinor,
-        closingQty,
-        purchasedQty: purchase.quantity,
-        purchasedValueMinor: purchase.valueMinor,
-      });
+      // No delivery before this period means nothing moved, so the previous
+      // cost is the current one — the column shows no change rather than a
+      // drop from zero.
+      const previousCostMinor = previousCosts.costs.get(ingredientId) ?? unitCostMinor;
 
       rows.push({
         ingredientId: ingredient.id,

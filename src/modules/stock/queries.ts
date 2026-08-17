@@ -344,7 +344,7 @@ export async function sumIngredientMovementsAtLocationAsOf(
 
 // Ticket 25: formulas.md §6's "ingredients bought" term is the money
 // actually paid on each delivery (unitCostMinor at the time), not a
-// re-valuation at today's running average.
+// re-valuation at today's cost.
 export async function sumIngredientsBoughtMinorAtLocationInPeriod(
   db: PrismaClient,
   locationId: string,
@@ -888,15 +888,15 @@ export async function markStockCountLineCorrected(
 
 /**
  * Editable-ledger T8 — every ingredient movement at a location up to a
- * date, in order, for rebuilding the running-average cost as it stood then.
+ * date, in order, for rebuilding the cost layers as they stood then.
  *
  * `unitCostMinor` is snapshotted per delivery and never rewritten, so the
- * average in force at any past instant is derivable from the deliveries up
- * to that instant. That is the whole reason historical valuation is
- * possible without storing a cost history table.
+ * cost in force at any past instant is derivable from the deliveries up to
+ * that instant. That is the whole reason historical valuation is possible
+ * without storing a cost history table.
  *
- * Ordered oldest-first because a running average is order-dependent:
- * replaying it backwards gives a different (wrong) answer.
+ * Ordered oldest-first because the replay is order-dependent: stock leaving
+ * draws down the oldest delivery first (formulas.md §3).
  */
 export async function findIngredientMovementsAtLocationAsOf(
   db: Db,
@@ -914,6 +914,39 @@ export async function findIngredientMovementsAtLocationAsOf(
     reason: r.reason,
     unitCostMinor: r.unitCostMinor?.toNumber() ?? null,
   }));
+}
+
+/**
+ * The price paid on the last delivery *before* `before`, per ingredient —
+ * the Store ledger's "previous unit cost" column.
+ *
+ * Under formulas.md §3's latest-price-wins rule this is a real recorded
+ * figure, read straight off the delivery that set it. It used to be
+ * reconstructed algebraically by un-averaging the current cost, which only
+ * worked because a weighted average is linear and kept no history.
+ */
+export async function findPreviousDeliveryCostByIngredientAtLocation(
+  db: Db,
+  locationId: string,
+  before: Date,
+): Promise<Map<string, number>> {
+  const rows = await db.ingredientMovement.findMany({
+    where: {
+      locationId,
+      reason: "received",
+      occurredAt: { lte: before },
+      reversed: false,
+      unitCostMinor: { not: null },
+    },
+    orderBy: { occurredAt: "asc" },
+    select: { ingredientId: true, unitCostMinor: true },
+  });
+  // Oldest-first, so the last write per ingredient is the most recent.
+  const byIngredient = new Map<string, number>();
+  for (const r of rows) {
+    if (r.unitCostMinor != null) byIngredient.set(r.ingredientId, r.unitCostMinor.toNumber());
+  }
+  return byIngredient;
 }
 
 /**

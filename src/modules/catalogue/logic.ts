@@ -293,26 +293,29 @@ export async function reactivateCategory(
 }
 
 // formulas.md §3: "flour was bought three times at three prices — what is
-// it worth now?" — a running average recalculated on every delivery:
-//   new average = (qty on hand × current average + qty bought × price paid)
-//                 ÷ (qty on hand + qty bought)
-// Where nothing is on hand yet (or no average is known), the new average is
-// simply the price just paid. Rounded to cents (2dp), matching storage
-// precision (Decimal(10,2)) — not whole shillings, which would silently
-// discard the cent-level precision real delivery prices carry.
-function runningAverageMinor(input: {
-  quantityOnHand: number;
-  currentAverageMinor: number | null;
-  quantityBought: number;
-  unitCostMinor: number;
-}): number {
-  const { quantityOnHand, currentAverageMinor, quantityBought, unitCostMinor } = input;
-  if (quantityOnHand <= 0 || currentAverageMinor == null) return unitCostMinor;
-
-  const totalValue = quantityOnHand * currentAverageMinor + quantityBought * unitCostMinor;
-  return Math.round((totalValue / (quantityOnHand + quantityBought)) * 100) / 100;
-}
-
+// it worth now?" — the price paid on the most recent delivery. The price
+// the owner types *is* the cost; nothing is blended into it.
+//
+// This replaced a running average on 2026-08-17. §6 values stock at a
+// period's two boundaries using each item's cost, while purchases enter at
+// the price actually paid; averaging made those disagree, valuing a
+// delivery's own units at the blend rather than at what was paid. Potatoes:
+// 3.5 units on hand at the owner's own 326.79, 12 received at 300, average
+// 306.05 — so the 12 new units cost 300 each and were valued at 306.05,
+// reporting −72.6 on a day nothing was sold:
+//
+//   12 × (306.05 − 300) = 72.60
+//
+// Pairs with T8's historical valuation, which keeps stock already on hand
+// at its own cost. Without that half, this one stamps the new price on the
+// older units instead — the retroactive repricing §3 forbids.
+//
+// The old rationale was that per-delivery costs need batch tracking
+// ("which sack was used"), unworkable on a phone mid-service. That still
+// holds for *issuing* stock, which is why consumption is drawn down
+// oldest-first rather than by asking. It was never a reason to average on
+// the way in.
+//
 // Deliberately not owner-gated, unlike updateIngredient: this only records
 // the price paid on a delivery (a frequent store-manager/attendant action,
 // like createCustomer), never the ingredient's name or unit of measure —
@@ -321,42 +324,28 @@ export async function recordIngredientCost(
   db: PrismaClient,
   _requester: AuthenticatedStaff,
   id: string,
-  input: { quantityOnHand: number; quantityBought: number; unitCostMinor: number },
+  input: { unitCostMinor: number },
 ): Promise<WriteResult<Ingredient>> {
   const current = await findIngredientById(db, id);
   if (!current) return { ok: false, reason: "not_found" };
 
-  const newAverage = runningAverageMinor({
-    quantityOnHand: input.quantityOnHand,
-    currentAverageMinor: current.lastKnownCostMinor,
-    quantityBought: input.quantityBought,
-    unitCostMinor: input.unitCostMinor,
-  });
-
-  return { ok: true, value: await setIngredientLastKnownCost(db, id, newAverage) };
+  return { ok: true, value: await setIngredientLastKnownCost(db, id, input.unitCostMinor) };
 }
 
-// Mirrors recordIngredientCost — same running average (formulas.md §3),
-// same not-owner-gated reasoning, applied to purchased goods (Product)
+// Mirrors recordIngredientCost — same latest-price-wins rule (formulas.md
+// §3), same not-owner-gated reasoning, applied to purchased goods (Product)
 // instead of Ingredient. Cooked food's cost still comes from Recipe, never
 // this path.
 export async function recordProductCost(
   db: PrismaClient,
   _requester: AuthenticatedStaff,
   id: string,
-  input: { quantityOnHand: number; quantityBought: number; unitCostMinor: number },
+  input: { unitCostMinor: number },
 ): Promise<WriteResult<Product>> {
   const current = await findProductById(db, id);
   if (!current) return { ok: false, reason: "not_found" };
 
-  const newAverage = runningAverageMinor({
-    quantityOnHand: input.quantityOnHand,
-    currentAverageMinor: current.lastKnownCostMinor,
-    quantityBought: input.quantityBought,
-    unitCostMinor: input.unitCostMinor,
-  });
-
-  return { ok: true, value: await setProductLastKnownCost(db, id, newAverage) };
+  return { ok: true, value: await setProductLastKnownCost(db, id, input.unitCostMinor) };
 }
 
 export async function createRecipe(

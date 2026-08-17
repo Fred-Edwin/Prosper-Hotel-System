@@ -113,11 +113,7 @@ describe("getNonSalesLedger — proposal.md §10.5, line-level", () => {
       locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, ownerStaff, soda.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 30,
-      unitCostMinor: 60,
-    });
+    await recordProductCost(testDb, ownerStaff, soda.value.id, { unitCostMinor: 60 });
     await testDb.stockMovement.create({
       data: {
         productId: soda.value.id,
@@ -143,11 +139,7 @@ describe("getNonSalesLedger — proposal.md §10.5, line-level", () => {
       unitOfMeasure: "kg",
     });
     if (!potatoes.ok) throw new Error("expected ingredient create to succeed");
-    await recordIngredientCost(testDb, ownerStaff, potatoes.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 50,
-      unitCostMinor: 40,
-    });
+    await recordIngredientCost(testDb, ownerStaff, potatoes.value.id, { unitCostMinor: 40 });
     await testDb.ingredientMovement.create({
       data: {
         ingredientId: potatoes.value.id,
@@ -262,11 +254,7 @@ describe("getNonSalesLedger — proposal.md §10.5, line-level", () => {
       locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, ownerStaff, soda.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 10,
-      unitCostMinor: 60,
-    });
+    await recordProductCost(testDb, ownerStaff, soda.value.id, { unitCostMinor: 60 });
     await testDb.stockMovement.create({
       data: {
         productId: soda.value.id,
@@ -312,11 +300,7 @@ describe("getNonSalesLedger — proposal.md §10.5, line-level", () => {
       locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, ownerStaff, soda.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 10,
-      unitCostMinor: 60,
-    });
+    await recordProductCost(testDb, ownerStaff, soda.value.id, { unitCostMinor: 60 });
     await testDb.stockMovement.create({
       data: {
         productId: soda.value.id,

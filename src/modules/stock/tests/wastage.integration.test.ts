@@ -179,11 +179,7 @@ describe("recordNonSalesConsumption", () => {
       locationId: restaurantId,
     });
     if (!juice.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, owner, juice.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 10,
-      unitCostMinor: 70,
-    });
+    await recordProductCost(testDb, owner, juice.value.id, { unitCostMinor: 70 });
 
     const requester = staffAt("cashier", restaurantId);
     const result = await recordNonSalesConsumption(testDb, requester, {

@@ -46,6 +46,7 @@ export {
   resolveProductCostBasis,
   getLowStockItems,
   getIngredientStockValuesAtLocation,
+  getPreviousDeliveryCostAtLocation,
   getMovementsForActivity,
   getStockCountsForActivity,
 } from "./logic";

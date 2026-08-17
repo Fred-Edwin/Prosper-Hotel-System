@@ -127,7 +127,7 @@ location filter, owner-managed category filter from ticket 41,
 day-expansion) landed via ticket 39. The Cash ledger tab (search, category
 filter, day-expansion to individual transactions with method, running
 cash and M-Pesa balances kept independent throughout) landed via ticket
-40. The Store ledger tab (search, location filter, running-average
+40. The Store ledger tab (search, location filter, last-delivery-price
 cost-move indicator, no day-expansion — the reference has no chevron for
 this sub-ledger) landed via ticket 42. The Non-sales ledger tab (one row
 per wasted/consumed/given-away entry across products and ingredients,

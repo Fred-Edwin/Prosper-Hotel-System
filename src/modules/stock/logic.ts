@@ -54,6 +54,7 @@ import {
   markStockCountLineCorrected,
   sumIngredientMovementsAtLocationAsOf,
   findIngredientMovementsAtLocationAsOf,
+  findPreviousDeliveryCostByIngredientAtLocation,
   sumSoldCostBasisByProductAtLocationInPeriod,
   sumIngredientMovementsByReasonAtLocationInPeriod,
   sumIngredientsBoughtMinorAtLocationInPeriod,
@@ -98,7 +99,8 @@ export type ProductCostBasis = { costBasisMinor: number; isEstimated: boolean } 
 
 // formulas.md §4's cost-per-unit table, in priority order: a recipe's
 // ingredients-used ÷ yield first (cooked food only), then the product's
-// own recorded running average (bought-in goods/packaging — recordProductCost's
+// own recorded cost, the price paid on its last delivery (bought-in
+// goods/packaging — recordProductCost's
 // figure), then the labelled 60%-of-selling-price estimate as a last resort.
 // null means no cost figure can be produced at all (no recipe, no recorded
 // cost, no selling price to estimate from). Exported (ticket 39) so
@@ -247,7 +249,7 @@ export type IngredientStockValuesResult =
 // Ingredient-side, per-row counterpart to getProductStockValueAtLocation —
 // ticket 44, so ingredient rows on AdminStockTable carry a Value figure
 // the same way product rows already do. Unlike products, an ingredient
-// has a single running-average cost (lastKnownCostMinor), never an
+// has a single recorded cost (lastKnownCostMinor), never an
 // estimate — isEstimated is always false, kept only so the row shape
 // matches ProductStockValue for the UI. An ingredient with no known cost
 // is excluded, not shown as zero value.
@@ -1253,15 +1255,6 @@ export async function recordIngredientReceipt(
     ingredientLines.every((line) => ingredientById.get(line.itemId)?.active);
   if (!allActive) return { ok: false, reason: "inactive_ingredient" };
 
-  const [productSums, ingredientSums] = await Promise.all([
-    sumMovementsByProductAtLocation(db, input.locationId),
-    sumMovementsByIngredientAtLocation(db, input.locationId),
-  ]);
-  const productQuantityOnHand = new Map(productSums.map((s) => [s.productId, s.quantityOnHand]));
-  const ingredientQuantityOnHand = new Map(
-    ingredientSums.map((s) => [s.ingredientId, s.quantityOnHand]),
-  );
-
   // Shared by every line in this call — what a Stock-category Expense
   // (cash module) references as "the receipt it pays for."
   const receiptId = crypto.randomUUID();
@@ -1278,16 +1271,9 @@ export async function recordIngredientReceipt(
         receiptId,
       });
       movements.push(movement);
-      const quantityOnHand = productQuantityOnHand.get(line.itemId) ?? 0;
       await recordProductCost(db, requester, line.itemId, {
-        quantityOnHand,
-        quantityBought: line.quantity,
         unitCostMinor: line.unitCostMinor,
       });
-      // A second line for the same product later in this call must see
-      // this line's delivery as already on hand — same as two sequential
-      // recordIngredientReceipt calls would (review finding, PR #6).
-      productQuantityOnHand.set(line.itemId, quantityOnHand + line.quantity);
       continue;
     }
 
@@ -1301,14 +1287,9 @@ export async function recordIngredientReceipt(
       receiptId,
     });
     movements.push(movement);
-    const quantityOnHand = ingredientQuantityOnHand.get(line.itemId) ?? 0;
     await recordIngredientCost(db, requester, line.itemId, {
-      quantityOnHand,
-      quantityBought: line.quantity,
       unitCostMinor: line.unitCostMinor,
     });
-    // Same reasoning as the product branch above.
-    ingredientQuantityOnHand.set(line.itemId, quantityOnHand + line.quantity);
   }
 
   return { ok: true, movements };
@@ -2012,7 +1993,7 @@ export type IngredientStockValueResult =
 
 // formulas.md §12 valuation (quantity × unit cost), at a point in time —
 // used for §6's restaurant "opening ingredients" / "closing ingredients"
-// terms. Valued at each ingredient's *current* running-average cost
+// terms. Valued at each ingredient's cost layers as they stood then
 // (formulas.md §3 keeps no historical batch cost), same simplification
 // correctStockCount already makes for a count correction's cost basis.
 export async function getIngredientStockValueAtLocation(
@@ -2033,56 +2014,104 @@ export async function getIngredientStockValueAtLocation(
   // cost-of-goods-sold line for closed periods. Plan §3.4 promises price
   // edits are not retroactive; this is what makes that true.
   const movements = await findIngredientMovementsAtLocationAsOf(db, locationId, asOf);
-  const averages = runningAveragesByIngredientAsOf(movements);
-  const sums = await sumIngredientMovementsAtLocationAsOf(db, locationId, asOf);
-  const totalMinor = sums.reduce((sum, s) => {
-    const cost = averages.get(s.ingredientId);
-    // No delivery on record by this date means no cost was ever in force,
-    // so there is no honest figure to state — formulas.md's "not zero, not
-    // a guess" applied to the cost. The quantity is still visible on the
-    // Store ledger; only its valuation is withheld.
-    if (cost == null) return sum;
-    return sum + s.quantityOnHand * cost;
-  }, 0);
+  const layersByIngredient = costLayersByIngredientAsOf(movements);
+
+  // Stock that entered without a price of its own (a count correction says
+  // how many, never what they cost) falls back to the ingredient's recorded
+  // cost — the owner's own hand-entered figure, which is real data and the
+  // best basis available. 30 of the 38 production ingredients are in
+  // exactly this position.
+  const ingredientIds = [...layersByIngredient.keys()];
+  const ingredients = await findIngredientsByIds(db, ingredientIds);
+  const fallbackCost = new Map(ingredients.map((i) => [i.id, i.lastKnownCostMinor]));
+
+  let totalMinor = 0;
+  for (const [ingredientId, layers] of layersByIngredient) {
+    for (const layer of layers) {
+      const cost = layer.unitCostMinor ?? fallbackCost.get(ingredientId) ?? null;
+      // No delivery price and no recorded cost means no cost was ever in
+      // force, so there is no honest figure to state — formulas.md's "not
+      // zero, not a guess" applied to the cost. The quantity is still
+      // visible on the Store ledger; only its valuation is withheld.
+      if (cost == null) continue;
+      totalMinor += layer.quantity * cost;
+    }
+  }
   return { ok: true, totalMinor };
 }
 
+type CostLayer = { quantity: number; unitCostMinor: number | null };
+
 /**
- * Replays each ingredient's running average over its movement history, the
- * same formula `recordIngredientCost` applies live (formulas.md §3) — the
- * point being that both must agree, or a valuation would jump the moment a
- * historical read overtook the stored figure.
+ * Replays each ingredient's movement history into the cost layers still on
+ * hand at `asOf` — formulas.md §3's latest-price-wins rule seen from the
+ * valuation side.
  *
- * Order matters: a running average is order-dependent, so the caller
- * supplies movements oldest-first.
+ * Each delivery adds a layer at the price actually paid, snapshotted on the
+ * movement and never rewritten. Stock leaving draws down oldest-first, so
+ * what survives is valued at what those particular units cost. This is what
+ * keeps a price rise off yesterday's books: a new delivery adds a layer, it
+ * does not touch the ones already there.
+ *
+ * Order matters — the caller supplies movements oldest-first.
  */
-function runningAveragesByIngredientAsOf(
+function costLayersByIngredientAsOf(
   movements: { ingredientId: string; quantity: number; reason: string; unitCostMinor: number | null }[],
-): Map<string, number> {
-  const onHand = new Map<string, number>();
-  const average = new Map<string, number>();
+): Map<string, CostLayer[]> {
+  const layersByIngredient = new Map<string, CostLayer[]>();
 
   for (const m of movements) {
-    const quantityOnHand = onHand.get(m.ingredientId) ?? 0;
-    if (m.reason === "received" && m.unitCostMinor != null) {
-      const current = average.get(m.ingredientId) ?? null;
-      // Same guard as recordIngredientCost: with nothing on hand (or no
-      // average yet) the delivery's own price *is* the average, rather
-      // than being blended into a figure that does not exist.
-      const next =
-        quantityOnHand <= 0 || current == null
-          ? m.unitCostMinor
-          : Math.round(
-              ((quantityOnHand * current + m.quantity * m.unitCostMinor) /
-                (quantityOnHand + m.quantity)) *
-                100,
-            ) / 100;
-      average.set(m.ingredientId, next);
+    let layers = layersByIngredient.get(m.ingredientId);
+    if (!layers) {
+      layers = [];
+      layersByIngredient.set(m.ingredientId, layers);
     }
-    onHand.set(m.ingredientId, quantityOnHand + m.quantity);
+
+    if (m.quantity >= 0) {
+      // A delivery carries its own price; a correction carries none, and is
+      // resolved against the ingredient's recorded cost by the caller.
+      layers.push({ quantity: m.quantity, unitCostMinor: m.unitCostMinor });
+      continue;
+    }
+
+    // Stock leaving: consume oldest layers first. Deliveries are received
+    // mid-service on a phone (formulas.md §3's original objection to batch
+    // costing), so nobody is asked which sack was used — the order the
+    // stock arrived in decides it.
+    let remaining = -m.quantity;
+    while (remaining > 0 && layers.length > 0) {
+      const oldest = layers[0];
+      if (oldest.quantity > remaining) {
+        oldest.quantity -= remaining;
+        remaining = 0;
+      } else {
+        remaining -= oldest.quantity;
+        layers.shift();
+      }
+    }
   }
 
-  return average;
+  return layersByIngredient;
+}
+
+export type PreviousDeliveryCostResult =
+  | { ok: true; costs: Map<string, number> }
+  | { ok: false; reason: "forbidden" };
+
+// The Store ledger's "previous unit cost" column — the price paid on the
+// last delivery before the period, per ingredient. Under formulas.md §3's
+// latest-price-wins rule this is read straight off that delivery, rather
+// than reconstructed by un-averaging the current figure.
+export async function getPreviousDeliveryCostAtLocation(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  before: Date,
+): Promise<PreviousDeliveryCostResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  return { ok: true, costs: await findPreviousDeliveryCostByIngredientAtLocation(db, locationId, before) };
 }
 
 export type IngredientQuantityAtLocationResult =
@@ -2119,7 +2148,7 @@ export type ProductStockValueResult =
   | { ok: false; reason: "forbidden" };
 
 // Product-side counterpart to getIngredientStockValueAtLocation — ticket 37.
-// Unlike ingredients (a single running-average cost), a product's unit cost
+// Unlike ingredients (a single recorded cost), a product's unit cost
 // follows formulas.md §4's full three-tier table via resolveProductCostBasis,
 // so each row (not just a total) carries its own cost and estimate flag for
 // the UI to label. Quantities come from the same sumMovementsByProductAtLocation
@@ -2213,7 +2242,7 @@ export type IngredientsConsumedResult =
 
 // formulas.md §5's transfer rate — "ingredients the kitchen consumed" is
 // what was issued to production in the period, valued at each
-// ingredient's current running-average cost.
+// ingredient's current recorded cost.
 export async function getIngredientsIssuedMinor(
   db: PrismaClient,
   requester: AuthenticatedStaff,

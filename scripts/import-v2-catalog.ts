@@ -260,11 +260,7 @@ async function main() {
     }
 
     if (costMinor != null) {
-      const costResult = await recordProductCost(db, requester, result.value.id, {
-        quantityOnHand: 0,
-        quantityBought: 1,
-        unitCostMinor: costMinor,
-      });
+      const costResult = await recordProductCost(db, requester, result.value.id, { unitCostMinor: costMinor });
       if (!costResult.ok) {
         console.log(`    FAILED to seed cost for "${name}": ${costResult.reason}`);
       } else {
@@ -313,8 +309,6 @@ async function main() {
 
       if (unitCostMinor != null) {
         const costResult = await recordProductCost(db, requester, result.value.id, {
-          quantityOnHand: 0,
-          quantityBought: 1,
           unitCostMinor,
         });
         if (!costResult.ok) {
@@ -363,11 +357,7 @@ async function main() {
     }
 
     if (costMinor != null) {
-      const costResult = await recordIngredientCost(db, requester, result.value.id, {
-        quantityOnHand: 0,
-        quantityBought: 1,
-        unitCostMinor: costMinor,
-      });
+      const costResult = await recordIngredientCost(db, requester, result.value.id, { unitCostMinor: costMinor });
       if (!costResult.ok) {
         console.log(`    FAILED to seed cost for "${item.name}": ${costResult.reason}`);
       } else {

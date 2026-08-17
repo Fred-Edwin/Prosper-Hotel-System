@@ -110,11 +110,7 @@ describe("getNonSalesLedgerReport", () => {
       locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, ownerStaff, soda.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 30,
-      unitCostMinor: 60,
-    });
+    await recordProductCost(testDb, ownerStaff, soda.value.id, { unitCostMinor: 60 });
     await testDb.stockMovement.create({
       data: {
         productId: soda.value.id,
@@ -132,11 +128,7 @@ describe("getNonSalesLedgerReport", () => {
       locationId: restaurantId,
     });
     if (!crisps.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, ownerStaff, crisps.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 10,
-      unitCostMinor: 90,
-    });
+    await recordProductCost(testDb, ownerStaff, crisps.value.id, { unitCostMinor: 90 });
     await testDb.stockMovement.create({
       data: {
         productId: crisps.value.id,

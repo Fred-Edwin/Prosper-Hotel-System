@@ -90,11 +90,7 @@ describe("getProductStockValueAtLocation", () => {
       locationId: restaurantId,
     });
     if (!juice.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, owner, juice.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 10,
-      unitCostMinor: 70,
-    });
+    await recordProductCost(testDb, owner, juice.value.id, { unitCostMinor: 70 });
     await testDb.stockMovement.create({
       data: {
         productId: juice.value.id,
@@ -212,11 +208,7 @@ describe("getProductStockValueAtLocation", () => {
       locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
-    await recordProductCost(testDb, owner, soda.value.id, {
-      quantityOnHand: 0,
-      quantityBought: 1,
-      unitCostMinor: 50,
-    });
+    await recordProductCost(testDb, owner, soda.value.id, { unitCostMinor: 50 });
     await testDb.stockMovement.createMany({
       data: [
         {

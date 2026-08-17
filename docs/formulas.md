@@ -91,23 +91,41 @@ entry.
 
 **What it answers:** flour was bought three times at three prices — what is it worth now?
 
-A running average, recalculated each time more is bought:
+**The price paid on the most recent delivery.** The price the owner types *is* the cost.
+Nothing is blended into it.
+
+**Example.** 10kg on hand at KSh 80. Buy 20kg at KSh 95. The cost is **KSh 95** per kg.
+
+**Stock already on hand keeps what it cost.** A new price applies from its own delivery
+forward and never reaches backwards. So the 10kg bought at 80 stays valued at 80 until it is
+used up; only the 20kg newly bought is worth 95. Stock leaving is drawn down oldest-first.
+
+**Why this replaced a running average (2026-08-17).** §6 values stock at a period's two
+boundaries using each item's cost, and purchases enter that formula at the price actually
+paid. A blended average made those two figures disagree: newly delivered stock was valued at
+the average rather than at what was paid for it.
+
+Potatoes carried the owner's own hand-entered KSh 326.79 on 3.5 units; 12 arrived at KSh 300;
+the average became KSh 306.05. The 12 new units cost 300 each but were valued at 306.05, and
+that gap surfaced as a reported **cost of goods sold of −72.6 on a day nothing was sold**:
 
 ```
-new average = (quantity on hand × current average + quantity bought × price paid)
-              ÷ (quantity on hand + quantity bought)
+12 × (306.05 − 300)  =  KSh 72.60
 ```
 
-**Example.** 10kg on hand at KSh 80. Buy 20kg at KSh 95.
+Taking the delivery price literally closes it — purchases now enter and are valued at the
+same figure, so the two sides cancel exactly.
 
-```
-(10 × 80 + 20 × 95) ÷ 30  =  KSh 90 per kg
-```
+The original objection to per-delivery costing was that it requires knowing which sack was
+used, and deliveries are received mid-service on a phone. That objection was about *issuing*
+stock, and it still stands — which is why nobody is asked, and consumption simply draws down
+the oldest delivery first. It was never a reason to average on the way in.
 
-**Why an average rather than tracking each delivery separately.** Tracking each batch at its
-own price is more precise, but requires knowing which sack was used. Deliveries are received
-mid-service on a phone; that will not hold. An average needs no batch tracking and cannot be
-recorded wrongly.
+**Where a price is missing.** A stock count records how many, never what they cost. Stock that
+enters that way has no delivery price of its own, so it is valued at the item's recorded cost —
+the figure the owner entered by hand, which is real data. Where there is no price anywhere, no
+valuation is stated at all (§12's "not zero, not a guess"); the quantity still shows on the
+Store ledger.
 
 ---
 
@@ -120,7 +138,7 @@ used to work out profit** — see §6.
 
 | | Cost per unit |
 |---|---|
-| Bought-in goods, packaging | The running average from §3 |
+| Bought-in goods, packaging | The last delivery price from §3 |
 | Cooked food **with** a recipe | Ingredients used ÷ expected yield |
 | Cooked food **without** a recipe | Not available — see below |
 | Services (printing, binding) | None. Paper and toner are counted as stock instead |
@@ -244,7 +262,7 @@ close.
 (0 + 40 − 8) × 15 = KSh 480 consumed Monday
 ```
 
-**The canteen's own goods.** Valued at purchase cost — the running average from §3 — the same
+**The canteen's own goods.** Valued at purchase cost — the last delivery price from §3 — the same
 as any bought-in stock. No rate, no estimate: the quantity sold is known directly from recorded
 sales, and its cost follows from the purchase price already on record.
 
