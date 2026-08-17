@@ -27,7 +27,28 @@
 // (expected - counted), which with expected = 0 is negative and filtered
 // out by its own `> 0` guard. No phantom sales are created.
 //
-// Usage: npx tsx scripts/reload-opening-stock.ts --snapshot <path> [--dry-run]
+// Dating (--occurred-at): the reload is stamped at the END OF YESTERDAY, not
+// now. Reporting periods are `occurredAt > periodStart AND <= periodEnd`,
+// while opening stock is `occurredAt <= asOf` (stock/queries.ts). So a
+// movement dated yesterday evening falls OUTSIDE today's period but INSIDE
+// today's opening balance — today opens at the counted figure and, with no
+// trading yet, closes at the same figure. Exactly the "African Tea 32/32"
+// position the owner signed off.
+//
+// Dating it today instead would put opening=0 and a correction inside the
+// period, which is what happened on 2026-08-14 and forced the hardcoded
+// workaround in reporting/ui/opening-balance.ts. The artifact day lands on
+// yesterday instead — part of the weekend being abandoned anyway.
+//
+// Why re-stamp rather than pass a date in: recordStockCount /
+// createStockCount / correctStockCount do not accept an occurredAt and
+// default to now(). Threading one through three functions in stock/logic.ts
+// to serve a one-off script would change live business logic for no ongoing
+// benefit. Instead this re-stamps the rows it just created — it holds their
+// exact IDs, so the update is precisely scoped and touches nothing else.
+//
+// Usage: npx tsx scripts/reload-opening-stock.ts --snapshot <path>
+//          [--occurred-at <ISO datetime>] [--dry-run]
 
 import "dotenv/config";
 import * as fs from "node:fs";
@@ -40,7 +61,29 @@ const dryRun = process.argv.includes("--dry-run");
 const snapFlagIndex = process.argv.indexOf("--snapshot");
 const snapshotPath = snapFlagIndex !== -1 ? process.argv[snapFlagIndex + 1] : null;
 if (!snapshotPath) {
-  console.error("Usage: npx tsx scripts/reload-opening-stock.ts --snapshot <path> [--dry-run]");
+  console.error(
+    "Usage: npx tsx scripts/reload-opening-stock.ts --snapshot <path> " +
+      "[--occurred-at <ISO datetime>] [--dry-run]",
+  );
+  process.exit(1);
+}
+
+const occurredAtFlagIndex = process.argv.indexOf("--occurred-at");
+const occurredAtRaw =
+  occurredAtFlagIndex !== -1 ? process.argv[occurredAtFlagIndex + 1] : null;
+const occurredAt = occurredAtRaw ? new Date(occurredAtRaw) : null;
+if (occurredAtRaw && Number.isNaN(occurredAt!.getTime())) {
+  console.error(`Invalid --occurred-at value: "${occurredAtRaw}"`);
+  process.exit(1);
+}
+// Dating the reload into the FUTURE would put it outside today's opening
+// balance (`occurredAt <= asOf`), leaving every item reading zero until that
+// moment passed. Always a mistake, so refuse rather than half-apply it.
+if (occurredAt && occurredAt.getTime() > Date.now()) {
+  console.error(
+    `--occurred-at ${occurredAt.toISOString()} is in the future. The reload must be dated ` +
+      `at or before now, or stock will read 0 until that time.`,
+  );
   process.exit(1);
 }
 
@@ -97,6 +140,9 @@ async function main() {
 
   let recordedLines = 0;
   let failedLines = 0;
+  // Collected so the re-stamp below can target exactly the rows this run
+  // created, rather than date-filtering and risking anything else.
+  const createdCountIds: string[] = [];
 
   async function loadLines(
     locationCode: string,
@@ -140,6 +186,7 @@ async function main() {
       return;
     }
     console.log(`  recorded count ${countResult.count.id}`);
+    createdCountIds.push(countResult.count.id);
 
     for (const line of countResult.count.lines) {
       const correction = await correctStockCount(db, requester, {
@@ -183,6 +230,55 @@ async function main() {
           name: i.name,
           quantityOnHand: i.quantityOnHand,
         })),
+    );
+  }
+
+  // --- Re-stamp to the requested date ------------------------------------
+  // The movements carry no back-reference to their stock count, so they are
+  // located by (locationId, reason: "corrected") restricted to rows created
+  // during this run's window. Safe because the wipe left the movements table
+  // empty and nobody is trading — the only `corrected` rows in existence are
+  // the ones just written.
+  if (!dryRun && occurredAt && createdCountIds.length > 0) {
+    console.log(`\nRe-stamping to ${occurredAt.toISOString()} ...`);
+
+    const counts = await db.stockCount.findMany({
+      where: { id: { in: createdCountIds } },
+      select: { id: true, locationId: true, occurredAt: true },
+    });
+    const earliestCount = counts.reduce(
+      (min, c) => (c.occurredAt < min ? c.occurredAt : min),
+      counts[0]!.occurredAt,
+    );
+    const locationIds = [...new Set(counts.map((c) => c.locationId))];
+
+    const stamped = await db.$transaction(async (tx) => {
+      const movements = await tx.stockMovement.updateMany({
+        where: {
+          locationId: { in: locationIds },
+          reason: "corrected",
+          occurredAt: { gte: earliestCount },
+        },
+        data: { occurredAt },
+      });
+      const ingredientMovements = await tx.ingredientMovement.updateMany({
+        where: {
+          locationId: { in: locationIds },
+          reason: "corrected",
+          occurredAt: { gte: earliestCount },
+        },
+        data: { occurredAt },
+      });
+      const stockCounts = await tx.stockCount.updateMany({
+        where: { id: { in: createdCountIds } },
+        data: { occurredAt },
+      });
+      return { movements, ingredientMovements, stockCounts };
+    });
+
+    console.log(
+      `  ${stamped.stockCounts.count} count(s), ${stamped.movements.count} stock movement(s), ` +
+        `${stamped.ingredientMovements.count} ingredient movement(s)`,
     );
   }
 
