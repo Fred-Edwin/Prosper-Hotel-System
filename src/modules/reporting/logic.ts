@@ -27,6 +27,7 @@ import {
   getMovementsForActivity,
   getStockCountsForActivity,
   type NonSalesCategory,
+  getSoldCostBasisInPeriod,
 } from "@/modules/stock";
 import { getSalesRevenueAtLocation, listSalesInPeriod } from "@/modules/sales";
 import { getRunningCosts, getCashLedgerTransactions, type ExpenseCategory } from "@/modules/cash";
@@ -214,14 +215,37 @@ export async function computeCanteenCostOfGoods(
   const products = await findProductsByIds(db, soldLines.map((line) => line.productId));
   const productById = new Map(products.map((p) => [p.id, p]));
 
+  // T8: prefer what each sale actually cost at the time (snapshotted on
+  // the movement) over the product's current cost, so a price edit today
+  // cannot move a past day's canteen cost of goods sold — plan §3.4. Sales
+  // recorded before T8 have no snapshot and fall back to the current
+  // basis, which is the old behaviour confined to the rows predating the
+  // fix.
+  const soldCost = await getSoldCostBasisInPeriod(
+    db,
+    requester,
+    canteen.id,
+    input.dayStart,
+    input.dayEnd,
+  );
+  if (!soldCost.ok) return soldCost;
+  const soldCostByProduct = new Map(soldCost.lines.map((l) => [l.productId, l]));
+
   let totalMinor = 0;
   for (const line of soldLines) {
     const product = productById.get(line.productId);
     if (!product) continue;
+    const soldQty = -line.quantity;
+    const snapshot = soldCostByProduct.get(line.productId);
+    const snapshottedQty = snapshot?.snapshottedQuantity ?? 0;
+    totalMinor += snapshot?.costBasisMinor ?? 0;
+
+    const remaining = Math.max(soldQty - snapshottedQty, 0);
+    if (remaining === 0) continue;
     const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
     const basis = resolveProductCostBasis(product, recipe);
     if (!basis) continue;
-    totalMinor += -line.quantity * basis.costBasisMinor;
+    totalMinor += remaining * basis.costBasisMinor;
   }
 
   return { ok: true, totalMinor };
@@ -823,6 +847,7 @@ async function buildProductLedgerRow(
   closingQty: number,
   periodLines: { reason: string; quantity: number }[],
   dayMovements: Awaited<ReturnType<typeof getProductMovementsByReasonInPeriod>>[],
+  soldCostBasis: { costBasisMinor: number; snapshottedQuantity: number } | undefined,
 ): Promise<ProductLedgerRow> {
   const sums = foldReasonLines(periodLines);
 
@@ -831,7 +856,26 @@ async function buildProductLedgerRow(
 
   const soldQty = sums.sold;
   const salesValueMinor = product.priceMinor != null ? soldQty * product.priceMinor : 0;
-  const costOfSalesMinor = basis ? basis.costBasisMinor * soldQty : null;
+
+  // T8: cost of sales comes from what each sale actually cost at the time
+  // (snapshotted on the movement), not from the product's current cost.
+  // Reading the current figure meant editing a price today silently moved
+  // a closed period's cost of goods sold and profit — plan §3.4.
+  //
+  // Sales recorded before T8 carry no snapshot. Those units fall back to
+  // the current basis rather than being valued at zero, which would
+  // understate cost of goods sold and overstate profit; the fallback is
+  // the old behaviour, confined to the rows that predate the fix.
+  const snapshotted = soldCostBasis?.snapshottedQuantity ?? 0;
+  const unsnapshottedQty = Math.max(soldQty - snapshotted, 0);
+  const costOfSalesMinor =
+    soldCostBasis && basis
+      ? soldCostBasis.costBasisMinor + basis.costBasisMinor * unsnapshottedQty
+      : soldCostBasis
+        ? soldCostBasis.costBasisMinor
+        : basis
+          ? basis.costBasisMinor * soldQty
+          : null;
   const profitMinor = costOfSalesMinor === null ? null : salesValueMinor - costOfSalesMinor;
   const closingValueMinor = basis ? basis.costBasisMinor * closingQty : null;
 
@@ -973,6 +1017,17 @@ export async function getProductLedger(
     );
     for (const dm of dayMovements) if (!dm.ok) return dm;
 
+    // T8: what each sale in this period actually cost at the time.
+    const soldCost = await getSoldCostBasisInPeriod(
+      db,
+      requester,
+      location.id,
+      input.periodStart,
+      input.periodEnd,
+    );
+    if (!soldCost.ok) return soldCost;
+    const soldCostByProduct = new Map(soldCost.lines.map((l) => [l.productId, l]));
+
     for (const productId of productIds) {
       const product = productById.get(productId);
       if (!product) continue;
@@ -990,6 +1045,7 @@ export async function getProductLedger(
           closingQty,
           linesByProduct.get(productId) ?? [],
           dayMovements,
+          soldCostByProduct.get(productId),
         ),
       );
     }

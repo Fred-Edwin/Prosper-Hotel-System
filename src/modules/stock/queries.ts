@@ -885,3 +885,75 @@ export async function markStockCountLineCorrected(
     data: { correctedAt: new Date(), correctedBy },
   });
 }
+
+/**
+ * Editable-ledger T8 — every ingredient movement at a location up to a
+ * date, in order, for rebuilding the running-average cost as it stood then.
+ *
+ * `unitCostMinor` is snapshotted per delivery and never rewritten, so the
+ * average in force at any past instant is derivable from the deliveries up
+ * to that instant. That is the whole reason historical valuation is
+ * possible without storing a cost history table.
+ *
+ * Ordered oldest-first because a running average is order-dependent:
+ * replaying it backwards gives a different (wrong) answer.
+ */
+export async function findIngredientMovementsAtLocationAsOf(
+  db: Db,
+  locationId: string,
+  asOf: Date,
+): Promise<{ ingredientId: string; quantity: number; reason: string; unitCostMinor: number | null }[]> {
+  const rows = await db.ingredientMovement.findMany({
+    where: { locationId, occurredAt: { lte: asOf }, reversed: false },
+    orderBy: { occurredAt: "asc" },
+    select: { ingredientId: true, quantity: true, reason: true, unitCostMinor: true },
+  });
+  return rows.map((r) => ({
+    ingredientId: r.ingredientId,
+    quantity: r.quantity.toNumber(),
+    reason: r.reason,
+    unitCostMinor: r.unitCostMinor?.toNumber() ?? null,
+  }));
+}
+
+/**
+ * Editable-ledger T8 — the cost of goods actually sold in a period, per
+ * product, taken from each `sold` movement's snapshotted costBasisMinor.
+ *
+ * This is the historical figure: the cost that was in force at the moment
+ * of each sale, frozen then and never rewritten. The ledger prefers it
+ * over `resolveProductCostBasis`'s *current* cost precisely so that
+ * editing a price today cannot reshape a closed period's cost of goods
+ * sold (plan §3.4).
+ *
+ * `snapshotted` reports how many of the period's sold units carry a
+ * snapshot, so the caller can tell "no sales" from "sales predating the
+ * snapshot" — movements written before T8 have no costBasisMinor, and
+ * silently valuing those at zero would understate cost of goods sold.
+ */
+export async function sumSoldCostBasisByProductAtLocationInPeriod(
+  db: Db,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ productId: string; costBasisMinor: number; snapshottedQuantity: number }[]> {
+  const rows = await db.stockMovement.findMany({
+    where: {
+      locationId,
+      reason: "sold",
+      occurredAt: { gt: periodStart, lte: periodEnd },
+      reversed: false,
+    },
+    select: { productId: true, quantity: true, costBasisMinor: true },
+  });
+
+  const byProduct = new Map<string, { costBasisMinor: number; snapshottedQuantity: number }>();
+  for (const row of rows) {
+    if (row.costBasisMinor == null) continue;
+    const existing = byProduct.get(row.productId) ?? { costBasisMinor: 0, snapshottedQuantity: 0 };
+    existing.costBasisMinor += row.costBasisMinor.toNumber();
+    existing.snapshottedQuantity += Math.abs(row.quantity.toNumber());
+    byProduct.set(row.productId, existing);
+  }
+  return Array.from(byProduct.entries()).map(([productId, v]) => ({ productId, ...v }));
+}

@@ -1,5 +1,6 @@
-import type { PrismaClient } from "@/generated/prisma/client";
 import type {
+  Prisma,
+  PrismaClient,
   Product as PrismaProduct,
   Ingredient as PrismaIngredient,
   Recipe as PrismaRecipe,
@@ -7,6 +8,12 @@ import type {
   Asset as PrismaAsset,
 } from "@/generated/prisma/client";
 import type { Asset, Category, Ingredient, Product, ProductKind, Recipe } from "./schema";
+
+// Read paths called from inside a db.$transaction — stock's
+// recordStockMovement snapshots a sale's cost basis mid-transaction.
+// Prisma's transaction client is a distinct, near-identical type; same
+// convention as stock/queries.ts.
+type Db = PrismaClient | Prisma.TransactionClient;
 
 // Prisma returns Decimal fields as Decimal.js objects, not plain numbers.
 // Every quantity/threshold/money field is converted to a number at this
@@ -51,7 +58,7 @@ export async function listProducts(db: PrismaClient): Promise<Product[]> {
 }
 
 export async function findProductsByIds(
-  db: PrismaClient,
+  db: Db,
   ids: string[],
 ): Promise<Product[]> {
   const rows = await db.product.findMany({ where: { id: { in: ids } } });
@@ -143,7 +150,7 @@ export async function findIngredientById(
 }
 
 export async function findIngredientsByIds(
-  db: PrismaClient,
+  db: Db,
   ids: string[],
 ): Promise<Ingredient[]> {
   const rows = await db.ingredient.findMany({ where: { id: { in: ids } } });
@@ -268,7 +275,7 @@ export async function listRecipeVersionsByProduct(
 }
 
 export async function findRecipeInForceAt(
-  db: PrismaClient,
+  db: Db,
   productId: string,
   at: Date,
 ): Promise<Recipe | null> {

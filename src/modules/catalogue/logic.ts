@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { findExpenseById } from "@/modules/cash";
 import { findLocationById } from "@/modules/people";
@@ -401,7 +401,7 @@ export async function createRecipe(
 // ADR 0005: computed on read, never stored — recipes are a cost/yield
 // source only and must never become a stored COGS figure.
 async function withPerUnitCost(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   recipe: Recipe,
 ): Promise<RecipeWithCost> {
   const ingredients = await findIngredientsByIds(
@@ -423,7 +423,7 @@ async function withPerUnitCost(
 }
 
 export async function getCurrentRecipe(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   productId: string,
 ): Promise<RecipeWithCost | null> {
   const recipe = await findRecipeInForceAt(db, productId, new Date());

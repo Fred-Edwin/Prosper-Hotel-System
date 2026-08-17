@@ -16,6 +16,7 @@ export {
   amendDayTotal,
   amendDerivedPosition,
   amendScalar,
+  getSoldCostBasisInPeriod,
   listTransfersAtLocation,
   recordStockMovement,
   recordIngredientReceipt,
@@ -51,6 +52,7 @@ export {
 export type {
   ReverseMovementResult,
   AmendResult,
+  SoldCostBasisResult,
   ProductCostBasis,
   StockAccessResult,
   SellableProductsResult,

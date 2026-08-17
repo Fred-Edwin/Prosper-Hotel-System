@@ -53,6 +53,8 @@ import {
   findTransfersInvolvingLocation,
   markStockCountLineCorrected,
   sumIngredientMovementsAtLocationAsOf,
+  findIngredientMovementsAtLocationAsOf,
+  sumSoldCostBasisByProductAtLocationInPeriod,
   sumIngredientMovementsByReasonAtLocationInPeriod,
   sumIngredientsBoughtMinorAtLocationInPeriod,
   sumIngredientsIssuedByIngredientAtLocationInPeriod,
@@ -148,12 +150,43 @@ export async function recordStockMovement(
     return { ok: false, reason: "forbidden" };
   }
 
+  // T8: a `sold` movement snapshots the cost basis in force at the moment
+  // of sale, the same way production and non-sales movements already do.
+  //
+  // Without this there is no historical product cost anywhere in the
+  // schema, so the ledger had to value *past* sales at the product's
+  // *current* cost — meaning a price edit today silently moved last
+  // month's cost of goods sold and profit. Plan §3.4 calls that fix
+  // non-optional before price editing is exposed, and this is the half of
+  // it the data model was missing.
+  //
+  // Snapshotting only on `sold` (rather than every reason) keeps the
+  // change to the figure that was actually unrecoverable: transfers and
+  // receipts do not consume stock, so no cost of goods is derived from
+  // them.
+  let costBasisMinor: number | undefined;
+  let isEstimated: boolean | undefined;
+  if (input.reason === "sold") {
+    const [product] = await findProductsByIds(db, [input.productId]);
+    if (product) {
+      const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
+      const basis = resolveProductCostBasis(product, recipe);
+      if (basis) {
+        // Stored as the whole line's value, matching the convention
+        // recordNonSalesConsumption uses, not a per-unit figure.
+        costBasisMinor = basis.costBasisMinor * Math.abs(input.quantity);
+        isEstimated = basis.isEstimated;
+      }
+    }
+  }
+
   const movement = await createStockMovement(db, {
     productId: input.productId,
     locationId: input.locationId,
     quantity: input.quantity,
     reason: input.reason,
     staffMemberId: requester.staff.id,
+    ...(costBasisMinor !== undefined ? { costBasisMinor, isEstimated } : {}),
   });
   return { ok: true, movement };
 }
@@ -1991,14 +2024,65 @@ export async function getIngredientStockValueAtLocation(
   if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
     return { ok: false, reason: "forbidden" };
   }
+  // T8: valued at the cost **in force at `asOf`**, rebuilt from the
+  // delivery history, not at the ingredient's current lastKnownCostMinor.
+  //
+  // The old behaviour read today's figure for every date, so any price
+  // move — a new delivery, or the owner editing a cost — silently
+  // reshaped every past valuation, and with it formulas.md §6's whole
+  // cost-of-goods-sold line for closed periods. Plan §3.4 promises price
+  // edits are not retroactive; this is what makes that true.
+  const movements = await findIngredientMovementsAtLocationAsOf(db, locationId, asOf);
+  const averages = runningAveragesByIngredientAsOf(movements);
   const sums = await sumIngredientMovementsAtLocationAsOf(db, locationId, asOf);
-  const ingredients = await findIngredientsByIds(db, sums.map((s) => s.ingredientId));
-  const costById = new Map(ingredients.map((i) => [i.id, i.lastKnownCostMinor ?? 0]));
-  const totalMinor = sums.reduce(
-    (sum, s) => sum + s.quantityOnHand * (costById.get(s.ingredientId) ?? 0),
-    0,
-  );
+  const totalMinor = sums.reduce((sum, s) => {
+    const cost = averages.get(s.ingredientId);
+    // No delivery on record by this date means no cost was ever in force,
+    // so there is no honest figure to state — formulas.md's "not zero, not
+    // a guess" applied to the cost. The quantity is still visible on the
+    // Store ledger; only its valuation is withheld.
+    if (cost == null) return sum;
+    return sum + s.quantityOnHand * cost;
+  }, 0);
   return { ok: true, totalMinor };
+}
+
+/**
+ * Replays each ingredient's running average over its movement history, the
+ * same formula `recordIngredientCost` applies live (formulas.md §3) — the
+ * point being that both must agree, or a valuation would jump the moment a
+ * historical read overtook the stored figure.
+ *
+ * Order matters: a running average is order-dependent, so the caller
+ * supplies movements oldest-first.
+ */
+function runningAveragesByIngredientAsOf(
+  movements: { ingredientId: string; quantity: number; reason: string; unitCostMinor: number | null }[],
+): Map<string, number> {
+  const onHand = new Map<string, number>();
+  const average = new Map<string, number>();
+
+  for (const m of movements) {
+    const quantityOnHand = onHand.get(m.ingredientId) ?? 0;
+    if (m.reason === "received" && m.unitCostMinor != null) {
+      const current = average.get(m.ingredientId) ?? null;
+      // Same guard as recordIngredientCost: with nothing on hand (or no
+      // average yet) the delivery's own price *is* the average, rather
+      // than being blended into a figure that does not exist.
+      const next =
+        quantityOnHand <= 0 || current == null
+          ? m.unitCostMinor
+          : Math.round(
+              ((quantityOnHand * current + m.quantity * m.unitCostMinor) /
+                (quantityOnHand + m.quantity)) *
+                100,
+            ) / 100;
+      average.set(m.ingredientId, next);
+    }
+    onHand.set(m.ingredientId, quantityOnHand + m.quantity);
+  }
+
+  return average;
 }
 
 export type IngredientQuantityAtLocationResult =
@@ -2777,4 +2861,35 @@ export async function amendScalar(
   });
 
   return { ok: true };
+}
+
+
+export type SoldCostBasisResult =
+  | { ok: true; lines: { productId: string; costBasisMinor: number; snapshottedQuantity: number }[] }
+  | { ok: false; reason: "forbidden" };
+
+/**
+ * Editable-ledger T8 — cost of goods sold in a period from the snapshots
+ * on each `sold` movement, rather than from the product's current cost.
+ *
+ * See sumSoldCostBasisByProductAtLocationInPeriod for why this exists: it
+ * is what stops a price edit today from moving a closed month's profit.
+ */
+export async function getSoldCostBasisInPeriod(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<SoldCostBasisResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const lines = await sumSoldCostBasisByProductAtLocationInPeriod(
+    db,
+    locationId,
+    periodStart,
+    periodEnd,
+  );
+  return { ok: true, lines };
 }
