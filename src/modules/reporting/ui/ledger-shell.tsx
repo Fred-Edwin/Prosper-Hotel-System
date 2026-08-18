@@ -116,20 +116,52 @@ function isIsoDate(v: string | null): v is string {
   return !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 }
 
+/** Local calendar date as YYYY-MM-DD. Deliberately not `toISOString()`,
+ * which formats in UTC — east of Greenwich (Nairobi is UTC+3) that yields
+ * *yesterday* for every local time before 03:00, so "Today" silently
+ * showed the wrong day early in the morning. */
+function isoDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return isoDate(new Date());
 }
 
 function daysAgoIso(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return isoDate(d);
+}
+
+/** Calendar boundaries, matching `dashboard-profit.tsx`'s `periodBounds`
+ * (2026-08-18, confirmed with Edwinfred). Week and month were previously
+ * rolling windows here — `daysAgoIso(7)` / `daysAgoIso(30)` — so "This
+ * month" on the Ledger covered the last 30 days and crossed into the
+ * previous calendar month, disagreeing with the same label on the
+ * Dashboard. The owner means the calendar month, so the Ledger was the
+ * one that was wrong. */
+function startOfWeekIso(): string {
+  const d = new Date();
+  // getDay(): 0 = Sunday .. 6 = Saturday. Days back to Monday: Sunday
+  // needs 6, everything else needs (day - 1).
+  const day = d.getDay();
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return isoDate(d);
+}
+
+function startOfMonthIso(): string {
+  const d = new Date();
+  return isoDate(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
 function boundsForPreset(preset: PeriodPreset, customStart: string, customEnd: string) {
   if (preset === "day") return { periodStart: todayIso(), periodEnd: todayIso() };
-  if (preset === "week") return { periodStart: daysAgoIso(7), periodEnd: todayIso() };
-  if (preset === "month") return { periodStart: daysAgoIso(30), periodEnd: todayIso() };
+  if (preset === "week") return { periodStart: startOfWeekIso(), periodEnd: todayIso() };
+  if (preset === "month") return { periodStart: startOfMonthIso(), periodEnd: todayIso() };
   return { periodStart: customStart, periodEnd: customEnd };
 }
 
