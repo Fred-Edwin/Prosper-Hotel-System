@@ -57,10 +57,11 @@ type PriceAndCreateSaleResult =
     }
   | { ok: false; reason: "insufficient_stock"; productId: string; available: number };
 
-// Shared by recordCounterSale and recordSaleCorrection (ticket 45) — an
-// ordinary sale and a backdated correction price, validate and decrement
-// stock identically; only staffMemberId/occurredAt/effectiveAt/correction
-// attribution differ, which the caller sets on top of this.
+// Kept as a separate step from recordCounterSale even though it now has a
+// single caller: it is the whole pricing/validation/stock-decrement path,
+// and inlining it would bury that in the middle of the route-facing
+// function. It once also served recordSaleCorrection, removed by T11
+// (ADR 0008).
 async function priceAndCreateSale(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -75,9 +76,6 @@ async function priceAndCreateSale(
   saleAttribution: {
     staffMemberId: string;
     occurredAt?: Date;
-    effectiveAt?: Date;
-    isCorrection?: boolean;
-    correctionReason?: string;
   },
 ): Promise<PriceAndCreateSaleResult> {
   const fulfilment = input.fulfilment ?? "counter";
@@ -175,9 +173,6 @@ async function priceAndCreateSale(
       lines: saleLines,
       paymentLines: input.paymentLines,
       occurredAt: saleAttribution.occurredAt,
-      effectiveAt: saleAttribution.effectiveAt,
-      isCorrection: saleAttribution.isCorrection,
-      correctionReason: saleAttribution.correctionReason,
     });
 
     for (const { line } of priced) {
@@ -268,60 +263,6 @@ export async function recordCountDerivedSale(
     lines: input.lines,
     paymentLines: [],
     occurredAt: input.occurredAt,
-  });
-}
-
-export type RecordSaleCorrectionResult =
-  | { ok: true; sale: Sale }
-  | {
-      ok: false;
-      reason:
-        | "forbidden"
-        | "reason_required"
-        | "invalid_quantity"
-        | "inactive_product"
-        | "payment_mismatch"
-        | "credit_requires_customer"
-        | "delivery_requires_customer"
-        | "customer_not_found";
-    }
-  | { ok: false; reason: "insufficient_stock"; productId: string; available: number };
-
-// architecture.md's "Changing a closed day": the owner does not edit a
-// closed figure, she records a new entry with occurredAt = now and
-// effectiveAt = the day it corrects. Reuses priceAndCreateSale — the same
-// pricing/validation/stock-decrement path as an ordinary sale — so "stock
-// adjusted accordingly" (proposal.md §8) comes for free. Purely additive:
-// the corrected day's original Sale(s) are never touched.
-export async function recordSaleCorrection(
-  db: PrismaClient,
-  requester: AuthenticatedStaff,
-  input: {
-    staffMemberId: string;
-    locationId: string;
-    effectiveDate: Date;
-    reason: string;
-    fulfilment?: SaleFulfilment;
-    customerId?: string | null;
-    deliveryFeeMinor?: number | null;
-    lines: { productId: string; quantity: number }[];
-    paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
-  },
-): Promise<RecordSaleCorrectionResult> {
-  if (!requireOwner(requester)) {
-    return { ok: false, reason: "forbidden" };
-  }
-
-  if (input.reason.trim() === "") {
-    return { ok: false, reason: "reason_required" };
-  }
-
-  return priceAndCreateSale(db, requester, input.locationId, input, {
-    staffMemberId: input.staffMemberId,
-    occurredAt: new Date(),
-    effectiveAt: input.effectiveDate,
-    isCorrection: true,
-    correctionReason: input.reason.trim(),
   });
 }
 

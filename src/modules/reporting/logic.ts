@@ -1895,15 +1895,14 @@ export async function getLedgerAmendments(
 export type ActivityKind =
   | "sale"
   | "void"
-  | "correction"
   | "movement"
   | "handover"
   | "expense"
   | "repayment"
   | "days_worked"
-  // Editable-ledger T2 — the owner's in-place edits. Distinct from
-  // "correction", which is the superseded backdated-sale mechanism that
-  // T11 removes.
+  // Editable-ledger T2 — the owner's in-place edits. This replaced the
+  // "correction" kind, which was the backdated-sale mechanism removed by
+  // T11 (ADR 0008): one way to correct a figure, so one kind for it.
   | "amendment";
 
 export type ActivityEntry = {
@@ -2013,26 +2012,14 @@ function salesToActivityRows(
       .join(", ");
     const locationName = locationNameById.get(sale.locationId) ?? null;
 
-    if (sale.isCorrection) {
-      rows.push({
-        id: `sale-correction-${sale.id}`,
-        enteredAt: sale.occurredAt,
-        effectiveOn: sale.effectiveAt,
-        kind: "correction",
-        who: nameFor(sale.staffMemberId),
-        whoId: sale.staffMemberId,
-        what: `Sale corrected — ${itemSummary}`,
-        locationName,
-        amountMinor: sale.totalMinor,
-        reason: sale.correctionReason,
-      });
-      continue;
-    }
-
     rows.push({
       id: `sale-${sale.id}`,
       enteredAt: sale.occurredAt,
-      effectiveOn: sale.effectiveAt,
+      // Was sale.effectiveAt, dropped by T11 with the correction
+      // mechanism. For an ordinary sale the two were always equal —
+      // createSaleRecord defaulted effectiveAt to occurredAt — so this is
+      // the same value, read from the column that survives.
+      effectiveOn: sale.occurredAt,
       kind: "sale",
       who: nameFor(sale.staffMemberId),
       whoId: sale.staffMemberId,

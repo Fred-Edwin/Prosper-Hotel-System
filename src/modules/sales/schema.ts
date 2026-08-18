@@ -42,12 +42,6 @@ export type Sale = {
   totalMinor: number;
   deliveryFeeMinor: number | null;
   occurredAt: Date;
-  // Ticket 45 — architecture.md's "two dates: effective and entered."
-  // Equal to occurredAt for every ordinarily-recorded sale; set to a past
-  // date only by recordSaleCorrection.
-  effectiveAt: Date;
-  isCorrection: boolean;
-  correctionReason: string | null;
   voided: boolean;
   voidedAt: Date | null;
   voidedBy: string | null;

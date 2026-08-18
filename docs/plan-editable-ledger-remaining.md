@@ -495,7 +495,43 @@ and `docs/gotchas.md` with anything from T6/T7 that cost real time.
 
 ---
 
-## T11 — Delete the superseded correction mechanism
+## T11 — Delete the superseded correction mechanism ✅ done (2026-08-18)
+
+**Removed:** `recordSaleCorrection` + `recordSaleCorrectionRoute` and their
+`sales/index.ts` exports; `src/app/api/sales/corrections/route.ts`;
+`record-correction-dialog.tsx` and its stories; `Sale.effectiveAt`,
+`isCorrection`, `correctionReason` from schema and `sales/schema.ts`; the
+`"correction"` `ActivityKind` and its `getActivity` branch; the covering tests.
+Migration `20260818041613_drop_sale_correction_columns`.
+
+**Verified before dropping**, since the migration is irreversible: the dev
+database has **0 rows with `isCorrection = true`** — the mechanism was never used
+in anger. Rows where `effectiveAt <> occurredAt` are seed artifacts (`seed.ts`
+writes via `db.sale.create` rather than `createSaleRecord`, so `effectiveAt` took
+its `@default(now())`); one of them has `effectiveAt` *earlier* than `occurredAt`,
+which is incoherent for a field meaning "the past day this corrects" and further
+evidence the value carried no meaning. Activity now reads `occurredAt`, which for
+every application-recorded sale was the same instant.
+
+**Three things the enumeration above missed**, all found by following the
+compiler rather than the list:
+
+- **`reason` is now dead on every activity row.** The correction was the only
+  producer of a non-null `reason`. The field and `getActivity`'s search branch
+  stay — a future row kind that carries a reason is matched for free — but the
+  "search matches description **and reason text**" test now covers only the half
+  that is still real, and says why.
+- **`onCorrectionRecorded` was threaded through three component layers** in
+  `activity.tsx` purely to feed the deleted dialog.
+- **The Activity story fixture had no `amendment` row at all**, so that kind's
+  "notable" badge was never shown by any story. The correction row became an
+  amendment row, which fixes the break and closes the gap.
+
+*(Original ticket text below.)*
+
+---
+
+## T11 — original ticket
 
 Per **D5**, approved 2026-08-17, no further confirmation needed.
 

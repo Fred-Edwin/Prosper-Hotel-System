@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
-import { recordCounterSale, voidSale, recordSaleCorrection } from "@/modules/sales";
+import { recordCounterSale, voidSale } from "@/modules/sales";
 import { recordExpense, recordDrawingRepayment } from "@/modules/cash";
 import { recordNonSalesConsumption, recordStockCount, correctStockCount, getStockCount } from "@/modules/stock";
 import { recordAmendment } from "@/modules/people";
@@ -147,19 +147,6 @@ describe("getActivity", () => {
     const voided = await voidSale(testDb, cashier(), sale.sale.id);
     expect(voided.ok).toBe(true);
 
-    // correction (restaurant, owner Lucy, recorded for Sarah)
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-    const correction = await recordSaleCorrection(testDb, owner(), {
-      staffMemberId: cashierId,
-      locationId: restaurantId,
-      effectiveDate: threeDaysAgo,
-      reason: "M-Pesa message arrived late",
-      lines: [{ productId: sodaId, quantity: 1 }],
-      paymentLines: [{ method: "cash", amountMinor: 80 }],
-    });
-    expect(correction.ok).toBe(true);
-
     // wastage (restaurant, Sarah) — a movement kind
     const wastage = await recordNonSalesConsumption(testDb, cashier(), {
       itemType: "product",
@@ -244,7 +231,6 @@ describe("getActivity", () => {
         "sale", // Sarah's restaurant sale
         "sale", // Anne's canteen sale
         "void",
-        "correction",
         "movement", // wastage
         "movement", // the stock count itself
         "movement", // the owner's count correction
@@ -255,12 +241,6 @@ describe("getActivity", () => {
         "days_worked",
       ].sort(),
     );
-
-    const correctionRow = result.rows.find((r) => r.kind === "correction");
-    expect(correctionRow?.reason).toBe("M-Pesa message arrived late");
-    expect(correctionRow?.who).toBe("Sarah");
-    expect(correctionRow?.effectiveOn.toDateString()).toBe(threeDaysAgo.toDateString());
-    expect(correctionRow?.enteredAt.toDateString()).toBe(new Date().toDateString());
 
     const canteenSaleRow = result.rows.find((r) => r.kind === "sale" && r.who === "Anne");
     expect(canteenSaleRow).toBeDefined();
@@ -300,7 +280,6 @@ describe("getActivity", () => {
         fulfilment: "counter",
         totalMinor: 80,
         occurredAt: oldSale,
-        effectiveAt: oldSale,
         lines: { create: [{ productId: sodaId, quantity: 1, priceMinor: 80 }] },
         paymentLines: { create: [{ method: "cash", amountMinor: 80 }] },
       },
@@ -347,14 +326,23 @@ describe("getActivity", () => {
     void attendantSale;
   });
 
-  test("search matches description and reason text", async () => {
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-    await recordSaleCorrection(testDb, owner(), {
-      staffMemberId: cashierId,
-      locationId: restaurantId,
-      effectiveDate: threeDaysAgo,
-      reason: "M-Pesa message arrived late",
+  /**
+   * Was "search matches description and reason text", fixtured on a
+   * backdated sale correction whose reason string it searched for.
+   *
+   * T11 removed that mechanism, and with it **the only activity row that
+   * ever carried a non-null `reason`** — every remaining row kind sets it
+   * to null. The field stays on `ActivityEntry` and `getActivity` still
+   * searches it, so a future row kind that carries a reason is matched
+   * for free; there is simply nothing producing one today. Asserting on
+   * reason text here would mean fabricating a row shape that the app
+   * cannot currently emit.
+   *
+   * So this now covers the half that is still real: matching on the
+   * description text.
+   */
+  test("search matches description text", async () => {
+    await recordCounterSale(testDb, cashier(), {
       lines: [{ productId: sodaId, quantity: 1 }],
       paymentLines: [{ method: "cash", amountMinor: 80 }],
     });
@@ -364,7 +352,7 @@ describe("getActivity", () => {
     const found = await getActivity(testDb, owner(), {
       periodStart,
       periodEnd,
-      search: "M-Pesa message",
+      search: "Soda",
       page: 1,
       pageSize: 50,
     });

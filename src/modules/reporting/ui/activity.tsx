@@ -4,7 +4,7 @@
  * Activity — the audit trail (ticket 45). Adapted from the design-reference
  * worktree's locked `ActivityPage` (`activity/page.tsx`): recorded/
  * effective-date columns with a backdated row given the warning treatment,
- * a quiet kind badge except for correction/void, person/kind filters,
+ * a quiet kind badge except for void/amendment, person/kind filters,
  * search including reason text, pagination "1–50 of N" rather than
  * infinite scroll. Same fetching/LoadState/presentational split as
  * cash-ledger.tsx, RecordTable from components/patterns per its own
@@ -30,7 +30,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { History, ChevronLeft, ChevronRight } from "lucide-react";
 import { money } from "@/shared/money";
-import { RecordCorrectionDialog } from "./record-correction-dialog";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", {
@@ -44,14 +43,14 @@ function formatDateTime(iso: string): string {
 export type ActivityKind =
   | "sale"
   | "void"
-  | "correction"
   | "movement"
   | "handover"
   | "takings"
   | "expense"
   | "repayment"
   | "days_worked"
-  // Editable-ledger T2 — the owner's in-place edits.
+  // Editable-ledger T2 — the owner's in-place edits. Replaced the
+  // "correction" kind, removed with the backdated-sale mechanism by T11.
   | "amendment";
 
 export type ActivityRowData = {
@@ -70,7 +69,6 @@ export type ActivityRowData = {
 const kindLabel: Record<ActivityKind, string> = {
   sale: "Sale",
   void: "Void",
-  correction: "Correction",
   movement: "Stock",
   handover: "Handover",
   takings: "Takings",
@@ -150,7 +148,6 @@ export function Activity() {
       }}
       onClear={clear}
       onRetry={() => setAttempt((a) => a + 1)}
-      onCorrectionRecorded={() => setAttempt((a) => a + 1)}
     />
   );
 }
@@ -166,7 +163,6 @@ function ActivityForAttempt({
   onQuery,
   onClear,
   onRetry,
-  onCorrectionRecorded,
 }: {
   page: number;
   kind: string;
@@ -178,7 +174,6 @@ function ActivityForAttempt({
   onQuery: (v: string) => void;
   onClear: () => void;
   onRetry: () => void;
-  onCorrectionRecorded: () => void;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const cancelledRef = useRef(false);
@@ -216,7 +211,6 @@ function ActivityForAttempt({
       onQuery={onQuery}
       onClear={onClear}
       onRetry={onRetry}
-      onCorrectionRecorded={onCorrectionRecorded}
     />
   );
 }
@@ -234,7 +228,6 @@ export function ActivityView({
   onQuery,
   onClear,
   onRetry,
-  onCorrectionRecorded,
 }: {
   state: LoadState;
   page: number;
@@ -248,7 +241,6 @@ export function ActivityView({
   onQuery: (v: string) => void;
   onClear: () => void;
   onRetry: () => void;
-  onCorrectionRecorded: () => void;
 }) {
   const filtered = query !== "" || kind !== "all" || personId !== "all";
 
@@ -360,7 +352,7 @@ export function ActivityView({
         <EmptyFirstUse
           icon={<History className="size-4" />}
           title="Nothing has happened yet"
-          body="Every sale, handover, payment and correction will appear here with who made it and when — including anything backdated."
+          body="Every sale, handover, payment and amendment will appear here with who made it and when."
         />
       );
     }
@@ -412,9 +404,7 @@ export function ActivityView({
                 width: "8rem",
               },
             ]}
-          >
-            <RecordCorrectionDialog onRecorded={onCorrectionRecorded} />
-          </TableToolbar>
+          />
         </div>
       )}
 
@@ -424,7 +414,7 @@ export function ActivityView({
 }
 
 function KindBadge({ kind }: { kind: ActivityKind }) {
-  const notable = kind === "correction" || kind === "void" || kind === "amendment";
+  const notable = kind === "void" || kind === "amendment";
   return (
     <Badge
       variant="outline"

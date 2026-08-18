@@ -9,7 +9,6 @@ import {
   getCustomerBalanceForOwner,
   getCustomerCreditHistory,
   recordRepayment,
-  recordSaleCorrection,
 } from "./logic";
 
 function writeStatus(reason: string): number {
@@ -145,41 +144,6 @@ export async function customerCreditHistoryRoute(
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }
   return Response.json({ entries: result.entries });
-}
-
-// Ticket 45 — the owner's correction mechanism: a new, backdated Sale
-// against a closed day. Owner-only, enforced in logic.ts.
-export async function recordSaleCorrectionRoute(request: Request): Promise<Response> {
-  const session = await getSession();
-  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
-
-  const body = await request.json();
-  const effectiveDate = new Date(body.effectiveDate);
-  if (Number.isNaN(effectiveDate.getTime())) {
-    return Response.json({ error: "invalid_effective_date" }, { status: 400 });
-  }
-
-  const result = await recordSaleCorrection(db, session, {
-    staffMemberId: body.staffMemberId,
-    locationId: body.locationId,
-    effectiveDate,
-    reason: body.reason ?? "",
-    fulfilment: body.fulfilment,
-    customerId: body.customerId,
-    deliveryFeeMinor: body.deliveryFeeMinor,
-    lines: body.lines,
-    paymentLines: body.paymentLines,
-  });
-  if (!result.ok) {
-    if (result.reason === "insufficient_stock") {
-      return Response.json(
-        { error: result.reason, productId: result.productId, available: result.available },
-        { status: 409 },
-      );
-    }
-    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
-  }
-  return Response.json({ sale: result.sale });
 }
 
 // Ticket 36 — "Take a repayment," any staff member, own location.

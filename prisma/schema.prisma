@@ -323,16 +323,11 @@ model Sale {
   deliveryFeeMinor Decimal?       @db.Decimal(10, 2)
   lines            SaleLine[]
   paymentLines     PaymentLine[]
+  // A sale has one date. `effectiveAt`, `isCorrection` and
+  // `correctionReason` were dropped by editable-ledger T11 along with the
+  // backdated-correction mechanism they served (ADR 0008): the owner now
+  // edits a figure in place and the change is recorded in `Amendment`.
   occurredAt       DateTime       @default(now())
-  // Ticket 45 — architecture.md's "Changing a closed day": every entry
-  // carries an effective date and an entered date (occurredAt), normally
-  // identical. Defaults to occurredAt for every ordinarily-recorded sale;
-  // set explicitly, in the past, only by recordSaleCorrection.
-  effectiveAt      DateTime       @default(now())
-  // Set only by recordSaleCorrection — marks this Sale as a backdated
-  // correction rather than an ordinary sale, so Activity can flag it.
-  isCorrection     Boolean        @default(false)
-  correctionReason String?
   // Reversal, not deletion — docs/architecture.md's data-lifecycle rule.
   // Unset by anything in this ticket; the void action itself is ticket 10.
   voided           Boolean        @default(false)

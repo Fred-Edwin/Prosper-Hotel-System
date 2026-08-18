@@ -88,7 +88,6 @@ new destinations get added here as tickets that build them land, per
 | Modules/Reporting/EditableNum | `src/modules/reporting/ui/editable-num.stories.tsx` | approved |
 | Modules/Reporting/AmendConfirm | `src/modules/reporting/ui/amend-toast.stories.tsx` | approved |
 | Modules/Reporting/AmendHistory | `src/modules/reporting/ui/amend-history.stories.tsx` | approved |
-| Modules/Reporting/RecordCorrectionDialog | `src/modules/reporting/ui/record-correction-dialog.stories.tsx` | **to be deleted by editable-ledger T11** — the superseded backdated-correction mechanism (ADR 0008, D5) |
 
 ## People
 

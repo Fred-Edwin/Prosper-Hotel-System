@@ -73,9 +73,6 @@ export async function createSaleRecord(
     lines: { productId: string; quantity: number; priceMinor: number }[];
     paymentLines: { method: PaymentMethod; amountMinor: number; customerId?: string | null }[];
     occurredAt?: Date;
-    effectiveAt?: Date;
-    isCorrection?: boolean;
-    correctionReason?: string;
   },
 ): Promise<Sale> {
   const row = await db.sale.create({
@@ -95,9 +92,6 @@ export async function createSaleRecord(
         })),
       },
       ...(data.occurredAt ? { occurredAt: data.occurredAt } : {}),
-      effectiveAt: data.effectiveAt ?? data.occurredAt ?? new Date(),
-      isCorrection: data.isCorrection ?? false,
-      correctionReason: data.correctionReason ?? null,
     },
     include: { lines: true, paymentLines: true },
   });

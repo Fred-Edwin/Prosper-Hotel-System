@@ -36,16 +36,21 @@ const rows: ActivityRowData[] = [
     reason: null,
   },
   {
-    id: "correction-1",
+    // Was a "correction" row until T11 removed that mechanism. An
+    // amendment is what replaces it, and the fixture had none — so the
+    // "amendment" kind rendered a notable badge that no story ever
+    // showed. `effectiveOn` is the day the edit applies to, `enteredAt`
+    // the day she typed it; the gap between them is the point.
+    id: "amendment-1",
     enteredAt: "2026-08-06 13:40",
     effectiveOn: "2026-08-03",
-    kind: "correction",
+    kind: "amendment",
     who: "Lucy",
     whoId: "staff-lucy",
-    what: "Sale corrected — 2 × Rice plate",
+    what: "Sold · Rice plate · 3 Aug: 12 → 10",
     locationName: "Canteen",
-    amountMinor: 900,
-    reason: "M-Pesa message arrived late; original figure kept",
+    amountMinor: null,
+    reason: null,
   },
   {
     id: "movement-1",
@@ -143,7 +148,6 @@ const meta = {
     onQuery: () => {},
     onClear: () => {},
     onRetry: () => {},
-    onCorrectionRecorded: () => {},
   },
 } satisfies Meta<typeof ActivityView>;
 
