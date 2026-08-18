@@ -27,6 +27,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import {
   SectionHeader,
   ErrorState,
@@ -63,11 +64,46 @@ export type LoadState =
   | { status: "denied" }
   | { status: "ready"; data: DashboardProfitData };
 
-export type Period = "day" | "week" | "month";
+export type Period = "day" | "week" | "month" | "custom";
+
+function isIsoDate(v: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+/** Local calendar date as YYYY-MM-DD, for the two `type="date"` inputs.
+ * Deliberately not `toISOString()`, which formats in UTC — east of
+ * Greenwich (Nairobi is UTC+3) that yields *yesterday* for every local
+ * time before 03:00. Same helper as `ledger-shell.tsx`'s. */
+export function isoDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 // ISO week (Monday start) and calendar month — no existing convention in
 // docs/conventions.md for either, confirmed with Edwinfred (ticket 46).
-function periodBounds(period: Period, now: Date): { periodStart: Date; periodEnd: Date } {
+//
+// 2026-08-18: "custom" added so the owner can pick any range, or a single
+// day anywhere in the past, rather than only the three presets (client
+// request). The Ledger already had this; the Dashboard did not. A custom
+// range reads its bounds from `customStart`/`customEnd` instead of `now`,
+// and — matching the Ledger — treats both as *inclusive* local dates, so
+// picking the same date twice means that one whole day. The presets stay
+// half-open (end is exclusive), which is why custom builds its end from
+// the day *after* customEnd.
+function periodBounds(
+  period: Period,
+  now: Date,
+  customStart?: string,
+  customEnd?: string,
+): { periodStart: Date; periodEnd: Date } {
+  if (period === "custom") {
+    const start = new Date(`${customStart}T00:00:00`);
+    const end = new Date(`${customEnd}T00:00:00`);
+    end.setDate(end.getDate() + 1);
+    return { periodStart: start, periodEnd: end };
+  }
   if (period === "day") {
     const start = new Date(now);
     start.setHours(0, 0, 0, 0);
@@ -104,17 +140,38 @@ const zeroDashboardProfitData: DashboardProfitData = {
   },
 };
 
-async function fetchDashboardProfit(period: Period): Promise<LoadState> {
+async function fetchDashboardProfit(
+  period: Period,
+  customStart: string,
+  customEnd: string,
+): Promise<LoadState> {
   // 2026-08-14's opening-balance stock load produces a large negative
   // cost-of-goods-sold (see opening-balance.ts) — real trading hasn't
   // started, so there's nothing real to show yet. Skip the fetch and show
-  // a quiet zero day instead of that artifact.
+  // a quiet zero day instead of that artifact. Only suppresses the "Day"
+  // default — picking 8/14 explicitly via Custom still shows the real
+  // figures, matching `ledger-shell.tsx`'s handling of the same day.
   const now = new Date();
   if (period === "day" && isOpeningBalanceLoadDay(now)) {
     return { status: "ready", data: zeroDashboardProfitData };
   }
+  // A half-typed date input ("2026-08-") parses as Invalid Date and would
+  // send "Invalid Date" to the route, which 400s. Hold the previous view
+  // instead of flashing an error while she is still picking.
+  if (period === "custom" && !(isIsoDate(customStart) && isIsoDate(customEnd))) {
+    return { status: "loading" };
+  }
   try {
-    const { periodStart, periodEnd } = periodBounds(period, new Date());
+    const { periodStart, periodEnd } = periodBounds(period, new Date(), customStart, customEnd);
+    if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+      return { status: "error" };
+    }
+    // The route requires periodStart < periodEnd. An inverted custom range
+    // (end before start) is a normal thing to have on screen mid-pick, so
+    // treat it as "nothing to show" rather than an error.
+    if (periodStart >= periodEnd) {
+      return { status: "ready", data: zeroDashboardProfitData };
+    }
     const params = new URLSearchParams({
       periodStart: periodStart.toISOString(),
       periodEnd: periodEnd.toISOString(),
@@ -136,11 +193,28 @@ export function DashboardProfit() {
 
 function DashboardProfitForAttempt({ onRetry }: { onRetry: () => void }) {
   const [period, setPeriod] = useState<Period>("day");
+  // Defaults for the custom inputs: the last seven days, so switching to
+  // Custom lands on a sensible range rather than two empty boxes. Kept
+  // even when a preset is active, so toggling back to Custom restores
+  // whatever she last picked. Unlike the Ledger this is component state,
+  // not URL state — the Dashboard has no existing query-param convention
+  // and this control governs one card, not the page.
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return isoDate(d);
+  });
+  const [customEnd, setCustomEnd] = useState(() => isoDate(new Date()));
+
   return (
     <DashboardProfitForPeriod
-      key={period}
+      key={period === "custom" ? `custom:${customStart}:${customEnd}` : period}
       period={period}
       onPeriodChange={setPeriod}
+      customStart={customStart}
+      customEnd={customEnd}
+      onCustomStartChange={setCustomStart}
+      onCustomEndChange={setCustomEnd}
       onRetry={onRetry}
     />
   );
@@ -149,10 +223,18 @@ function DashboardProfitForAttempt({ onRetry }: { onRetry: () => void }) {
 function DashboardProfitForPeriod({
   period,
   onPeriodChange,
+  customStart,
+  customEnd,
+  onCustomStartChange,
+  onCustomEndChange,
   onRetry,
 }: {
   period: Period;
   onPeriodChange: (period: Period) => void;
+  customStart: string;
+  customEnd: string;
+  onCustomStartChange: (v: string) => void;
+  onCustomEndChange: (v: string) => void;
   onRetry: () => void;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -166,12 +248,23 @@ function DashboardProfitForPeriod({
   }, []);
 
   useEffect(() => {
-    fetchDashboardProfit(period).then((result) => {
+    fetchDashboardProfit(period, customStart, customEnd).then((result) => {
       if (!cancelledRef.current) setState(result);
     });
-  }, [period]);
+  }, [period, customStart, customEnd]);
 
-  return <DashboardProfitView state={state} period={period} onPeriodChange={onPeriodChange} onRetry={onRetry} />;
+  return (
+    <DashboardProfitView
+      state={state}
+      period={period}
+      onPeriodChange={onPeriodChange}
+      customStart={customStart}
+      customEnd={customEnd}
+      onCustomStartChange={onCustomStartChange}
+      onCustomEndChange={onCustomEndChange}
+      onRetry={onRetry}
+    />
+  );
 }
 
 type TermKey = "revenue" | "cogs" | "running" | "net";
@@ -182,11 +275,19 @@ export function DashboardProfitView({
   state,
   period = "day",
   onPeriodChange = () => {},
+  customStart = "",
+  customEnd = "",
+  onCustomStartChange = () => {},
+  onCustomEndChange = () => {},
   onRetry = () => {},
 }: {
   state: LoadState;
   period?: Period;
   onPeriodChange?: (period: Period) => void;
+  customStart?: string;
+  customEnd?: string;
+  onCustomStartChange?: (v: string) => void;
+  onCustomEndChange?: (v: string) => void;
   onRetry?: () => void;
 }) {
   // Keying on period remounts this state below on every period change, so
@@ -194,18 +295,40 @@ export function DashboardProfitView({
   // preserve it — a different period's own detail is usually what's
   // relevant, and there's no guarantee the same term stays interesting
   // (ticket 46's acceptance criteria: pick one, document the choice).
-  return <DashboardProfitViewForPeriod key={period} {...{ state, period, onPeriodChange, onRetry }} />;
+  return (
+    <DashboardProfitViewForPeriod
+      key={period}
+      {...{
+        state,
+        period,
+        onPeriodChange,
+        customStart,
+        customEnd,
+        onCustomStartChange,
+        onCustomEndChange,
+        onRetry,
+      }}
+    />
+  );
 }
 
 function DashboardProfitViewForPeriod({
   state,
   period,
   onPeriodChange,
+  customStart,
+  customEnd,
+  onCustomStartChange,
+  onCustomEndChange,
   onRetry,
 }: {
   state: LoadState;
   period: Period;
   onPeriodChange: (period: Period) => void;
+  customStart: string;
+  customEnd: string;
+  onCustomStartChange: (v: string) => void;
+  onCustomEndChange: (v: string) => void;
   onRetry: () => void;
 }) {
   const [open, setOpen] = useState<TermKey | null>("cogs");
@@ -246,7 +369,7 @@ function DashboardProfitViewForPeriod({
       <div className="mb-4 overflow-hidden rounded-xl border bg-card">
         <SectionHeader title="Profit" />
         <div className="p-4">
-          <ErrorState what="today's profit" onRetry={onRetry} />
+          <ErrorState what="the profit figures" onRetry={onRetry} />
         </div>
       </div>
     );
@@ -300,14 +423,43 @@ function DashboardProfitViewForPeriod({
   return (
     <>
     <div className="mb-4 overflow-hidden rounded-xl border bg-card shadow-sm" data-testid="dashboard-profit">
-      <div className="flex items-center justify-between px-5 pt-4 pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4 pb-3">
         <h2 className="text-sm font-medium">Profit</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The two date inputs sit before the tabs so the range reads
+              left-to-right into the "Custom" tab that owns it. Shown only
+              when Custom is active — the presets have no range to edit. */}
+          {period === "custom" && (
+            <div className="flex items-center gap-1.5" data-testid="dashboard-profit-custom-range">
+              <Input
+                type="date"
+                aria-label="Range start"
+                value={customStart}
+                max={customEnd || undefined}
+                onChange={(e) => onCustomStartChange(e.target.value)}
+                className="h-8 w-auto text-[13px]"
+                data-testid="dashboard-profit-custom-start"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input
+                type="date"
+                aria-label="Range end"
+                value={customEnd}
+                min={customStart || undefined}
+                onChange={(e) => onCustomEndChange(e.target.value)}
+                className="h-8 w-auto text-[13px]"
+                data-testid="dashboard-profit-custom-end"
+              />
+            </div>
+          )}
           <Tabs value={period} onValueChange={(value) => onPeriodChange(value as Period)}>
             <TabsList>
               <TabsTrigger value="day">Day</TabsTrigger>
               <TabsTrigger value="week">Week</TabsTrigger>
               <TabsTrigger value="month">Month</TabsTrigger>
+              <TabsTrigger value="custom" data-testid="dashboard-profit-period-custom">
+                Custom
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -361,7 +513,10 @@ function DashboardProfitViewForPeriod({
           {open === "revenue" && (
             <Detail title="Where the revenue came from">
               <Term label="Restaurant — each sale as recorded" value={data.revenue.restaurant} />
-              <Term label="Canteen — the day's declared takings" value={data.revenue.canteen} />
+              {/* "the day's declared takings" until 2026-08-18 — wrong for
+                  Week and Month even before Custom existed, since this
+                  panel renders for whatever period is selected. */}
+              <Term label="Canteen — declared takings" value={data.revenue.canteen} />
               <Term label="Revenue" value={data.revenue.total} rule strong />
             </Detail>
           )}

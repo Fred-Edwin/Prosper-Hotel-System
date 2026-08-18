@@ -118,6 +118,41 @@ export const MonthView: Story = {
   },
 };
 
+export const CustomRangeView: Story = {
+  name: "Custom range — any two dates, including a single past day",
+  args: {
+    period: "custom",
+    customStart: "2026-07-01",
+    customEnd: "2026-07-15",
+    state: {
+      status: "ready",
+      data: {
+        revenue: { restaurant: 24300000, canteen: 6700000, total: 31000000 },
+        costOfGoods: { restaurant: 12550000, canteen: 6375000, total: 18925000 },
+        runningCostsMinor: 2900000,
+        grossProfitMinor: 12075000,
+        netProfitMinor: 9175000,
+        byLocation: {
+          restaurant: {
+            revenueMinor: 24300000,
+            costOfGoodsMinor: 12550000,
+            grossProfitMinor: 11750000,
+            runningCostsMinor: 2300000,
+            netProfitMinor: 9450000,
+          },
+          canteen: {
+            revenueMinor: 6700000,
+            costOfGoodsMinor: 6375000,
+            grossProfitMinor: 325000,
+            runningCostsMinor: 600000,
+            netProfitMinor: -275000,
+          },
+        },
+      },
+    },
+  },
+};
+
 export const Loading: Story = {
   args: { state: { status: "loading" } },
 };
