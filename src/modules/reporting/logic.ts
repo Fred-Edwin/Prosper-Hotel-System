@@ -24,6 +24,8 @@ import {
   getPreviousDeliveryCostAtLocation,
   getIngredientQuantityAtLocationAsOf,
   getIngredientsBoughtMinor,
+  getProductStockValueAtLocationAsOf,
+  getProductsBoughtMinor,
   getIngredientsPurchasedByIngredient,
   getIngredientMovementsByReasonInPeriod,
   getProductMovementByReasonInPeriod,
@@ -114,7 +116,12 @@ export async function computeTransferCost(
       productId: line.productId,
       quantity: line.quantity,
       costMinor,
-      usedRecipeCost: recipe?.perUnitCostMinor != null,
+      // 2026-08-18: always false now. A recipe no longer sets cost of goods
+      // sold (ADR 0005) — the transfer moves the item's buying price like
+      // everything else. Kept on the shape so callers need not change, but
+      // it can no longer be true; the field is a candidate for removal once
+      // nothing reads it.
+      usedRecipeCost: false,
       isEstimated: basis?.isEstimated ?? false,
     });
   }
@@ -156,27 +163,56 @@ export async function computeRestaurantCostOfGoods(
   const { restaurant } = await locations(db);
   if (!restaurant) return { ok: false, reason: "not_found" };
 
-  const [opening, closing, bought, transfer] = await Promise.all([
+  // 2026-08-18: opening/purchases/closing now cover PRODUCTS as well as
+  // ingredients. Previously they were ingredient-only, so anything the
+  // restaurant buys and resells without cooking — sodas, bottled water,
+  // crisps — produced revenue with no cost against it, and gross profit
+  // was overstated by the entire purchase cost of those goods. The owner
+  // sells many such items, so this was not a rounding error.
+  //
+  // One formula over all stock, per ADR 0005 and the owner's own model:
+  // an item made from ingredients carries a buying price of 0 (already
+  // counted as those ingredients moved through the store), and a
+  // bought-and-resold item carries its real buying price. Adding the two
+  // halves therefore counts every item exactly once.
+  const [
+    openingIngredients,
+    closingIngredients,
+    boughtIngredients,
+    openingProducts,
+    closingProducts,
+    boughtProducts,
+    transfer,
+  ] = await Promise.all([
     getIngredientStockValueAtLocation(db, requester, restaurant.id, input.dayStart),
     getIngredientStockValueAtLocation(db, requester, restaurant.id, input.dayEnd),
     getIngredientsBoughtMinor(db, requester, restaurant.id, input.dayStart, input.dayEnd),
+    getProductStockValueAtLocationAsOf(db, requester, restaurant.id, input.dayStart),
+    getProductStockValueAtLocationAsOf(db, requester, restaurant.id, input.dayEnd),
+    getProductsBoughtMinor(db, requester, restaurant.id, input.dayStart, input.dayEnd),
     precomputedTransfer
       ? Promise.resolve(precomputedTransfer)
       : computeTransferCost(db, requester, { periodStart: input.dayStart, periodEnd: input.dayEnd }),
   ]);
-  if (!opening.ok) return opening;
-  if (!closing.ok) return closing;
-  if (!bought.ok) return bought;
+  if (!openingIngredients.ok) return openingIngredients;
+  if (!closingIngredients.ok) return closingIngredients;
+  if (!boughtIngredients.ok) return boughtIngredients;
+  if (!openingProducts.ok) return openingProducts;
+  if (!closingProducts.ok) return closingProducts;
+  if (!boughtProducts.ok) return boughtProducts;
   if (!transfer.ok) return transfer;
 
-  const totalMinor =
-    opening.totalMinor + bought.totalMinor - closing.totalMinor - transfer.transferCostMinor;
+  const openingMinor = openingIngredients.totalMinor + openingProducts.totalMinor;
+  const closingMinor = closingIngredients.totalMinor + closingProducts.totalMinor;
+  const boughtMinor = boughtIngredients.totalMinor + boughtProducts.totalMinor;
+
+  const totalMinor = openingMinor + boughtMinor - closingMinor - transfer.transferCostMinor;
 
   return {
     ok: true,
-    openingMinor: opening.totalMinor,
-    boughtMinor: bought.totalMinor,
-    closingMinor: closing.totalMinor,
+    openingMinor,
+    boughtMinor,
+    closingMinor,
     transferCostMinor: transfer.transferCostMinor,
     totalMinor,
   };
@@ -615,6 +651,42 @@ export type LedgerSummaryResult =
 // — so it has no separate opening/closing contribution here either; it
 // only enters via costOfGoodsSoldMinor, same as computeCanteenCostOfGoods
 // elsewhere.
+// 2026-08-18: the Ledger's opening/purchases/closing tiles cover products
+// as well as ingredients, matching computeRestaurantCostOfGoods — the
+// tiles and the cost-of-goods-sold figure they explain must be computed
+// the same way, or the waterfall stops adding up. Their labels change from
+// "Restaurant ingredients" to "Restaurant stock" accordingly.
+async function getRestaurantStockValueAsOf(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  asOf: Date,
+): Promise<{ ok: true; totalMinor: number } | { ok: false; reason: "forbidden" }> {
+  const [ingredients, products] = await Promise.all([
+    getIngredientStockValueAtLocation(db, requester, locationId, asOf),
+    getProductStockValueAtLocationAsOf(db, requester, locationId, asOf),
+  ]);
+  if (!ingredients.ok) return ingredients;
+  if (!products.ok) return products;
+  return { ok: true, totalMinor: ingredients.totalMinor + products.totalMinor };
+}
+
+async function getRestaurantPurchasesMinor(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ ok: true; totalMinor: number } | { ok: false; reason: "forbidden" }> {
+  const [ingredients, products] = await Promise.all([
+    getIngredientsBoughtMinor(db, requester, locationId, periodStart, periodEnd),
+    getProductsBoughtMinor(db, requester, locationId, periodStart, periodEnd),
+  ]);
+  if (!ingredients.ok) return ingredients;
+  if (!products.ok) return products;
+  return { ok: true, totalMinor: ingredients.totalMinor + products.totalMinor };
+}
+
 export async function getLedgerSummary(
   db: PrismaClient,
   requester: AuthenticatedStaff,
@@ -646,9 +718,9 @@ export async function getLedgerSummary(
     restaurantNonSales,
     canteenNonSales,
   ] = await Promise.all([
-    getIngredientStockValueAtLocation(db, requester, restaurant.id, input.periodStart),
-    getIngredientStockValueAtLocation(db, requester, restaurant.id, input.periodEnd),
-    getIngredientsBoughtMinor(db, requester, restaurant.id, input.periodStart, input.periodEnd),
+    getRestaurantStockValueAsOf(db, requester, restaurant.id, input.periodStart),
+    getRestaurantStockValueAsOf(db, requester, restaurant.id, input.periodEnd),
+    getRestaurantPurchasesMinor(db, requester, restaurant.id, input.periodStart, input.periodEnd),
     computeRestaurantCostOfGoods(db, requester, dayShapedInput, transfer),
     computeCanteenCostOfGoods(db, requester, dayShapedInput),
     getSalesRevenueAtLocation(db, requester, restaurant.id, input.periodStart, input.periodEnd),

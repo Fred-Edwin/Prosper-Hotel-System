@@ -108,9 +108,24 @@ afterAll(async () => {
 // a last resort) — docs/formulas.md §5. The dynamic kitchen-consumption
 // rate this file used to test is retired.
 describe("computeTransferCost — formulas.md §5", () => {
-  test("uses recipe cost where the transferred item has a recipe", async () => {
+  // 2026-08-18: inverted. A transfer used to move the item's RECIPE cost;
+  // it now moves its buying price, like every other cost figure (ADR 0005,
+  // and the owner's own model). For a made-from-ingredients item that
+  // buying price is a deliberate 0 — the ingredients were already costed as
+  // they moved through the restaurant's store, so the restaurant keeps
+  // that cost and the transfer moves nothing on top of it. The user chose
+  // this deliberately over a recipe-cost exception for transfers: one rule,
+  // no exceptions. Business-wide total is unaffected either way, since a
+  // transfer cancels between the two locations.
+  test("moves the transferred item's buying price, ignoring any recipe", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
+      data: {
+        name: "Chips",
+        kind: "cooked_food",
+        priceMinor: 100,
+        lastKnownCostMinor: 0,
+        locationId: restaurantId,
+      },
     });
     const potatoes = await testDb.ingredient.create({
       data: { name: "Potatoes", unitOfMeasure: "kg", lastKnownCostMinor: 9000 },
@@ -145,14 +160,19 @@ describe("computeTransferCost — formulas.md §5", () => {
     if (!result.ok) return;
 
     const line = result.lines.find((l) => l.productId === chips.id);
-    expect(line?.usedRecipeCost).toBe(true);
+    expect(line?.usedRecipeCost).toBe(false);
     expect(line?.isEstimated).toBe(false);
-    // 22.5/plate, cent-precise (getCurrentRecipe rounds to 2dp, not whole shillings).
-    expect(line?.costMinor).toBe(22.5 * 5);
-    expect(result.transferCostMinor).toBe(22.5 * 5);
+    // 0/plate, not the recipe's 22.5 — the potatoes are counted once, as
+    // ingredients, when they leave the restaurant's store.
+    expect(line?.costMinor).toBe(0);
+    expect(result.transferCostMinor).toBe(0);
   });
 
-  test("falls back to the 60%-of-selling-price estimate where the item has no recipe", async () => {
+  // 2026-08-18: inverted. The 60%-of-selling-price estimate no longer
+  // applies to any cost-of-goods figure, transfers included — it invented a
+  // cost that read as measured. An item with no buying price moves at zero
+  // and is surfaced as "Not set" in the catalogue for the owner to fill in.
+  test("moves zero where the transferred item has no buying price", async () => {
     const chips = await testDb.product.create({
       data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
     });
@@ -177,10 +197,11 @@ describe("computeTransferCost — formulas.md §5", () => {
 
     const line = result.lines.find((l) => l.productId === chips.id);
     expect(line?.usedRecipeCost).toBe(false);
-    expect(line?.isEstimated).toBe(true);
-    // 60 units at 100/unit selling value, 60% estimate -> 60 * 100 * 0.6 = 3600.
-    expect(line?.costMinor).toBe(3600);
-    expect(result.transferCostMinor).toBe(3600);
+    expect(line?.isEstimated).toBe(false);
+    // No buying price: no cost stated, rather than 3600 invented from the
+    // selling price.
+    expect(line?.costMinor).toBe(0);
+    expect(result.transferCostMinor).toBe(0);
   });
 
   test("rejects a non-owner", async () => {
@@ -254,9 +275,20 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
     expect(result.totalMinor).toBe(18000 + 9000 - 15000);
   });
 
-  test("subtracts food sent to canteen from the restaurant total, at the transferred item's own cost basis", async () => {
+  // 2026-08-18: the transfer is valued at the item's buying price, not at
+  // a 60%-of-selling-price estimate. Chips are made from ingredients, so
+  // that price is a deliberate 0 — the flour was already counted as it
+  // moved through the store — and the transfer therefore subtracts nothing
+  // from the restaurant. The ingredient waterfall is unchanged.
+  test("subtracts food sent to canteen from the restaurant total, at the transferred item's buying price", async () => {
     const chips = await testDb.product.create({
-      data: { name: "Chips", kind: "cooked_food", priceMinor: 100, locationId: restaurantId },
+      data: {
+        name: "Chips",
+        kind: "cooked_food",
+        priceMinor: 100,
+        lastKnownCostMinor: 0,
+        locationId: restaurantId,
+      },
     });
     const flour = await testDb.ingredient.create({
       data: { name: "Flour", unitOfMeasure: "kg", lastKnownCostMinor: 1000 },
@@ -308,8 +340,7 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
         lines: { create: [{ productId: chips.id, quantity: 1, priceMinor: 100000 }] },
       },
     });
-    // No recipe on chips — falls back to the 60% estimate: 60 units at
-    // 100/unit selling value = 6000, 60% -> 3600.
+    // Buying price 0, so the transfer moves 0 regardless of quantity.
     await testDb.stockMovement.create({
       data: {
         productId: chips.id,
@@ -325,8 +356,11 @@ describe("computeRestaurantCostOfGoods — formulas.md §6, restaurant", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.transferCostMinor).toBe(3600);
-    expect(result.totalMinor).toBe(18000 + 9000 - 15000 - 3600);
+    expect(result.transferCostMinor).toBe(0);
+    // The 60 chips sitting at the canteen are that location's stock, not
+    // the restaurant's, so they do not enter the restaurant's own
+    // opening/closing product figures either.
+    expect(result.totalMinor).toBe(18000 + 9000 - 15000 - 0);
   });
 });
 
@@ -429,9 +463,23 @@ describe("business-total invariant — formulas.md §5", () => {
 // No more exact/estimated split, no more own-goods rate measured at a
 // count (docs/formulas.md §6).
 describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
-  test("restaurant-supplied food, sold with a recipe: valued at recipe cost", async () => {
+  // 2026-08-18: inverted. Restaurant-supplied food used to be valued at
+  // its recipe cost when sold at the canteen; it is now valued at its
+  // buying price, which for a made-from-ingredients item is a deliberate
+  // 0. The dough was costed once, at the restaurant, as it left the store.
+  // The consequence the user accepted knowingly: the canteen's gross
+  // profit on transferred food is its full selling price, and the
+  // restaurant carries the ingredient cost. Business-wide profit is
+  // identical either way — only the split between locations moves.
+  test("restaurant-supplied food, sold: valued at buying price, not recipe cost", async () => {
     const samosa = await testDb.product.create({
-      data: { name: "Samosa", kind: "cooked_food", priceMinor: 20, locationId: restaurantId },
+      data: {
+        name: "Samosa",
+        kind: "cooked_food",
+        priceMinor: 20,
+        lastKnownCostMinor: 0,
+        locationId: restaurantId,
+      },
     });
     const dough = await testDb.ingredient.create({
       data: { name: "Dough", unitOfMeasure: "kg", lastKnownCostMinor: 5 },
@@ -474,8 +522,8 @@ describe("computeCanteenCostOfGoods — formulas.md §6, canteen", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // per-unit recipe cost = 50/40 = 1.25 (cent-precise); 32 sold at 1.25/unit = 40.
-    expect(result.totalMinor).toBe(40);
+    // Buying price 0, not the recipe's 1.25/unit: 32 sold contributes 0.
+    expect(result.totalMinor).toBe(0);
   });
 
   test("the canteen's own goods, sold: valued at purchase cost, exact — no rate, no estimate", async () => {

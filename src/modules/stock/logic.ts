@@ -63,6 +63,7 @@ import {
   sumMovementsByIngredientAtLocation,
   sumMovementsByProductAtLocation,
   sumMovementsByProductAtLocationAsOf,
+  sumProductsReceivedByProductAtLocationInPeriod,
   sumMovementsByProductReasonAtLocationInPeriod,
   sumNonSalesValueAtLocationInPeriod,
   sumProductMovementsByReasonAtLocationInPeriod,
@@ -91,38 +92,58 @@ import type {
 } from "./schema";
 
 // CONTEXT.md's Non-sales Stock Consumption: where no per-unit cost is
-// known, cost is estimated at 60% of selling price, per the owner's own
-// discovery figure. See docs/formulas.md §4.
-const ESTIMATED_COST_RATE = 0.6;
+// known, non-sales consumption is valued at 60% of selling price, per the
+// owner's own discovery figure. See docs/formulas.md §4.
+//
+// 2026-08-18: this rate applies to non-sales consumption **only** —
+// wastage, staff meals, complimentary. It was previously the last tier of
+// resolveProductCostBasis and so reached cost of goods sold too, where it
+// invented cost; see that function for why it was removed from there and
+// deliberately kept here.
+const NON_SALES_ESTIMATED_COST_RATE = 0.6;
 
 export type ProductCostBasis = { costBasisMinor: number; isEstimated: boolean } | null;
 
-// formulas.md §4's cost-per-unit table, in priority order: a recipe's
-// ingredients-used ÷ yield first (cooked food only), then the product's
-// own recorded cost, the price paid on its last delivery (bought-in
-// goods/packaging — recordProductCost's
-// figure), then the labelled 60%-of-selling-price estimate as a last resort.
-// null means no cost figure can be produced at all (no recipe, no recorded
-// cost, no selling price to estimate from). Exported (ticket 39) so
-// reporting's product ledger can resolve a row's cost basis even for
-// products getProductStockValueAtLocation(AsOf) would otherwise skip
-// (those functions drop any product with no cost basis at all; the ledger
-// still needs a row for it, with cost/profit shown as unavailable).
+/**
+ * A product's unit cost is its buying price. That is the whole rule.
+ *
+ * 2026-08-18, decided with the owner. Previously this applied formulas.md
+ * §4's three-tier table — recipe cost, then buying price, then 60% of
+ * selling price — and both of the tiers around the buying price were
+ * wrong in practice:
+ *
+ * **The recipe tier double-counted.** Cost of goods sold is
+ * `opening + purchases − closing` over stock, so ingredients are already
+ * counted as they move through the store. Costing the resulting product
+ * from its recipe on top of that charges the same potatoes twice. This is
+ * exactly the defect ADR 0005 was written to remove ("Recipes... do not
+ * participate in cost of goods sold"); the table outlived the ADR. The
+ * owner works to that model directly: she sets the buying price of
+ * anything made from ingredients to 0, precisely so its cost is counted
+ * once, upstream, as ingredients.
+ *
+ * **The 60% tier invented data.** A missing buying price silently became
+ * 60% of the selling price — a plausible-looking figure that is not a
+ * measurement, and which hid the fact that nobody had entered a real one.
+ * A missing price now contributes no cost and is surfaced in the catalogue
+ * as a "Not set" badge, so the gap is visible and fixable rather than
+ * papered over.
+ *
+ * So: buying price if set (including a deliberate 0), otherwise null,
+ * which every caller treats as no cost. `isEstimated` is retained on the
+ * shape — it is persisted on movements and rendered in several UIs — but
+ * is now always false, since nothing here is estimated any more.
+ *
+ * `_recipe` stays in the signature so callers need not change; it is
+ * ignored. Recipes remain what ADR 0005 made them: a source of per-unit
+ * cost for menu pricing and of yield variance, not a cost-of-goods input.
+ */
 export function resolveProductCostBasis(
   product: Pick<Product, "priceMinor" | "lastKnownCostMinor">,
-  recipe: { perUnitCostMinor: number | null } | null,
+  _recipe: { perUnitCostMinor: number | null } | null,
 ): ProductCostBasis {
-  if (recipe?.perUnitCostMinor != null) {
-    return { costBasisMinor: recipe.perUnitCostMinor, isEstimated: false };
-  }
   if (product.lastKnownCostMinor != null) {
     return { costBasisMinor: product.lastKnownCostMinor, isEstimated: false };
-  }
-  if (product.priceMinor != null) {
-    return {
-      costBasisMinor: Math.round(product.priceMinor * ESTIMATED_COST_RATE * 100) / 100,
-      isEstimated: true,
-    };
   }
   return null;
 }
@@ -1470,11 +1491,42 @@ export async function recordNonSalesConsumption(
     const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
     const sellingValueMinor = product.priceMinor;
 
+    // 2026-08-18: non-sales consumption keeps the 60%-of-selling-price
+    // estimate that cost of goods sold no longer uses (owner's decision).
+    //
+    // The two are asking different questions, which is why the same rule
+    // does not serve both. Cost of goods sold is measured from stock
+    // movement — an estimate there invents cost and distorts profit, so it
+    // was removed. Non-sales consumption is a *reporting* figure: it says
+    // what wastage, staff meals and complimentary items were worth, and it
+    // is deliberately never deducted from profit again (see the Ledger's
+    // own caption, and getNonSalesConsumptionValue's note). So an estimate
+    // here cannot reach profit — it can only make an otherwise-invisible
+    // loss visible.
+    //
+    // That matters now precisely *because* of the new cost rule: the owner
+    // sets the buying price of anything made from ingredients to 0, so
+    // valuing this at buying price alone would report most wastage as
+    // worth nothing. A plate of food thrown away is not worth nothing.
+    //
+    // Buying price still wins where it is a real figure. The estimate
+    // applies only where it is absent or zero, and is flagged
+    // `isEstimated` so every UI can label it as an estimate rather than a
+    // measurement.
     const basis = resolveProductCostBasis(product, recipe);
-    if (!basis) {
-      // No recipe cost, no recorded cost, and no selling price to estimate from.
-      return { ok: false, reason: "invalid_cost" };
-    }
+    const nonSalesBasis =
+      basis && basis.costBasisMinor > 0
+        ? basis
+        : sellingValueMinor != null
+          ? {
+              costBasisMinor:
+                Math.round(sellingValueMinor * NON_SALES_ESTIMATED_COST_RATE * 100) / 100,
+              isEstimated: true,
+            }
+          : // No buying price and no selling price: nothing to estimate
+            // from. Recorded at zero rather than refused — losing the fact
+            // that stock left is worse than not valuing it.
+            { costBasisMinor: 0, isEstimated: false };
 
     const movement = await createStockMovement(db, {
       productId: product.id,
@@ -1482,9 +1534,9 @@ export async function recordNonSalesConsumption(
       quantity: -input.quantity,
       reason: input.category,
       staffMemberId: requester.staff.id,
-      costBasisMinor: basis.costBasisMinor * input.quantity,
+      costBasisMinor: nonSalesBasis.costBasisMinor * input.quantity,
       sellingValueMinor: sellingValueMinor != null ? sellingValueMinor * input.quantity : null,
-      isEstimated: basis.isEstimated,
+      isEstimated: nonSalesBasis.isEstimated,
     });
     return { ok: true, movement };
   }
@@ -1941,10 +1993,13 @@ export async function correctStockCount(
       const recipe = product.kind === "cooked_food" ? await getCurrentRecipe(db, product.id) : null;
       const sellingValueMinor = product.priceMinor;
 
+      // 2026-08-18: a missing buying price records at zero cost rather
+      // than blocking the correction. Before the 60% estimate was removed
+      // a basis almost always existed, so this guard was near-unreachable;
+      // now a product without a buying price is an expected state, and
+      // refusing the correction would lose the count itself — the more
+      // important half. The missing price is surfaced in the catalogue.
       const basis = resolveProductCostBasis(product, recipe);
-      if (!basis) {
-        return { ok: false, reason: "invalid_cost" };
-      }
 
       await createStockMovement(db, {
         productId: line.itemId,
@@ -1952,13 +2007,13 @@ export async function correctStockCount(
         quantity: delta,
         reason: "corrected",
         staffMemberId: requester.staff.id,
-        costBasisMinor: basis.costBasisMinor * Math.abs(delta),
+        costBasisMinor: (basis?.costBasisMinor ?? 0) * Math.abs(delta),
         // A shortfall is a real, unexplained loss of sellable inventory —
         // value it the same way wastage does. A surplus is not profit
         // until it's actually sold, so no selling value is recognised.
         sellingValueMinor:
           delta < 0 && sellingValueMinor != null ? sellingValueMinor * Math.abs(delta) : null,
-        isEstimated: basis.isEstimated,
+        isEstimated: basis?.isEstimated ?? false,
       });
     } else {
       const [ingredient] = await findIngredientsByIds(db, [line.itemId]);
@@ -2209,6 +2264,85 @@ export async function getProductQuantityAtLocationAsOf(
   }
   const quantities = await sumMovementsByProductAtLocationAsOf(db, locationId, asOf);
   return { ok: true, quantities };
+}
+
+export type ProductStockValueTotalResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// 2026-08-18: as-of counterpart to getProductStockValueAtLocation, and the
+// product half of formulas.md §6's opening/closing terms.
+//
+// Cost of goods sold was previously computed over ingredients alone, so a
+// product that is bought and resold rather than cooked — a soda, bottled
+// water, crisps — earned revenue with no cost against it at all, and the
+// restaurant's gross profit was overstated by the full purchase cost of
+// everything it sold that way. Counting products here is what closes that.
+//
+// Valued at each product's buying price. A product with no buying price
+// contributes nothing rather than an invented figure, and is surfaced as
+// "Not set" in the catalogue for the owner to fill in — see
+// resolveProductCostBasis.
+export async function getProductStockValueAtLocationAsOf(
+  db: Db,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  asOf: Date,
+): Promise<ProductStockValueTotalResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const sums = await sumMovementsByProductAtLocationAsOf(db, locationId, asOf);
+  const products = await findProductsByIds(db, sums.map((s) => s.productId));
+  const productById = new Map(products.map((p) => [p.id, p]));
+
+  let totalMinor = 0;
+  for (const sum of sums) {
+    const product = productById.get(sum.productId);
+    if (!product) continue;
+    const basis = resolveProductCostBasis(product, null);
+    if (!basis) continue;
+    totalMinor += sum.quantityOnHand * basis.costBasisMinor;
+  }
+  return { ok: true, totalMinor };
+}
+
+export type ProductsBoughtResult =
+  | { ok: true; totalMinor: number }
+  | { ok: false; reason: "forbidden" };
+
+// The product half of formulas.md §6's "purchases" term — see
+// getProductStockValueAtLocationAsOf above for why products are counted at
+// all. Valued at the product's buying price, since a StockMovement carries
+// no per-delivery cost of its own (only IngredientMovement does).
+export async function getProductsBoughtMinor(
+  db: Db,
+  requester: AuthenticatedStaff,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<ProductsBoughtResult> {
+  if (!canAccessLocation(requester.staff.role, requester.staff.locationId, locationId)) {
+    return { ok: false, reason: "forbidden" };
+  }
+  const received = await sumProductsReceivedByProductAtLocationInPeriod(
+    db,
+    locationId,
+    periodStart,
+    periodEnd,
+  );
+  const products = await findProductsByIds(db, received.map((r) => r.productId));
+  const productById = new Map(products.map((p) => [p.id, p]));
+
+  let totalMinor = 0;
+  for (const line of received) {
+    const product = productById.get(line.productId);
+    if (!product) continue;
+    const basis = resolveProductCostBasis(product, null);
+    if (!basis) continue;
+    totalMinor += line.quantity * basis.costBasisMinor;
+  }
+  return { ok: true, totalMinor };
 }
 
 export type IngredientsBoughtResult =

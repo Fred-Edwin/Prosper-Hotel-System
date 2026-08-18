@@ -100,7 +100,15 @@ describe("recordNonSalesConsumption", () => {
     );
   });
 
-  test("uses the recipe's per-unit cost instead of the estimate when one exists", async () => {
+  // 2026-08-18: inverted, and it is the wastage case specifically that
+  // shows why the 60% estimate was KEPT here while being removed from cost
+  // of goods sold. A recipe no longer sets cost, and a made-from-
+  // ingredients product carries a buying price of 0 — so valuing wastage
+  // at the buying price alone would report a thrown-away plate of chips as
+  // worth nothing. Non-sales consumption is a reporting figure that is
+  // never deducted from profit again, so an estimate here cannot distort
+  // profit; it can only make an otherwise-invisible loss visible.
+  test("falls back to the 60% estimate for wastage where the buying price is zero", async () => {
     const owner: AuthenticatedStaff = {
       staff: {
         id: "owner-1",
@@ -118,6 +126,8 @@ describe("recordNonSalesConsumption", () => {
       name: "Chips",
       kind: "cooked_food",
       priceMinor: 150,
+      // Made from ingredients: already costed upstream, so 0 here.
+      lastKnownCostMinor: 0,
       locationId: restaurantId,
     });
     if (!product.ok) throw new Error("expected product create to succeed");
@@ -148,9 +158,11 @@ describe("recordNonSalesConsumption", () => {
     expect(result.movement).toEqual(
       expect.objectContaining({
         quantity: -2,
-        costBasisMinor: 4000,
+        // 60% of the 150 selling price = 90/unit, 2 wasted = 180. Not the
+        // recipe's 2000/unit, and not the 0 buying price.
+        costBasisMinor: 180,
         sellingValueMinor: 300,
-        isEstimated: false,
+        isEstimated: true,
       }),
     );
   });

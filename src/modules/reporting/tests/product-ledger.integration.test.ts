@@ -233,9 +233,20 @@ describe("getProductLedger", () => {
     expect(row!.profitMinor).toBeNull();
   });
 
-  test("a product priced via recipe cost shows profit, not null", async () => {
+  // 2026-08-18: was "priced via recipe cost". A recipe no longer sets
+  // cost, so the row's cost and profit come from the buying price. A
+  // made-from-ingredients product carries a deliberate 0, which is a real
+  // figure rather than an absent one — so the ledger still shows cost and
+  // profit rather than blanking them, which is what this test guards.
+  test("a product with a zero buying price shows profit, not null", async () => {
     const samosa = await testDb.product.create({
-      data: { name: "Samosa", kind: "cooked_food", priceMinor: 30, locationId: restaurantId },
+      data: {
+        name: "Samosa",
+        kind: "cooked_food",
+        priceMinor: 30,
+        lastKnownCostMinor: 0,
+        locationId: restaurantId,
+      },
     });
     const dough = await testDb.ingredient.create({
       data: { name: "Dough", unitOfMeasure: "kg", lastKnownCostMinor: 400 },

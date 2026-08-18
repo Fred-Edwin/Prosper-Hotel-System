@@ -128,6 +128,39 @@ export async function sumMovementsByProductAtLocation(
 // Ticket 39: product-side counterpart to sumIngredientMovementsAtLocationAsOf
 // — quantity on hand at a point in time, not the running total, for the
 // ledger's opening/closing figures.
+// 2026-08-18: product deliveries received in a period, by product. Unlike
+// ingredients, a StockMovement carries no `unitCostMinor` of its own —
+// only IngredientMovement does — so the value of a product purchase cannot
+// be read off the movement. The caller values these at the product's
+// buying price (Product.lastKnownCostMinor), which is the same figure the
+// delivery itself wrote there via recordProductCost, so for a single
+// delivery the two agree exactly. Where a product was received more than
+// once in a period at different prices, the latest price applies to all of
+// them — formulas.md §3's latest-price-wins rule, the same approximation
+// the running average already makes elsewhere.
+export async function sumProductsReceivedByProductAtLocationInPeriod(
+  db: Db,
+  locationId: string,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<{ productId: string; quantity: number }[]> {
+  const grouped = await db.stockMovement.groupBy({
+    by: ["productId"],
+    where: {
+      locationId,
+      reason: "received",
+      occurredAt: { gt: periodStart, lte: periodEnd },
+      reversed: false,
+    },
+    _sum: { quantity: true },
+  });
+
+  return grouped.map((g) => ({
+    productId: g.productId,
+    quantity: g._sum.quantity?.toNumber() ?? 0,
+  }));
+}
+
 export async function sumMovementsByProductAtLocationAsOf(
   db: Db,
   locationId: string,

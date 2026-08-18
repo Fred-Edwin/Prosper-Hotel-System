@@ -18,10 +18,17 @@
  * (same split `dashboard-body.tsx` uses for `DashboardHandovers`).
  *
  * "Opening stock" / "Closing stock" on the waterfall are the restaurant's
- * ingredient stock value at the period's two boundaries — the same figure
- * the cost-of-goods-sold formula actually uses (formulas.md §6) — not a
- * combined ingredient-plus-finished-goods figure (2026-08-12
- * clarification). Clicking any term still switches to the Product ledger
+ * stock value at the period's two boundaries — the same figure the
+ * cost-of-goods-sold formula actually uses (formulas.md §6).
+ *
+ * 2026-08-18: that now means ingredients *and* products, where it was
+ * ingredients only before (reversing the 2026-08-12 clarification). Cost
+ * of goods sold was ingredient-only, so anything the restaurant buys and
+ * resells without cooking — sodas, bottled water, crisps — earned revenue
+ * with no cost against it and gross profit was overstated. The tiles and
+ * the figure they explain are computed the same way, so the waterfall
+ * still adds up; the sub-labels say "Restaurant stock" rather than
+ * "Restaurant ingredients" to match. Clicking any term still switches to the Product ledger
  * tab per the design reference's `explains` field, since that is a
  * navigation choice independent of which underlying figures compose the
  * number.
@@ -626,14 +633,14 @@ function LedgerWaterfall({
           {
             key: "opening",
             label: "Opening stock",
-            sublabel: "Restaurant ingredients",
+            sublabel: "Restaurant stock",
             value: data.openingMinor,
             colour: "var(--color-neutral-400)",
           },
           {
             key: "purchases",
             label: "Purchases",
-            sublabel: "Restaurant ingredients",
+            sublabel: "Restaurant stock",
             value: data.purchasesMinor,
             operator: "+",
             colour: "var(--color-brand-600)",
@@ -641,7 +648,7 @@ function LedgerWaterfall({
           {
             key: "closing",
             label: "Closing stock",
-            sublabel: "Restaurant ingredients",
+            sublabel: "Restaurant stock",
             value: data.closingMinor,
             operator: "−",
             colour: "var(--color-neutral-400)",

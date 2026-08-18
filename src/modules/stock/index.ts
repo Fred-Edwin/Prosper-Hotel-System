@@ -36,6 +36,10 @@ export {
   getProductStockValueAtLocation,
   getProductQuantityAtLocationAsOf,
   getIngredientsBoughtMinor,
+  // 2026-08-18: the product half of formulas.md §6, so cost of goods sold
+  // covers bought-and-resold goods and not only ingredients.
+  getProductStockValueAtLocationAsOf,
+  getProductsBoughtMinor,
   getIngredientsIssuedMinor,
   getIngredientsPurchasedByIngredient,
   getIngredientMovementsByReasonInPeriod,

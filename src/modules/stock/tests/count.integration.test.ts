@@ -78,7 +78,16 @@ beforeEach(async () => {
   ownerId = owner.id;
 
   const soda = await testDb.product.create({
-    data: { name: "Soda", kind: "goods", priceMinor: 100, locationId: restaurant.id },
+    // 2026-08-18: a soda is bought and resold, so it carries a real buying
+    // price. That is now the only cost basis (resolveProductCostBasis) —
+    // the 60%-of-selling-price estimate no longer applies to cost figures.
+    data: {
+      name: "Soda",
+      kind: "goods",
+      priceMinor: 100,
+      lastKnownCostMinor: 60,
+      locationId: restaurant.id,
+    },
   });
   sodaId = soda.id;
 });
@@ -390,7 +399,8 @@ describe("correctStockCount", () => {
     expect(quantityOnHand).toBe(37);
 
     const correctionMovement = movements.find((m) => m.reason === "corrected");
-    // Soda priceMinor 100, no recipe -> estimated cost 60% = 60/unit, 3 short.
+    // Soda buying price 60/unit, 3 short. Valued at the buying price, not
+    // an estimate — isEstimated is false because nothing was estimated.
     expect(
       correctionMovement && {
         ...correctionMovement,
@@ -403,7 +413,7 @@ describe("correctStockCount", () => {
         quantity: -3,
         costBasisMinor: 180,
         sellingValueMinor: 300,
-        isEstimated: true,
+        isEstimated: false,
       }),
     );
   });
@@ -453,17 +463,26 @@ describe("correctStockCount", () => {
         quantity: 2,
         costBasisMinor: 120,
         sellingValueMinor: null,
-        isEstimated: true,
+        isEstimated: false,
       }),
     );
   });
 
-  test("uses the recipe's per-unit cost instead of the estimate when one exists", async () => {
+  // 2026-08-18: inverted. This asserted that a recipe's per-unit cost beat
+  // the buying price. It no longer does — a recipe does not participate in
+  // cost of goods sold (ADR 0005), because the ingredients it names were
+  // already counted as they moved through the store. Costing the product
+  // from its recipe on top of that charges the same potatoes twice. The
+  // buying price is now the only cost basis, and the owner sets it to a
+  // deliberate 0 for exactly this kind of made-from-ingredients product.
+  test("ignores the recipe and uses the buying price, even where a recipe exists", async () => {
     const ownerRequester = staffAt("owner", restaurantId, ownerId);
     const product = await createProduct(testDb, ownerRequester, {
       name: "Chips",
       kind: "cooked_food",
       priceMinor: 150,
+      // Made from ingredients: already costed upstream, so 0 here.
+      lastKnownCostMinor: 0,
       locationId: restaurantId,
     });
     if (!product.ok) throw new Error("expected product create to succeed");
@@ -511,7 +530,9 @@ describe("correctStockCount", () => {
     ).toEqual(
       expect.objectContaining({
         quantity: 8,
-        costBasisMinor: 16000,
+        // 0/unit, not the recipe's 2000/unit: the potatoes were counted
+        // once already, as ingredients.
+        costBasisMinor: 0,
         sellingValueMinor: null,
         isEstimated: false,
       }),
@@ -574,7 +595,14 @@ describe("correctStockCount", () => {
     );
   });
 
-  test("rejects a product correction that can't be valued (no recipe, no price)", async () => {
+  // 2026-08-18: inverted. This asserted that a product with no cost basis
+  // BLOCKED the correction. With the 60%-of-selling-price estimate gone, a
+  // product with no buying price is an ordinary, expected state rather
+  // than a near-impossible one, and refusing the correction would lose the
+  // count itself — the more important half of the record. It is now
+  // written at zero cost, and the missing buying price is surfaced in the
+  // catalogue as "Not set" for the owner to fill in.
+  test("records a product correction at zero cost where no buying price is set", async () => {
     const ownerRequester = staffAt("owner", restaurantId, ownerId);
     const unpriced = await createProduct(testDb, ownerRequester, {
       name: "Unpriced good",
@@ -597,12 +625,18 @@ describe("correctStockCount", () => {
       correctedQuantity: 5,
     });
 
-    expect(result).toEqual({ ok: false, reason: "invalid_cost" });
+    expect(result).toEqual({ ok: true });
 
     const movements = await testDb.stockMovement.findMany({
       where: { productId: unpriced.value.id, locationId: restaurantId },
     });
-    expect(movements.find((m) => m.reason === "corrected")).toBeUndefined();
+    const correction = movements.find((m) => m.reason === "corrected");
+    // The count is recorded — quantity is the point — and valued at zero
+    // rather than at an invented figure.
+    expect(correction).toBeDefined();
+    expect(correction?.quantity.toNumber()).toBe(5);
+    expect(correction?.costBasisMinor?.toNumber() ?? 0).toBe(0);
+    expect(correction?.isEstimated).toBe(false);
   });
 
   test("rejects an ingredient correction with no known cost", async () => {

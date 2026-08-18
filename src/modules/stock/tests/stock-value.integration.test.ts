@@ -117,12 +117,16 @@ describe("getProductStockValueAtLocation", () => {
     ]);
   });
 
-  test("values a cooked-food product with a recipe at its per-unit recipe cost, not an estimate", async () => {
+  // 2026-08-18: inverted — a recipe no longer sets cost (ADR 0005). The
+  // buying price does, and for a made-from-ingredients product that is a
+  // deliberate 0, since the ingredients were already valued as stock.
+  test("values a cooked-food product at its buying price, ignoring any recipe", async () => {
     const owner = staffAt("owner", restaurantId);
     const chips = await createProduct(testDb, owner, {
       name: "Chips",
       kind: "cooked_food",
       priceMinor: 150,
+      lastKnownCostMinor: 0,
       locationId: restaurantId,
     });
     if (!chips.ok) throw new Error("expected product create to succeed");
@@ -157,14 +161,20 @@ describe("getProductStockValueAtLocation", () => {
         productId: chips.value.id,
         productName: "Chips",
         quantityOnHand: 8,
-        unitCostMinor: 2000,
-        valueMinor: 16000,
+        // Not the recipe's 2000/unit — the potatoes are already counted
+        // in ingredient stock, so counting them here too would double.
+        unitCostMinor: 0,
+        valueMinor: 0,
         isEstimated: false,
       },
     ]);
   });
 
-  test("values a cooked-food product with no recipe at the labelled 60% estimate", async () => {
+  // 2026-08-18: inverted. The 60%-of-selling-price estimate no longer
+  // applies to stock valuation — it invented a cost that read as measured.
+  // A product with no buying price is now omitted entirely rather than
+  // valued at a guess, and surfaced as "Not set" in the catalogue.
+  test("omits a product with no buying price rather than estimating one", async () => {
     const owner = staffAt("owner", restaurantId);
     const mukimo = await createProduct(testDb, owner, {
       name: "Mukimo",
@@ -187,16 +197,7 @@ describe("getProductStockValueAtLocation", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.values).toEqual([
-      {
-        productId: mukimo.value.id,
-        productName: "Mukimo",
-        quantityOnHand: 5,
-        unitCostMinor: 60,
-        valueMinor: 300,
-        isEstimated: true,
-      },
-    ]);
+    expect(result.values).toEqual([]);
   });
 
   test("a repeated product id in the underlying movement sums is not double counted", async () => {
@@ -250,6 +251,10 @@ describe("getProductStockValueAtLocation", () => {
       name: "Soda",
       kind: "goods",
       priceMinor: 100,
+      // Bought and resold, so it carries a real buying price. Without one
+      // it would now be omitted from the valuation entirely and this
+      // quantities-match assertion would compare against an empty list.
+      lastKnownCostMinor: 60,
       locationId: restaurantId,
     });
     if (!soda.ok) throw new Error("expected product create to succeed");
