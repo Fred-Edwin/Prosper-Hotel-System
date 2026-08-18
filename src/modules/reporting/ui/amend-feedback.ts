@@ -149,8 +149,53 @@ export type ConfirmCase =
   | { kind: "handover" };
 
 /**
- * C7's three escalations. Everything else is informational — she must be
- * able to edit ten cells in sequence without a confirm click.
+ * What the confirm dialog says for one pending edit.
+ *
+ * **Every edit confirms** (owner decision, 2026-08-18). T4 originally
+ * reserved the dialog for three escalations, on the reasoning that a
+ * dialog firing constantly gets clicked through unread. The owner
+ * overrode that: this is her money, and a figure changing because she
+ * pressed Enter while reading is the failure she actually fears.
+ *
+ * So the escalations stop deciding *whether* to confirm and become extra
+ * warning text on a dialog that was going to appear regardless. The
+ * ordinary case still names the cell and both figures — a confirm that
+ * says only "are you sure?" adds a click without adding a check, because
+ * she cannot see what she is agreeing to.
+ */
+export type PendingEdit = {
+  /** The cell in her words: "Operating cost, 15 Aug". */
+  label: string;
+  /** Rendered values, already formatted as money or a bare quantity. */
+  from: string;
+  to: string;
+  /** The escalation, where one applies. Adds a paragraph; never replaces
+   * the figures. */
+  escalation?: ConfirmCase | null;
+};
+
+export function confirmMessage(edit: PendingEdit): {
+  title: string;
+  label: string;
+  from: string;
+  to: string;
+  body: string | null;
+  confirmLabel: string;
+} {
+  const escalation = edit.escalation ? escalationText(edit.escalation) : null;
+  return {
+    title: escalation?.title ?? "Change this figure?",
+    label: edit.label,
+    from: edit.from,
+    to: edit.to,
+    body: escalation?.body ?? null,
+    confirmLabel: escalation?.confirmLabel ?? "Change it",
+  };
+}
+
+/**
+ * C7's three escalations — now extra warning text rather than the reason
+ * a dialog appears.
  *
  * The handover case is the one to get right. Its expected figure
  * deliberately will *not* move (D2), so the ledger and that day's check
@@ -158,7 +203,7 @@ export type ConfirmCase =
  * two figures are meant to differ, and unexplained it reads exactly like a
  * bug — a false report against correct behaviour.
  */
-export function confirmMessage(c: ConfirmCase): { title: string; body: string; confirmLabel: string } {
+function escalationText(c: ConfirmCase): { title: string; body: string; confirmLabel: string } {
   switch (c.kind) {
     case "derivedPosition":
       return {

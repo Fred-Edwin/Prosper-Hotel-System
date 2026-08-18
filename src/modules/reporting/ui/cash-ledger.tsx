@@ -353,14 +353,29 @@ export function CashLedgerView({
     dayKey: string;
     body: Record<string, unknown>;
     escalation: ConfirmCase | null;
+    /** The cell in her words, and both figures already formatted — the
+     * confirm names what she is agreeing to. */
+    label: string;
+    from: string;
+    to: string;
     extraClause?: string;
   }) {
     const run = () => void submit(input.cellKey, input.body, input.dayKey, input.extraClause);
-    if (input.escalation) {
-      setConfirming({ c: input.escalation, proceed: () => { setConfirming(null); run(); } });
-      return;
-    }
-    run();
+    // Every edit confirms (owner decision, 2026-08-18). The escalation,
+    // where there is one, adds a paragraph to a dialog that was going to
+    // appear regardless — it no longer decides whether to ask.
+    setConfirming({
+      edit: {
+        label: input.label,
+        from: input.from,
+        to: input.to,
+        escalation: input.escalation,
+      },
+      proceed: () => {
+        setConfirming(null);
+        run();
+      },
+    });
   }
 
   /**
@@ -443,6 +458,9 @@ export function CashLedgerView({
                   cellKey,
                   dayKey: day.date,
                   escalation,
+                  label: `${t.description} · ${day.date}`,
+                  from: money(t.amountMinor),
+                  to: money(next),
                   body: {
                     kind: "scalar",
                     recordType: t.recordType,

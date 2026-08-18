@@ -221,6 +221,21 @@ function storeReasonFor(column: string): string {
   }
 }
 
+// The column in her words. The internal names ("openingQty") are fine as
+// an accessible label read alongside a figure, but the confirm dialog
+// shows them to her as the thing she is about to change, and
+// "openingQty" is not a thing she has ever called anything.
+const STORE_COLUMN_LABEL: Record<string, string> = {
+  openingQty: "Opening",
+  closingQty: "Closing",
+  purchasedQty: "Purchased",
+  issuedToKitchen: "To kitchen",
+  transferredIn: "Transferred in",
+  transferredOut: "Transferred out",
+  spoilage: "Spoilage",
+  corrected: "Correction",
+};
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <ChevronRight
@@ -340,14 +355,29 @@ export function StoreLedgerView({
     itemKey: string;
     body: Record<string, unknown>;
     escalation: ConfirmCase | null;
+    /** The cell in her words, and both figures already formatted — the
+     * confirm names what she is agreeing to. */
+    label: string;
+    from: string;
+    to: string;
     extraClause?: string;
   }) {
     const run = () => void submit(input.cellKey, input.body, input.itemKey, input.extraClause);
-    if (input.escalation) {
-      setConfirming({ c: input.escalation, proceed: () => { setConfirming(null); run(); } });
-      return;
-    }
-    run();
+    // Every edit confirms (owner decision, 2026-08-18). The escalation,
+    // where there is one, adds a paragraph to a dialog that was going to
+    // appear regardless — it no longer decides whether to ask.
+    setConfirming({
+      edit: {
+        label: input.label,
+        from: input.from,
+        to: input.to,
+        escalation: input.escalation,
+      },
+      proceed: () => {
+        setConfirming(null);
+        run();
+      },
+    });
   }
 
   /**
@@ -389,7 +419,8 @@ export function StoreLedgerView({
     }
 
     const isPosition = column === "openingQty" || column === "closingQty";
-    const label = `${column} for ${row.ingredientName} on ${day.date}`;
+    const columnLabel = STORE_COLUMN_LABEL[column] ?? column;
+    const label = `${columnLabel} for ${row.ingredientName} on ${day.date}`;
 
     return (
       <EditableNum
@@ -413,9 +444,15 @@ export function StoreLedgerView({
                 // Purchase quantity: unit cost holds, value follows (plan
                 // T6.4). "We got 12kg not 10kg" says nothing about the
                 // price per kg, so the figure nobody typed is the one that
-                // must not move. No confirm step — there is exactly one
-                // sensible reading here, unlike §3.3's `sold` — but the
-                // toast names what followed.
+                // must not move.
+                //
+                // T6.4 said no confirm step here, on the grounds that
+                // there is exactly one sensible reading — unlike §3.3's
+                // `sold`, which has two. The 2026-08-18 decision that
+                // every edit confirms supersedes that: the dialog is no
+                // longer a question about *which* reading she meant, it
+                // is a check that she typed the number she intended. The
+                // toast still names the derived figure that followed.
                 const extraClause =
                   column === "purchasedQty" && row.unitCostMinor
                     ? `purchase value now ${money(next * row.unitCostMinor)}`
@@ -426,6 +463,9 @@ export function StoreLedgerView({
                   itemKey,
                   escalation,
                   extraClause,
+                  label: `${columnLabel} · ${row.ingredientName} · ${day.date}`,
+                  from: String(value),
+                  to: String(next),
                   body: isPosition
                     ? {
                         kind: "derivedPosition",

@@ -274,6 +274,21 @@ function Td({ children, border, align = "right" }: { children?: React.ReactNode;
  * on that column is wrong — the other two are recorded deliberately at the
  * time, with a person attached.
  */
+// The column in her words — see the Store tab's equivalent. The confirm
+// dialog names the cell she is about to change, and "nonSales" is not a
+// name she uses.
+const PRODUCT_COLUMN_LABEL: Record<string, string> = {
+  opening: "Opening",
+  closing: "Closing",
+  produced: "Made",
+  received: "Received",
+  transferredIn: "Transferred in",
+  transferredOut: "Transferred out",
+  sold: "Sold",
+  nonSales: "Wastage and staff meals",
+  corrected: "Correction",
+};
+
 /** "1 wasted, 1 staff meal" — names what the combined figure is made of. */
 function nonSalesBreakdown(day: ProductLedgerDayData): string {
   const parts: string[] = [];
@@ -467,7 +482,8 @@ export function ProductLedgerView({
     }
 
     const isPosition = column === "opening" || column === "closing";
-    const label = `${column} for ${row.productName} on ${day.date}`;
+    const columnLabel = PRODUCT_COLUMN_LABEL[column] ?? column;
+    const label = `${columnLabel} for ${row.productName} on ${day.date}`;
 
     // Non-sales folds three reasons that mean different things — wastage is
     // a loss, a staff meal is a benefit with a person attached, a giveaway
@@ -523,6 +539,9 @@ export function ProductLedgerView({
                     cellKey,
                     productId: row.productId,
                     escalation: months !== null ? { kind: "farBack", months } : null,
+                    label: `${columnLabel} · ${row.productName} · ${day.date}`,
+                    from: String(value),
+                    to: String(next),
                     body: {
                       kind: "dayTotal",
                       itemType: "product",
@@ -573,6 +592,14 @@ export function ProductLedgerView({
                         cellKey,
                         productId: row.productId,
                         escalation,
+                        // §3.3's choice dialog has already named both
+                        // figures and asked her to pick a treatment.
+                        // Confirming again would be two modals for one
+                        // edit, which is friction without a second check.
+                        skipConfirm: true,
+                        label: `sold · ${row.productName} · ${day.date}`,
+                        from: String(value),
+                        to: String(next),
                         body: {
                           kind: "dayTotal",
                           itemType: "product",
@@ -593,6 +620,9 @@ export function ProductLedgerView({
                   cellKey,
                   productId: row.productId,
                   escalation,
+                  label: `${columnLabel} · ${row.productName} · ${day.date}`,
+                  from: String(value),
+                  to: String(next),
                   body: isPosition
                     ? {
                         kind: "derivedPosition",
@@ -683,6 +713,9 @@ export function ProductLedgerView({
                   cellKey,
                   productId: row.productId,
                   escalation: null,
+                  label: `${field === "sellingPriceMinor" ? "selling price" : "unit cost"} · ${row.productName}`,
+                  from: money(value ?? 0),
+                  to: money(next),
                   body: {
                     kind: "scalar",
                     recordType: "Product",
@@ -705,13 +738,36 @@ export function ProductLedgerView({
     productId: string;
     body: Record<string, unknown>;
     escalation: ConfirmCase | null;
+    /** The cell in her words, and both figures already formatted — the
+     * confirm names what she is agreeing to. */
+    label: string;
+    from: string;
+    to: string;
+    /** Set where another dialog has already named both figures and asked
+     * — §3.3's sold choice. Two modals for one edit is friction without a
+     * second check. */
+    skipConfirm?: boolean;
   }) {
     const run = () => void submit(input.cellKey, input.body, input.productId);
-    if (input.escalation) {
-      setConfirming({ c: input.escalation, proceed: () => { setConfirming(null); run(); } });
+    // Every edit confirms (owner decision, 2026-08-18). The escalation,
+    // where there is one, adds a paragraph to a dialog that was going to
+    // appear regardless — it no longer decides whether to ask.
+    if (input.skipConfirm) {
+      run();
       return;
     }
-    run();
+    setConfirming({
+      edit: {
+        label: input.label,
+        from: input.from,
+        to: input.to,
+        escalation: input.escalation,
+      },
+      proceed: () => {
+        setConfirming(null);
+        run();
+      },
+    });
   }
 
   const rows = useMemo(() => {

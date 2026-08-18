@@ -26,6 +26,7 @@ import { EditableNum, type EditableNumState } from "./editable-num";
 import { summariseAmendment, farBackMonths, type ConfirmCase, type LedgerRowAccessors } from "./amend-feedback";
 import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
 import { Search, X } from "lucide-react";
+import { money } from "@/shared/money";
 
 export type NonSalesReason = "wasted" | "consumed" | "given_away";
 
@@ -268,13 +269,28 @@ export function NonSalesLedgerView({
     movementId: string;
     body: Record<string, unknown>;
     escalation: ConfirmCase | null;
+    /** The cell in her words, and both figures already formatted — the
+     * confirm names what she is agreeing to. */
+    label: string;
+    from: string;
+    to: string;
   }) {
     const run = () => void submit(input.cellKey, input.body, input.movementId);
-    if (input.escalation) {
-      setConfirming({ c: input.escalation, proceed: () => { setConfirming(null); run(); } });
-      return;
-    }
-    run();
+    // Every edit confirms (owner decision, 2026-08-18). The escalation,
+    // where there is one, adds a paragraph to a dialog that was going to
+    // appear regardless — it no longer decides whether to ask.
+    setConfirming({
+      edit: {
+        label: input.label,
+        from: input.from,
+        to: input.to,
+        escalation: input.escalation,
+      },
+      proceed: () => {
+        setConfirming(null);
+        run();
+      },
+    });
   }
 
   /**
@@ -307,6 +323,9 @@ export function NonSalesLedgerView({
                   cellKey,
                   movementId: row.movementId,
                   escalation: months !== null ? { kind: "farBack", months } : null,
+                  label: `${field === "costBasisMinor" ? "At cost" : "At selling price"} · ${row.itemName} · ${row.occurredAt.slice(0, 10)}`,
+                  from: money(value ?? 0),
+                  to: money(next),
                   body: {
                     kind: "scalar",
                     recordType: row.itemType === "product" ? "StockMovement" : "IngredientMovement",
@@ -354,6 +373,9 @@ export function NonSalesLedgerView({
                   cellKey,
                   movementId: row.movementId,
                   escalation: months !== null ? { kind: "farBack", months } : null,
+                  label: `${nonSalesReasonLabel[row.reason]} · ${row.itemName} · ${row.occurredAt.slice(0, 10)}`,
+                  from: String(value),
+                  to: String(next),
                   body: {
                     kind: "dayTotal",
                     itemType: row.itemType,

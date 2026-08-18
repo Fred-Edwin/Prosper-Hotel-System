@@ -23,19 +23,29 @@
  */
 
 import { X } from "lucide-react";
-import { confirmMessage, type ConfirmCase } from "./amend-feedback";
+import { confirmMessage, type PendingEdit } from "./amend-feedback";
 
 export type AmendToastState = { message: string; undo: () => void };
 
-export type AmendConfirmState = { c: ConfirmCase; proceed: () => void };
+export type AmendConfirmState = { edit: PendingEdit; proceed: () => void };
 
 /**
- * C7's escalation step, shared by every tab for the same reason the toast
- * is: it is the same dialog, and two copies would drift.
+ * The confirm step, shared by every tab for the same reason the toast is:
+ * it is the same dialog, and four copies would drift.
  *
- * A disclosure, never a permission gate — she is the authority, and there
- * is no threshold at which an edit is refused (D6). Cancelling leaves the
- * figure untouched.
+ * **Every edit passes through here** (owner decision, 2026-08-18). It is
+ * still a disclosure rather than a permission gate — she is the
+ * authority, and there is no threshold at which an edit is refused (D6).
+ * Cancelling leaves the figure untouched and nothing is written.
+ *
+ * It always names the cell and both figures. A confirm that asks only
+ * "are you sure?" costs a click without buying a check, because she
+ * cannot see what she is agreeing to — and the whole reason for the step
+ * is that she should be able to catch a wrong number here rather than
+ * afterwards.
+ *
+ * Cancel is focused on open, not Change it: the safe option should be the
+ * one a reflexive Enter lands on.
  */
 export function AmendConfirm({
   confirming,
@@ -45,7 +55,7 @@ export function AmendConfirm({
   onCancel: () => void;
 }) {
   if (!confirming) return null;
-  const message = confirmMessage(confirming.c);
+  const message = confirmMessage(confirming.edit);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div
@@ -58,10 +68,30 @@ export function AmendConfirm({
         <h2 id="amend-confirm-title" className="text-sm font-medium">
           {message.title}
         </h2>
-        <p className="mt-1.5 text-[13px] text-muted-foreground">{message.body}</p>
+
+        {/* The figures, which are the point of the step. Old struck
+            through, new in full weight, so the change is legible at a
+            glance rather than read as prose. */}
+        <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2">
+          <p className="text-[12px] text-muted-foreground">{message.label}</p>
+          <p className="tabular mt-0.5 text-[13px]">
+            <span className="text-muted-foreground line-through">{message.from}</span>
+            <span className="mx-2 text-muted-foreground" aria-hidden>
+              →
+            </span>
+            <span className="font-medium" data-testid="amend-confirm-to">
+              {message.to}
+            </span>
+          </p>
+        </div>
+
+        {message.body && (
+          <p className="mt-3 text-[13px] text-muted-foreground">{message.body}</p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onCancel}
+            autoFocus
             className="rounded-md border px-3 py-1.5 text-[13px] focus-visible:ring-2 focus-visible:ring-ring/50"
             data-testid="amend-confirm-cancel"
           >
