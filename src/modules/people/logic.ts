@@ -25,6 +25,7 @@ import {
   createAmendment,
   findAmendmentsForRecord,
   findAmendmentsInPeriod,
+  findAmendmentsEffectiveInPeriod,
 } from "./queries";
 import type {
   Amendment,
@@ -525,6 +526,21 @@ export async function listAmendmentsInPeriod(
   periodEnd: Date,
 ): Promise<Amendment[]> {
   return findAmendmentsInPeriod(db, periodStart, periodEnd);
+}
+
+/**
+ * T7.3 — amendments by the ledger day they apply to.
+ *
+ * See findAmendmentsEffectiveInPeriod: this is the "has anything moved
+ * that day's figures since" question, which `listAmendmentsInPeriod`
+ * cannot answer because it filters on when she typed the edit.
+ */
+export async function listAmendmentsEffectiveInPeriod(
+  db: Parameters<typeof findAmendmentsEffectiveInPeriod>[0],
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Amendment[]> {
+  return findAmendmentsEffectiveInPeriod(db, periodStart, periodEnd);
 }
 
 /**

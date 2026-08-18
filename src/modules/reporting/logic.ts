@@ -10,6 +10,7 @@ import {
   listLocations,
   getDaysWorkedForActivity,
   listAmendmentsInPeriod,
+  listAmendmentsEffectiveInPeriod,
 } from "@/modules/people";
 import { getCurrentRecipe, findProductsByIds, findIngredientsByIds } from "@/modules/catalogue";
 import {
@@ -1393,6 +1394,17 @@ export async function getStoreLedger(
 // the ledger's own filters, no re-valuation.
 export type NonSalesLedgerRow = {
   itemType: "product" | "ingredient";
+  /**
+   * Editable-ledger T7.4 — the movement this row *is*.
+   *
+   * Unlike the Product and Store tabs, where a row is a rollup and a cell
+   * states a day's total, a non-sales row is a single movement. Its cost
+   * basis and selling value are snapshotted money figures (ticket 15) and
+   * are edited on this record directly; quantity still goes through
+   * amendDayTotal, because a day with two wastage entries for one item has
+   * the same "which row absorbs it" question every other tab has.
+   */
+  movementId: string;
   itemId: string;
   itemName: string;
   locationId: string;
@@ -1436,6 +1448,7 @@ export async function getNonSalesLedgerReport(
     for (const line of result.lines) {
       rows.push({
         itemType: line.itemType,
+        movementId: line.movementId,
         itemId: line.itemId,
         itemName: line.itemName,
         locationId: location.id,
@@ -1474,6 +1487,26 @@ export type CashTransaction = {
   method: "cash" | "mpesa";
   amountMinor: number;
   recordedBy: string;
+  /**
+   * Editable-ledger T7.2 — where this figure actually lives, carried on
+   * the transaction rather than reconstructed at the client.
+   *
+   * A handover emits *two* rows from one record (`${id}:cash` and
+   * `${id}:mpesa`), so the row id is not a record id. The client must
+   * never parse it back apart: the day the id format changes, a silent
+   * string-split would start writing to whatever record the prefix
+   * happened to name. Stating the record and column here means the id
+   * stays a display key.
+   *
+   * `amountField` is the column the amount lives in; `methodField` is
+   * null where the method is not stored on the record — a handover's two
+   * legs are two columns, not a method choice, so its method cannot be
+   * edited.
+   */
+  recordType: "Handover" | "DrawingRepayment" | "Expense";
+  recordId: string;
+  amountField: string;
+  methodField: string | null;
 };
 
 export type CashLedgerDay = {
@@ -1489,11 +1522,44 @@ export type CashLedgerDay = {
   closingCashMinor: number;
   closingMpesaMinor: number;
   transactions: CashTransaction[];
+  /**
+   * Editable-ledger T7.3 / C6 — a later edit has moved this day's sales
+   * since the handover was recorded.
+   *
+   * Null on every day where nothing moved. Where something did, the
+   * handover's expected figure deliberately does **not** recompute (D2):
+   * it records a check that happened between two people that evening. So
+   * the ledger and that day's handover will disagree afterwards, and the
+   * only honest thing to do is say so in words, showing both figures,
+   * rather than quietly restating one of them.
+   */
+  salesEditedSince: { count: number; editedOn: string } | null;
 };
 
 export type CashLedgerResult =
   | { ok: true; days: CashLedgerDay[] }
   | { ok: false; reason: "forbidden" };
+
+/**
+ * T7.3 — does this amendment move a day's *sales*?
+ *
+ * Only the figures a handover was checked against count. A `sold`
+ * day-total edit changes what the till should have taken; a product's
+ * selling price does the same for every sale of it on that day. A wastage
+ * edit, an ingredient issue or a purchase does not — those move stock and
+ * cost, never the money a customer handed over, so flagging them would
+ * put a "your handover no longer matches" note on a day where the
+ * handover matches perfectly.
+ *
+ * Kind A edits record the ledger *reason* in `field` (see the Amendment
+ * model comment), which is why "sold" is compared against the field name
+ * rather than a column.
+ */
+function movesSales(amendment: { recordType: string; field: string }): boolean {
+  if (amendment.recordType === "StockMovement") return amendment.field === "sold";
+  if (amendment.recordType === "Product") return amendment.field === "priceMinor";
+  return false;
+}
 
 const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   stock: "Stock",
@@ -1536,6 +1602,22 @@ export async function getCashLedger(
   const staff = await findStaffMembersByIds(db, Array.from(staffIds));
   const staffNameById = new Map(staff.map((s) => [s.id, s.name]));
   const nameFor = (id: string) => staffNameById.get(id) ?? "Unknown";
+
+  // C6 — which days had their sales moved by a later edit. Read once for
+  // the whole period and bucketed by day, rather than a query per day.
+  const salesAmendments = await listAmendmentsEffectiveInPeriod(db, input.periodStart, input.periodEnd);
+  const salesEditsByDay = new Map<string, { count: number; latest: Date }>();
+  for (const amendment of salesAmendments) {
+    if (!amendment.effectiveDate || !movesSales(amendment)) continue;
+    const key = isoDate(amendment.effectiveDate);
+    const existing = salesEditsByDay.get(key);
+    if (!existing) {
+      salesEditsByDay.set(key, { count: 1, latest: amendment.createdAt });
+    } else {
+      existing.count += 1;
+      if (amendment.createdAt > existing.latest) existing.latest = amendment.createdAt;
+    }
+  }
 
   const netBeforePeriod = (method: "cash" | "mpesa") => {
     const handoversIn = beforePeriod.handovers.reduce(
@@ -1581,6 +1663,10 @@ export async function getCashLedger(
             method: "cash",
             amountMinor: h.actualCashMinor,
             recordedBy: nameFor(h.staffMemberId),
+            recordType: "Handover",
+            recordId: h.id,
+            amountField: "actualCashMinor",
+            methodField: null,
           });
         }
         if (h.actualMpesaMinor !== 0) {
@@ -1591,6 +1677,10 @@ export async function getCashLedger(
             method: "mpesa",
             amountMinor: h.actualMpesaMinor,
             recordedBy: nameFor(h.staffMemberId),
+            recordType: "Handover",
+            recordId: h.id,
+            amountField: "actualMpesaMinor",
+            methodField: null,
           });
         }
         return lines;
@@ -1602,6 +1692,10 @@ export async function getCashLedger(
         method: r.paymentMethod,
         amountMinor: r.amountMinor,
         recordedBy: nameFor(r.recordedBy),
+        recordType: "DrawingRepayment" as const,
+        recordId: r.id,
+        amountField: "amountMinor",
+        methodField: "paymentMethod",
       })),
       ...dayExpenses.map((e) => ({
         id: e.id,
@@ -1610,6 +1704,10 @@ export async function getCashLedger(
         method: e.paymentMethod,
         amountMinor: e.amountMinor,
         recordedBy: nameFor(e.staffMemberId),
+        recordType: "Expense" as const,
+        recordId: e.id,
+        amountField: "amountMinor",
+        methodField: "paymentMethod",
       })),
     ];
 
@@ -1632,6 +1730,8 @@ export async function getCashLedger(
 
     const filteredTransactions = transactions.filter(matchesFilter);
     if (filteredTransactions.length === 0) continue;
+
+    const salesEdit = salesEditsByDay.get(day.label);
 
     const sumFor = (category: CashTransactionCategory) =>
       filteredTransactions.filter((t) => t.category === category).reduce((sum, t) => sum + t.amountMinor, 0);
@@ -1656,6 +1756,14 @@ export async function getCashLedger(
       closingCashMinor: runningCash,
       closingMpesaMinor: runningMpesa,
       transactions: filteredTransactions,
+      // Only stated where the day actually has a handover to disagree
+      // with — an edited day with no handover has nothing to reconcile
+      // against, so the note would be an answer to a question nobody
+      // asked.
+      salesEditedSince:
+        salesEdit && dayHandovers.length > 0
+          ? { count: salesEdit.count, editedOn: isoDate(salesEdit.latest) }
+          : null,
     });
   }
 

@@ -23,6 +23,7 @@ const day1: CashLedgerDayData = {
   drawingsMinor: 0,
   closingCashMinor: 4700000,
   closingMpesaMinor: 1300000,
+  salesEditedSince: null,
   transactions: [
     {
       id: "t1",
@@ -31,6 +32,10 @@ const day1: CashLedgerDayData = {
       method: "cash",
       amountMinor: 620000,
       recordedBy: "Lucy",
+      recordType: "Handover",
+      recordId: "h-t1",
+      amountField: "actualCashMinor",
+      methodField: null,
     },
     {
       id: "t2",
@@ -39,6 +44,10 @@ const day1: CashLedgerDayData = {
       method: "mpesa",
       amountMinor: 320000,
       recordedBy: "Lucy",
+      recordType: "Handover",
+      recordId: "h-t2",
+      amountField: "actualMpesaMinor",
+      methodField: null,
     },
   ],
 };
@@ -55,6 +64,7 @@ const day2: CashLedgerDayData = {
   drawingsMinor: 0,
   closingCashMinor: 4120000,
   closingMpesaMinor: 1720000,
+  salesEditedSince: null,
   transactions: [
     {
       id: "t3",
@@ -63,6 +73,10 @@ const day2: CashLedgerDayData = {
       method: "cash",
       amountMinor: 1240000,
       recordedBy: "Lucy",
+      recordType: "Expense",
+      recordId: "t3",
+      amountField: "amountMinor",
+      methodField: "paymentMethod",
     },
     {
       id: "t4",
@@ -71,6 +85,10 @@ const day2: CashLedgerDayData = {
       method: "mpesa",
       amountMinor: 600000,
       recordedBy: "Lucy",
+      recordType: "Expense",
+      recordId: "t4",
+      amountField: "amountMinor",
+      methodField: "paymentMethod",
     },
     {
       id: "t5",
@@ -79,6 +97,10 @@ const day2: CashLedgerDayData = {
       method: "cash",
       amountMinor: 710000,
       recordedBy: "Lucy",
+      recordType: "Handover",
+      recordId: "h-t5",
+      amountField: "actualCashMinor",
+      methodField: null,
     },
     {
       id: "t6",
@@ -87,6 +109,10 @@ const day2: CashLedgerDayData = {
       method: "mpesa",
       amountMinor: 370000,
       recordedBy: "Lucy",
+      recordType: "Handover",
+      recordId: "h-t6",
+      amountField: "actualMpesaMinor",
+      methodField: null,
     },
     {
       id: "t7",
@@ -95,6 +121,10 @@ const day2: CashLedgerDayData = {
       method: "cash",
       amountMinor: 80000,
       recordedBy: "Anne",
+      recordType: "DrawingRepayment",
+      recordId: "t7",
+      amountField: "amountMinor",
+      methodField: "paymentMethod",
     },
   ],
 };
@@ -111,6 +141,7 @@ const day3: CashLedgerDayData = {
   drawingsMinor: 1500000,
   closingCashMinor: 2800000,
   closingMpesaMinor: 1720000,
+  salesEditedSince: null,
   transactions: [
     {
       id: "t8",
@@ -119,6 +150,10 @@ const day3: CashLedgerDayData = {
       method: "cash",
       amountMinor: 3000000,
       recordedBy: "Lucy",
+      recordType: "Expense",
+      recordId: "t8",
+      amountField: "amountMinor",
+      methodField: "paymentMethod",
     },
     {
       id: "t9",
@@ -127,6 +162,10 @@ const day3: CashLedgerDayData = {
       method: "cash",
       amountMinor: 1500000,
       recordedBy: "Lucy",
+      recordType: "Expense",
+      recordId: "t9",
+      amountField: "amountMinor",
+      methodField: "paymentMethod",
     },
     {
       id: "t10",
@@ -135,6 +174,10 @@ const day3: CashLedgerDayData = {
       method: "cash",
       amountMinor: 812000,
       recordedBy: "Lucy",
+      recordType: "Handover",
+      recordId: "h-t10",
+      amountField: "actualCashMinor",
+      methodField: null,
     },
     {
       id: "t11",
@@ -143,6 +186,10 @@ const day3: CashLedgerDayData = {
       method: "mpesa",
       amountMinor: 368000,
       recordedBy: "Lucy",
+      recordType: "Handover",
+      recordId: "h-t11",
+      amountField: "actualMpesaMinor",
+      methodField: null,
     },
   ],
 };
@@ -199,4 +246,53 @@ export const Denied: Story = {
 export const ErrorLoading: Story = {
   name: "Error loading the cash ledger",
   args: { state: { status: "error" } },
+};
+
+/**
+ * C6 — a day whose sales moved after its handover was recorded.
+ *
+ * The expected figure deliberately does not follow (D2): it records a
+ * check that happened between two people that evening, and a later edit
+ * to the ledger is not evidence about what was counted. So the ledger and
+ * that day's handover disagree afterwards, and the note says so in words
+ * rather than restating one of the two numbers.
+ */
+export const SalesEditedSince: Story = {
+  name: "Day expanded — sales edited after the handover",
+  args: {
+    state: {
+      status: "ready",
+      days: [
+        day1,
+        { ...day2, salesEditedSince: { count: 2, editedOn: "2026-08-12" } },
+        day3,
+      ],
+    },
+    initialExpandedRowKey: day2.date,
+  },
+};
+
+/**
+ * The editable table (T7).
+ *
+ * `onReplaceRows` is what switches editing on, so the reading stories
+ * above render exactly the read-only table they always did. Amounts are
+ * editable in the column each already occupies — no separate Amount
+ * column, which would print every figure twice on one row. Balances and
+ * day totals are read-only and say why; the payment method is read-only
+ * in this ticket.
+ *
+ * There is no network in Storybook, so committing a cell shows the
+ * saving state and then the error state — which is itself the per-cell
+ * failure story.
+ */
+export const Editable: Story = {
+  name: "Editable — day expanded, hover a figure",
+  args: {
+    state: { status: "ready", days: [day1, day2, day3] },
+    initialExpandedRowKey: day2.date,
+    onReplaceRows: () => {},
+    periodStart: "2026-08-05T00:00:00.000Z",
+    periodEnd: "2026-08-07T23:59:59.999Z",
+  },
 };

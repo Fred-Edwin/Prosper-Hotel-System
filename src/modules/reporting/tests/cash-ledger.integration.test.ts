@@ -41,6 +41,7 @@ function attendant(): AuthenticatedStaff {
 }
 
 async function resetDb() {
+  await testDb.amendment.deleteMany({});
   await testDb.drawingRepayment.deleteMany({});
   await testDb.drawingDebt.deleteMany({});
   await testDb.expense.deleteMany({});
@@ -355,5 +356,155 @@ describe("getCashLedger, driven through cash's public write paths", () => {
     expect(result.days[0].repaymentsMinor).toBe(2000);
     // 20,000 in - 5,000 drawing + 2,000 repaid = 17,000.
     expect(result.days[0].closingCashMinor).toBe(17000);
+  });
+});
+
+/**
+ * Editable-ledger T7 — what the Cash tab needs before it can be edited.
+ *
+ * Two facts, and both are about *not* guessing:
+ *
+ *  - a transaction says which record and column it comes from, so the
+ *    client never has to take a synthetic row id apart;
+ *  - a day whose sales were moved later says so, because the handover's
+ *    expected figure deliberately will not follow (D2) and the two
+ *    disagreeing afterwards is correct rather than a fault.
+ */
+describe("getCashLedger — the editable-ledger fields (T7)", () => {
+  test("every transaction names the record and column its amount lives in", async () => {
+    await seedHandover(cashierId, restaurantId, 10000, 5000, new Date("2026-08-05T08:00:00Z"));
+    await seedRepayment(2000, "cash", new Date("2026-08-05T09:00:00Z"));
+    const expense = await seedExpense("running", 1000, "mpesa", new Date("2026-08-05T11:00:00Z"));
+
+    const result = await getCashLedger(testDb, owner(), {
+      periodStart: new Date("2026-08-05T00:00:00Z"),
+      periodEnd: new Date("2026-08-05T23:59:59Z"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const handover = await testDb.handover.findFirst({});
+    const transactions = result.days[0].transactions;
+
+    // A handover emits two rows from one record. The composite ids are a
+    // display key; the record they point at is stated, not parsed out.
+    const cashLeg = transactions.find((t) => t.id === `${handover!.id}:cash`)!;
+    const mpesaLeg = transactions.find((t) => t.id === `${handover!.id}:mpesa`)!;
+    expect(cashLeg).toMatchObject({
+      recordType: "Handover",
+      recordId: handover!.id,
+      amountField: "actualCashMinor",
+      // Not editable: the two legs are two columns, not a method choice.
+      methodField: null,
+    });
+    expect(mpesaLeg).toMatchObject({
+      recordType: "Handover",
+      recordId: handover!.id,
+      amountField: "actualMpesaMinor",
+      methodField: null,
+    });
+
+    const expenseRow = transactions.find((t) => t.id === expense.id)!;
+    expect(expenseRow).toMatchObject({
+      recordType: "Expense",
+      recordId: expense.id,
+      amountField: "amountMinor",
+      methodField: "paymentMethod",
+    });
+
+    const repaymentRow = transactions.find((t) => t.category === "repayment")!;
+    expect(repaymentRow.recordType).toBe("DrawingRepayment");
+    expect(repaymentRow.recordId).toBe(repaymentRow.id);
+  });
+
+  test("a day whose sales were edited later says so beside its handover", async () => {
+    await seedHandover(cashierId, restaurantId, 10000, 0, new Date("2026-08-05T20:00:00Z"));
+
+    // An edit typed on 12 August, applying to 5 August's sales.
+    await testDb.amendment.create({
+      data: {
+        recordType: "StockMovement",
+        recordId: "movement-1",
+        field: "sold",
+        previousValue: "4",
+        newValue: "6",
+        effectiveDate: new Date("2026-08-05T00:00:00Z"),
+        createdAt: new Date("2026-08-12T09:00:00Z"),
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+      },
+    });
+
+    const result = await getCashLedger(testDb, owner(), {
+      periodStart: new Date("2026-08-05T00:00:00Z"),
+      periodEnd: new Date("2026-08-05T23:59:59Z"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.days[0].salesEditedSince).toEqual({ count: 1, editedOn: "2026-08-12" });
+    // The expected figure never recomputes — that is the whole reason the
+    // note exists rather than a corrected number.
+    const handover = await testDb.handover.findFirst({});
+    expect(handover!.expectedCashMinor.toNumber()).toBe(10000);
+
+    await testDb.amendment.deleteMany({});
+  });
+
+  test("an edit that does not move sales leaves the day unmarked", async () => {
+    await seedHandover(cashierId, restaurantId, 10000, 0, new Date("2026-08-05T20:00:00Z"));
+
+    // Wastage moves stock and cost, never the money a customer handed
+    // over — marking the day would report a mismatch that isn't one.
+    await testDb.amendment.create({
+      data: {
+        recordType: "StockMovement",
+        recordId: "movement-2",
+        field: "wasted",
+        previousValue: "1",
+        newValue: "3",
+        effectiveDate: new Date("2026-08-05T00:00:00Z"),
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+      },
+    });
+
+    const result = await getCashLedger(testDb, owner(), {
+      periodStart: new Date("2026-08-05T00:00:00Z"),
+      periodEnd: new Date("2026-08-05T23:59:59Z"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.days[0].salesEditedSince).toBeNull();
+
+    await testDb.amendment.deleteMany({});
+  });
+
+  test("a day with no handover is never marked, however much its sales moved", async () => {
+    // No handover: an expense-only day. There is nothing for the ledger to
+    // disagree with, so the note would answer a question nobody asked.
+    await seedExpense("running", 1000, "cash", new Date("2026-08-05T11:00:00Z"));
+    await testDb.amendment.create({
+      data: {
+        recordType: "StockMovement",
+        recordId: "movement-3",
+        field: "sold",
+        previousValue: "4",
+        newValue: "6",
+        effectiveDate: new Date("2026-08-05T00:00:00Z"),
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+      },
+    });
+
+    const result = await getCashLedger(testDb, owner(), {
+      periodStart: new Date("2026-08-05T00:00:00Z"),
+      periodEnd: new Date("2026-08-05T23:59:59Z"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.days[0].salesEditedSince).toBeNull();
+
+    await testDb.amendment.deleteMany({});
   });
 });

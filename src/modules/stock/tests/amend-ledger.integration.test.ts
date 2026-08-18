@@ -67,6 +67,9 @@ const cashier = () => staffAt("cashier", cashierId);
 beforeAll(async () => {
   await testDb.amendment.deleteMany({});
   await testDb.stockMovement.deleteMany({});
+  await testDb.expense.deleteMany({});
+  await testDb.handover.deleteMany({});
+  await testDb.drawingRepayment.deleteMany({});
   await testDb.product.deleteMany({});
   await testDb.staffMember.deleteMany({});
   await testDb.location.deleteMany({});
@@ -116,11 +119,15 @@ beforeAll(async () => {
 afterEach(async () => {
   await testDb.amendment.deleteMany({});
   await testDb.stockMovement.deleteMany({});
+  await testDb.expense.deleteMany({});
 });
 
 afterAll(async () => {
   await testDb.amendment.deleteMany({});
   await testDb.stockMovement.deleteMany({});
+  await testDb.expense.deleteMany({});
+  await testDb.handover.deleteMany({});
+  await testDb.drawingRepayment.deleteMany({});
   await testDb.product.deleteMany({});
   await testDb.staffMember.deleteMany({});
   await testDb.location.deleteMany({});
@@ -140,6 +147,21 @@ async function movement(
       reason,
       staffMemberId: cashierId,
       occurredAt,
+    },
+  });
+}
+
+/** T7.1 — one expense to amend. Cleaned up per test, like movements. */
+async function cashExpense(input: { amountMinor: number; paymentMethod: "cash" | "mpesa" }) {
+  return testDb.expense.create({
+    data: {
+      locationId: restaurantId,
+      staffMemberId: ownerId,
+      category: "running",
+      paymentMethod: input.paymentMethod,
+      amountMinor: input.amountMinor,
+      note: "Gas",
+      occurredAt: at("2026-08-16", "12:00:00.000"),
     },
   });
 }
@@ -604,6 +626,313 @@ describe("amendScalar — Kind C", () => {
       newValue: 300,
     });
     expect(result.ok).toBe(true);
+    expect(await testDb.amendment.count()).toBe(0);
+  });
+});
+
+/**
+ * Editable-ledger T7.1 — the Cash and non-sales record types.
+ *
+ * Two things are being tested beyond "the field writes", and both are
+ * structural:
+ *
+ *  - `paymentMethod` is an **enum**, not a number. The allow-list now
+ *    carries a type per field so one function keeps one security
+ *    boundary rather than growing a sibling `amendEnum` that a future
+ *    field could be added to without the allow-list noticing.
+ *  - **`Handover.expectedCashMinor` and `expectedMpesaMinor` are frozen
+ *    permanently** (plan D2). Leaving them off the allow-list is
+ *    mechanically sufficient; the test exists so a future allow-list edit
+ *    has to delete a failing test to break the decision, rather than
+ *    breaking it by omission.
+ */
+describe("amendScalar — T7's cash and movement records", () => {
+  test("edits an expense amount in place and trails it", async () => {
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+
+    const result = await amendScalar(testDb, owner(), {
+      recordType: "Expense",
+      recordId: expense.id,
+      field: "amountMinor",
+      newValue: 1500,
+      locationId: restaurantId,
+      ledgerContext: "gas · 16 Aug",
+    });
+    expect(result.ok).toBe(true);
+
+    const reloaded = await testDb.expense.findUnique({ where: { id: expense.id } });
+    expect(reloaded?.amountMinor.toNumber()).toBe(1500);
+
+    const amendments = await testDb.amendment.findMany({});
+    expect(amendments).toHaveLength(1);
+    expect(amendments[0]).toMatchObject({
+      recordType: "Expense",
+      field: "amountMinor",
+      previousValue: "1200",
+      newValue: "1500",
+      ledgerContext: "gas · 16 Aug",
+    });
+  });
+
+  test("edits an expense's payment method — an enum, not a number", async () => {
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+
+    const result = await amendScalar(testDb, owner(), {
+      recordType: "Expense",
+      recordId: expense.id,
+      field: "paymentMethod",
+      newValue: "mpesa",
+      locationId: restaurantId,
+    });
+    expect(result.ok).toBe(true);
+
+    const reloaded = await testDb.expense.findUnique({ where: { id: expense.id } });
+    expect(reloaded?.paymentMethod).toBe("mpesa");
+
+    const amendments = await testDb.amendment.findMany({});
+    expect(amendments[0]).toMatchObject({
+      recordType: "Expense",
+      field: "paymentMethod",
+      previousValue: "cash",
+      newValue: "mpesa",
+    });
+  });
+
+  test("rejects a payment method that is not one of the real ones", async () => {
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+
+    const result = await amendScalar(testDb, owner(), {
+      recordType: "Expense",
+      recordId: expense.id,
+      field: "paymentMethod",
+      newValue: "bank transfer",
+    });
+    expect(result).toEqual({ ok: false, reason: "invalid_value" });
+    expect(await testDb.amendment.count()).toBe(0);
+  });
+
+  test("rejects a number where an enum is expected, and text where a number is", async () => {
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "paymentMethod",
+        newValue: 3,
+      }),
+    ).toEqual({ ok: false, reason: "invalid_value" });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "amountMinor",
+        newValue: "lots",
+      }),
+    ).toEqual({ ok: false, reason: "invalid_value" });
+
+    expect(await testDb.amendment.count()).toBe(0);
+  });
+
+  test("edits a drawings repayment's amount and method", async () => {
+    const repayment = await testDb.drawingRepayment.create({
+      data: {
+        amountMinor: 500,
+        paymentMethod: "cash",
+        recordedBy: ownerId,
+        occurredAt: at("2026-08-16", "10:00:00.000"),
+      },
+    });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "DrawingRepayment",
+        recordId: repayment.id,
+        field: "amountMinor",
+        newValue: 750,
+      }),
+    ).toEqual({ ok: true });
+
+    const reloaded = await testDb.drawingRepayment.findUnique({ where: { id: repayment.id } });
+    expect(reloaded?.amountMinor.toNumber()).toBe(750);
+
+    await testDb.drawingRepayment.deleteMany({});
+  });
+
+  test("edits a handover's actual cash — what was counted, never what was expected", async () => {
+    const handover = await testDb.handover.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: cashierId,
+        expectedCashMinor: 4000,
+        expectedMpesaMinor: 1000,
+        actualCashMinor: 3800,
+        actualMpesaMinor: 1000,
+        occurredAt: at("2026-08-16", "20:00:00.000"),
+      },
+    });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "Handover",
+        recordId: handover.id,
+        field: "actualCashMinor",
+        newValue: 3900,
+        locationId: restaurantId,
+      }),
+    ).toEqual({ ok: true });
+
+    const reloaded = await testDb.handover.findUnique({ where: { id: handover.id } });
+    expect(reloaded?.actualCashMinor.toNumber()).toBe(3900);
+    // Untouched: the expected side is the record of a check between two
+    // people and never recomputes (D2).
+    expect(reloaded?.expectedCashMinor.toNumber()).toBe(4000);
+
+    await testDb.handover.deleteMany({});
+  });
+
+  test("refuses a handover's expected figures — frozen permanently (D2)", async () => {
+    const handover = await testDb.handover.create({
+      data: {
+        locationId: restaurantId,
+        staffMemberId: cashierId,
+        expectedCashMinor: 4000,
+        expectedMpesaMinor: 1000,
+        actualCashMinor: 3800,
+        actualMpesaMinor: 1000,
+        occurredAt: at("2026-08-16", "20:00:00.000"),
+      },
+    });
+
+    for (const field of ["expectedCashMinor", "expectedMpesaMinor"]) {
+      expect(
+        await amendScalar(testDb, owner(), {
+          recordType: "Handover",
+          recordId: handover.id,
+          field,
+          newValue: 9999,
+        }),
+      ).toEqual({ ok: false, reason: "field_not_editable" });
+    }
+
+    const reloaded = await testDb.handover.findUnique({ where: { id: handover.id } });
+    expect(reloaded?.expectedCashMinor.toNumber()).toBe(4000);
+    expect(reloaded?.expectedMpesaMinor?.toNumber()).toBe(1000);
+
+    await testDb.handover.deleteMany({});
+  });
+
+  test("edits a non-sales movement's snapshotted money figures", async () => {
+    // T7.4 — the one place a *movement* takes a scalar edit rather than a
+    // day-total edit, because these are snapshotted money figures rather
+    // than quantities.
+    const wasted = await testDb.stockMovement.create({
+      data: {
+        productId,
+        locationId: restaurantId,
+        quantity: -2,
+        reason: "wasted",
+        staffMemberId: cashierId,
+        occurredAt: at("2026-08-16", "11:00:00.000"),
+        costBasisMinor: 360,
+        sellingValueMinor: 600,
+      },
+    });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "StockMovement",
+        recordId: wasted.id,
+        field: "costBasisMinor",
+        newValue: 400,
+        locationId: restaurantId,
+      }),
+    ).toEqual({ ok: true });
+
+    const reloaded = await testDb.stockMovement.findUnique({ where: { id: wasted.id } });
+    expect(reloaded?.costBasisMinor?.toNumber()).toBe(400);
+    // Quantity is a Kind A figure and is not reachable through this path.
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "StockMovement",
+        recordId: wasted.id,
+        field: "quantity",
+        newValue: 9,
+      }),
+    ).toEqual({ ok: false, reason: "field_not_editable" });
+  });
+
+  test("is owner-only on the new record types too", async () => {
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+
+    expect(
+      await amendScalar(testDb, cashier(), {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "amountMinor",
+        newValue: 5,
+      }),
+    ).toEqual({ ok: false, reason: "forbidden" });
+
+    const reloaded = await testDb.expense.findUnique({ where: { id: expense.id } });
+    expect(reloaded?.amountMinor.toNumber()).toBe(1200);
+  });
+
+  test("a record type that is not on the allow-list is refused", async () => {
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "StaffMember",
+        recordId: cashierId,
+        field: "dailyRateMinor",
+        newValue: 1,
+      }),
+    ).toEqual({ ok: false, reason: "field_not_editable" });
+  });
+
+  test("a missing record is not_found rather than a silent success", async () => {
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "Expense",
+        recordId: "does-not-exist",
+        field: "amountMinor",
+        newValue: 1,
+      }),
+    ).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  test("a reversed record is not editable — it counts nowhere", async () => {
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+    await testDb.expense.update({
+      where: { id: expense.id },
+      data: { reversed: true, reversedAt: new Date() },
+    });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "amountMinor",
+        newValue: 1500,
+      }),
+    ).toEqual({ ok: false, reason: "not_found" });
+
+    const reloaded = await testDb.expense.findUnique({ where: { id: expense.id } });
+    expect(reloaded?.amountMinor.toNumber()).toBe(1200);
+    expect(await testDb.amendment.count()).toBe(0);
+  });
+
+  test("a no-op edit writes nothing, enums included", async () => {
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "paymentMethod",
+        newValue: "cash",
+      }),
+    ).toEqual({ ok: true });
     expect(await testDb.amendment.count()).toBe(0);
   });
 });

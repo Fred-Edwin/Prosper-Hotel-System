@@ -13,6 +13,7 @@ import { NonSalesLedgerView, type NonSalesLedgerRowData } from "./non-sales-ledg
 
 const wastedSoda: NonSalesLedgerRowData = {
   itemType: "product",
+  movementId: "m1",
   itemId: "p1",
   itemName: "Soda",
   locationId: "loc-restaurant",
@@ -28,6 +29,7 @@ const wastedSoda: NonSalesLedgerRowData = {
 
 const staffMealPotatoes: NonSalesLedgerRowData = {
   itemType: "ingredient",
+  movementId: "m2",
   itemId: "i1",
   itemName: "Potatoes",
   locationId: "loc-restaurant",
@@ -43,6 +45,7 @@ const staffMealPotatoes: NonSalesLedgerRowData = {
 
 const complimentaryCrisps: NonSalesLedgerRowData = {
   itemType: "product",
+  movementId: "m3",
   itemId: "p2",
   itemName: "Crisps",
   locationId: "loc-canteen",
@@ -110,4 +113,35 @@ export const Denied: Story = {
 export const ErrorLoading: Story = {
   name: "Error loading the non-sales ledger",
   args: { state: { status: "error" } },
+};
+
+/**
+ * The editable table (T7.4).
+ *
+ * `onReplaceRows` is what switches editing on, so the reading stories
+ * above render exactly the read-only table they always did.
+ *
+ * A row here is one movement, which makes this the one tab where cost and
+ * selling value are edited on the record itself: they were snapshotted
+ * when the movement was recorded (ticket 15) and are never recomputed, so
+ * a wrong one stays wrong until she fixes it. Quantity still goes through
+ * the day-total path — two entries for one item on one day pose the same
+ * "which row absorbs it" question every other tab has.
+ *
+ * The estimated-cost row is worth looking at: the "est" marker means
+ * there was no recipe and the figure is 60% of selling price. Typing a
+ * real figure over it is exactly what this cell is for.
+ *
+ * There is no network in Storybook, so committing a cell shows the saving
+ * state and then the error state — which is itself the per-cell failure
+ * story.
+ */
+export const Editable: Story = {
+  name: "Editable — hover a quantity or figure",
+  args: {
+    state: { status: "ready", rows: [wastedSoda, staffMealPotatoes, complimentaryCrisps] },
+    onReplaceRows: () => {},
+    periodStart: "2026-08-01T00:00:00.000Z",
+    periodEnd: "2026-08-31T23:59:59.999Z",
+  },
 };

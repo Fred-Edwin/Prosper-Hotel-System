@@ -23,6 +23,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ErrorState, PermissionDenied, EmptyFiltered, LoadingTable } from "@/components/patterns/states";
+import { EditableNum, type EditableNumState } from "./editable-num";
+import {
+  summariseAmendment,
+  farBackMonths,
+  type ConfirmCase,
+  type LedgerRowAccessors,
+} from "./amend-feedback";
+import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
 import { ChevronRight, Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -35,6 +43,15 @@ export type CashTransactionData = {
   method: "cash" | "mpesa";
   amountMinor: number;
   recordedBy: string;
+  // Editable-ledger T7.2 — where the figure actually lives. The row id is
+  // a display key: a handover emits two rows from one record, so taking
+  // `${id}:cash` apart at the client would be writing to whatever record
+  // the prefix happened to name. See the CashTransaction comment in
+  // reporting/logic.ts.
+  recordType: "Handover" | "DrawingRepayment" | "Expense";
+  recordId: string;
+  amountField: string;
+  methodField: string | null;
 };
 
 export type CashLedgerDayData = {
@@ -50,6 +67,9 @@ export type CashLedgerDayData = {
   closingCashMinor: number;
   closingMpesaMinor: number;
   transactions: CashTransactionData[];
+  // T7.3 / C6 — a later edit moved this day's sales. Null on every day
+  // where nothing moved.
+  salesEditedSince: { count: number; editedOn: string } | null;
 };
 
 export type LoadState =
@@ -118,7 +138,21 @@ function CashLedgerForAttempt({
     };
   }, [periodStart, periodEnd]);
 
-  return <CashLedgerView state={state} onRetry={onRetry} />;
+  // Replaces days in place after an edit rather than remounting, so the
+  // expanded day she is working inside survives the save. Same reasoning
+  // as the Product and Store tabs' onReplaceRows.
+  const replaceDays = (days: CashLedgerDayData[]) =>
+    setState((s) => (s.status === "ready" ? { ...s, days } : s));
+
+  return (
+    <CashLedgerView
+      state={state}
+      onRetry={onRetry}
+      onReplaceRows={replaceDays}
+      periodStart={new Date(`${periodStart}T00:00:00`).toISOString()}
+      periodEnd={new Date(`${periodEnd}T23:59:59.999`).toISOString()}
+    />
+  );
 }
 
 const FROZEN = "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
@@ -176,14 +210,68 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+/**
+ * How amend-feedback reads a Cash day (T7.5).
+ *
+ * The Cash tab has no closing *quantity* — its running figure is a
+ * balance — so `closingOf` reports closing cash, which is the figure an
+ * edit to a cash transaction actually moves. M-Pesa moves independently
+ * and is named by an extra clause where it is the side that changed;
+ * the two are never pooled (docs/design.md).
+ *
+ * There is no per-day cascade to summarise here the way there is on the
+ * Product tab: a day is already the unit, so `daysOf` reports each day's
+ * own closing balance across the period, which is exactly the cascade an
+ * edit to an early day produces.
+ */
+/**
+ * Names the M-Pesa balance when *that* is the side that moved.
+ *
+ * `closingOf` reports closing cash, so an edit to an M-Pesa transaction
+ * would otherwise produce a toast saying nothing measurable changed —
+ * true of cash, and misleading about the edit she just made. Cash and
+ * M-Pesa are never pooled, so the summary cannot average over the two;
+ * it names whichever one moved.
+ */
+function mpesaClause(
+  previousDays: CashLedgerDayData[],
+  days: CashLedgerDayData[],
+  date: string,
+): string | undefined {
+  const before = previousDays.find((d) => d.date === date);
+  const after = days.find((d) => d.date === date);
+  if (!before || !after) return undefined;
+  if (before.closingMpesaMinor === after.closingMpesaMinor) return undefined;
+  return `closing M-Pesa is now ${money(after.closingMpesaMinor)}`;
+}
+
+const CASH_ROW_ACCESSORS: LedgerRowAccessors<CashLedgerDayData> = {
+  identify: (d) => d.date,
+  describe: (d) => `Closing cash for ${d.date}`,
+  closingOf: (d) => d.closingCashMinor,
+  profitOf: () => null,
+  daysOf: (d) => [{ date: d.date, closing: d.closingCashMinor }],
+};
+
 export function CashLedgerView({
   state,
   onRetry,
+  onReplaceRows,
+  periodStart = "",
+  periodEnd = "",
   initialExpandedRowKey = null,
   initialQuery = "",
 }: {
   state: LoadState;
   onRetry: () => void;
+  /** Replaces the days in place after an edit, without remounting. Absent
+   * in Storybook, which stories the view without a network — and its
+   * absence is also what makes the table read-only there. */
+  onReplaceRows?: (days: CashLedgerDayData[]) => void;
+  /** ISO instants for the period on screen — the amend endpoint recomputes
+   * and returns exactly this window, so the edit and the refresh agree. */
+  periodStart?: string;
+  periodEnd?: string;
   /** Storybook only, for the "day expanded" state — the real page always
    * starts collapsed. */
   initialExpandedRowKey?: string | null;
@@ -195,7 +283,182 @@ export function CashLedgerView({
   const [category, setCategory] = useState<CashTransactionCategory | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(initialExpandedRowKey);
 
+  // Per-cell in-flight and failure state, keyed by transaction so two
+  // edits in flight never mask each other. Errors live on the cell: she
+  // needs to know *which* figure failed, which a toast cannot tell her.
+  const [cellState, setCellState] = useState<Record<string, { state: EditableNumState; message?: string }>>({});
+  const [toast, setToast] = useState<AmendToastState | null>(null);
+  const [confirming, setConfirming] = useState<AmendConfirmState | null>(null);
+
+  const editingEnabled = !!onReplaceRows;
+
   const allDays = useMemo(() => (state.status === "ready" ? state.days : []), [state]);
+
+  async function submit(
+    cellKey: string,
+    body: Record<string, unknown>,
+    dayKey: string,
+    extraClause?: string,
+  ) {
+    setCellState((s) => ({ ...s, [cellKey]: { state: "saving" } }));
+    try {
+      const response = await fetch("/api/ledger/amend", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, ledger: "cash", periodStart, periodEnd }),
+      });
+      if (!response.ok) {
+        setCellState((s) => ({
+          ...s,
+          [cellKey]: { state: "error", message: "Couldn't save. The figure is unchanged." },
+        }));
+        return;
+      }
+      const payload = (await response.json()) as {
+        rows: CashLedgerDayData[];
+        previousRows: CashLedgerDayData[];
+      };
+      onReplaceRows?.(payload.rows);
+      setCellState((s) => {
+        const next = { ...s };
+        delete next[cellKey];
+        return next;
+      });
+
+      const summary = summariseAmendment({
+        itemId: dayKey,
+        previousRows: payload.previousRows,
+        rows: payload.rows,
+        accessors: CASH_ROW_ACCESSORS,
+        extraClause: extraClause ?? mpesaClause(payload.previousRows, payload.rows, dayKey),
+      });
+      const previousValue = body["newValue"];
+      setToast({
+        message: summary.message,
+        undo: () => {
+          setToast(null);
+          void submit(cellKey, { ...body, newValue: body["undoValue"] ?? previousValue }, dayKey);
+        },
+      });
+    } catch {
+      setCellState((s) => ({
+        ...s,
+        [cellKey]: { state: "error", message: "Couldn't save. The figure is unchanged." },
+      }));
+    }
+  }
+
+  function amend(input: {
+    cellKey: string;
+    dayKey: string;
+    body: Record<string, unknown>;
+    escalation: ConfirmCase | null;
+    extraClause?: string;
+  }) {
+    const run = () => void submit(input.cellKey, input.body, input.dayKey, input.extraClause);
+    if (input.escalation) {
+      setConfirming({ c: input.escalation, proceed: () => { setConfirming(null); run(); } });
+      return;
+    }
+    run();
+  }
+
+  /**
+   * An opening or closing balance on the day row.
+   *
+   * Not editable, and it says so. These are derived from the day's
+   * transactions — there is no stored figure to change, and writing an
+   * offsetting row to force a balance would invent a payment that never
+   * happened. The transactions below are where the real edit is.
+   */
+  function balanceCell(value: number, opts: { strong?: boolean } = {}) {
+    return (
+      <EditableNum
+        value={value}
+        asMoney
+        strong={opts.strong}
+        notEditableReason="Balances are worked out from the day's transactions. Expand the day and edit one."
+      />
+    );
+  }
+
+  /**
+   * A per-day category total on the day row.
+   *
+   * Read-only for the same reason the Product and Store tabs' period
+   * totals are: it is the sum of several individually editable rows, and
+   * changing the sum offers no way to say which of them was wrong.
+   */
+  function dayTotalCell(value: number, opts: { tone?: "danger" | "success" } = {}) {
+    return (
+      <EditableNum
+        value={value}
+        asMoney
+        muted
+        tone={opts.tone}
+        notEditableReason="This is the day's total. Expand the day and edit a transaction."
+      />
+    );
+  }
+
+  /**
+   * One transaction's amount, editable in the column it already occupies.
+   *
+   * The cell she reads is the cell she edits — no separate Amount column,
+   * which would print every figure twice on the same row and leave her
+   * working out which of two identical numbers is the real one. Each
+   * child row carries exactly one non-dash figure anyway, so there is
+   * nothing to hunt for.
+   */
+  function amountCell(day: CashLedgerDayData, t: CashTransactionData, column: CashTransactionCategory) {
+    // A transaction only shows a figure in its own category's column.
+    if (t.category !== column) return <Num value={0} muted />;
+
+    const cellKey = `${t.id}:amount`;
+    const cell = cellState[cellKey];
+
+    return (
+      <EditableNum
+        value={t.amountMinor}
+        asMoney
+        muted
+        state={cell?.state}
+        errorMessage={cell?.message}
+        label={`${t.description} on ${day.date}`}
+        onCommit={
+          editingEnabled
+            ? (next) => {
+                const months = farBackMonths(new Date(`${day.date}T00:00:00.000Z`));
+                // A day with a handover is the D2 case the handover
+                // confirm exists for: the expected figure will not follow,
+                // so the two are meant to disagree afterwards. That
+                // outranks the far-back warning, which is only about span.
+                const escalation: ConfirmCase | null =
+                  t.recordType === "Handover"
+                    ? { kind: "handover" }
+                    : months !== null
+                      ? { kind: "farBack", months }
+                      : null;
+                amend({
+                  cellKey,
+                  dayKey: day.date,
+                  escalation,
+                  body: {
+                    kind: "scalar",
+                    recordType: t.recordType,
+                    recordId: t.recordId,
+                    field: t.amountField,
+                    newValue: next,
+                    undoValue: t.amountMinor,
+                    ledgerContext: `${t.description} · ${day.date}`,
+                  },
+                });
+              }
+            : undefined
+        }
+      />
+    );
+  }
 
   const days = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -259,6 +522,9 @@ export function CashLedgerView({
 
   return (
     <div className="rounded-lg border bg-card" data-testid="cash-ledger">
+      <AmendToast toast={toast} onDismiss={() => setToast(null)} />
+      <AmendConfirm confirming={confirming} onCancel={() => setConfirming(null)} />
+
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="relative min-w-48 flex-1">
           <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -354,49 +620,54 @@ export function CashLedgerView({
                           </span>
                         </button>
                       </td>
-                      <Td border><Num value={d.openingCashMinor} /></Td>
-                      <Td><Num value={d.openingMpesaMinor} /></Td>
-                      <Td border><Num value={d.handoversMinor} muted tone="success" /></Td>
-                      <Td><Num value={d.repaymentsMinor} muted tone="success" /></Td>
-                      <Td border><Num value={d.stockMinor} muted tone="danger" /></Td>
-                      <Td><Num value={d.runningMinor} muted tone="danger" /></Td>
-                      <Td><Num value={d.assetsMinor} muted tone="danger" /></Td>
-                      <Td><Num value={d.drawingsMinor} muted tone="danger" /></Td>
-                      <Td border><Num value={d.closingCashMinor} strong /></Td>
-                      <Td><Num value={d.closingMpesaMinor} strong /></Td>
+                      <Td border>{balanceCell(d.openingCashMinor)}</Td>
+                      <Td>{balanceCell(d.openingMpesaMinor)}</Td>
+                      <Td border>{dayTotalCell(d.handoversMinor, { tone: "success" })}</Td>
+                      <Td>{dayTotalCell(d.repaymentsMinor, { tone: "success" })}</Td>
+                      <Td border>{dayTotalCell(d.stockMinor, { tone: "danger" })}</Td>
+                      <Td>{dayTotalCell(d.runningMinor, { tone: "danger" })}</Td>
+                      <Td>{dayTotalCell(d.assetsMinor, { tone: "danger" })}</Td>
+                      <Td>{dayTotalCell(d.drawingsMinor, { tone: "danger" })}</Td>
+                      <Td border>{balanceCell(d.closingCashMinor, { strong: true })}</Td>
+                      <Td>{balanceCell(d.closingMpesaMinor, { strong: true })}</Td>
                     </tr>
 
                     {open &&
                       d.transactions.map((t, i) => {
-                        const last = i === d.transactions.length - 1;
+                        const last = i === d.transactions.length - 1 && !d.salesEditedSince;
                         const isIn = t.category === "handover" || t.category === "repayment";
                         return (
-                          <tr key={t.id} className={`${CHILD_ROW} ${last ? CHILD_LAST : "border-b"}`}>
+                          <tr
+                            key={t.id}
+                            className={`${CHILD_ROW} ${last ? CHILD_LAST : "border-b"}`}
+                            data-testid={`cash-ledger-transaction-${t.id}`}
+                          >
                             <td className={`${CHILD_FROZEN} py-1.5 pr-3 pl-3`}>
                               <Spine label={t.description} />
                             </td>
                             <Td border>
-                              <span className="text-muted-foreground">{t.method === "mpesa" ? "M-Pesa" : "Cash"}</span>
+                              {/* Read-only in T7, deliberately. The write
+                                  layer supports it, but an editable
+                                  choice inside a table cell exists
+                                  nowhere else in the app and a two-value
+                                  toggle is not worth inventing a pattern
+                                  for: the method moves no figure the
+                                  ledger shows, only which of the two
+                                  balance columns the amount lands in. */}
+                              <span
+                                className="text-muted-foreground"
+                                title="Recorded as this method. Change it where the payment was recorded."
+                              >
+                                {t.method === "mpesa" ? "M-Pesa" : "Cash"}
+                              </span>
                             </Td>
                             <Td />
-                            <Td border>
-                              <Num value={t.category === "handover" ? t.amountMinor : 0} muted />
-                            </Td>
-                            <Td>
-                              <Num value={t.category === "repayment" ? t.amountMinor : 0} muted />
-                            </Td>
-                            <Td border>
-                              <Num value={t.category === "stock" ? t.amountMinor : 0} muted />
-                            </Td>
-                            <Td>
-                              <Num value={t.category === "running" ? t.amountMinor : 0} muted />
-                            </Td>
-                            <Td>
-                              <Num value={t.category === "asset" ? t.amountMinor : 0} muted />
-                            </Td>
-                            <Td>
-                              <Num value={t.category === "drawing" ? t.amountMinor : 0} muted />
-                            </Td>
+                            <Td border>{amountCell(d, t, "handover")}</Td>
+                            <Td>{amountCell(d, t, "repayment")}</Td>
+                            <Td border>{amountCell(d, t, "stock")}</Td>
+                            <Td>{amountCell(d, t, "running")}</Td>
+                            <Td>{amountCell(d, t, "asset")}</Td>
+                            <Td>{amountCell(d, t, "drawing")}</Td>
                             <Td border>
                               <span className={isIn ? "" : "text-muted-foreground"}>{t.recordedBy}</span>
                             </Td>
@@ -404,6 +675,23 @@ export function CashLedgerView({
                           </tr>
                         );
                       })}
+
+                    {/* C6 — the day's sales moved after the handover was
+                        recorded. Stated in words, under the transactions
+                        it concerns, because the expected figure
+                        deliberately does not follow (D2) and a recomputed
+                        number would erase the disagreement rather than
+                        explain it. Quiet and neutral: the screen's one
+                        accent belongs to Undo in the toast. */}
+                    {open && d.salesEditedSince && (
+                      <tr className={`${CHILD_ROW} ${CHILD_LAST}`} data-testid={`cash-ledger-sales-edited-${d.date}`}>
+                        <td className={`${CHILD_FROZEN} py-1.5 pr-3 pl-3`} />
+                        <td className="border-l px-2 py-1.5 text-left text-muted-foreground" colSpan={10}>
+                          Sales for this day were edited on {d.salesEditedSince.editedOn}. The expected
+                          figure records the check made that evening and has not changed.
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 );
               })}

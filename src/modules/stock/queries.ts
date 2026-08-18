@@ -514,6 +514,11 @@ export async function sumNonSalesValueAtLocationInPeriod(
 // disagree.
 export type NonSalesMovementLine = {
   itemType: "product" | "ingredient";
+  // The movement row's own id. Editable-ledger T7.4 needs it: unlike every
+  // other ledger tab, a non-sales row *is* one movement, and its cost and
+  // selling value are snapshotted money figures edited in place on that
+  // record rather than through a day total.
+  movementId: string;
   itemId: string;
   quantity: number;
   reason: StockMovementReason;
@@ -539,6 +544,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
         reversed: false,
       },
       select: {
+        id: true,
         productId: true,
         quantity: true,
         reason: true,
@@ -557,6 +563,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
         reversed: false,
       },
       select: {
+        id: true,
         ingredientId: true,
         quantity: true,
         reason: true,
@@ -572,6 +579,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
   return [
     ...productMovements.map((m) => ({
       itemType: "product" as const,
+      movementId: m.id,
       itemId: m.productId,
       quantity: m.quantity.toNumber(),
       reason: m.reason,
@@ -583,6 +591,7 @@ export async function findNonSalesMovementsAtLocationInPeriod(
     })),
     ...ingredientMovements.map((m) => ({
       itemType: "ingredient" as const,
+      movementId: m.id,
       itemId: m.ingredientId,
       quantity: m.quantity.toNumber(),
       reason: m.reason,
@@ -616,6 +625,7 @@ export async function findAllNonSalesMovementsInPeriod(
     db.stockMovement.findMany({
       where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd }, reversed: false },
       select: {
+        id: true,
         productId: true,
         locationId: true,
         quantity: true,
@@ -630,6 +640,7 @@ export async function findAllNonSalesMovementsInPeriod(
     db.ingredientMovement.findMany({
       where: { reason: { in: reasons }, occurredAt: { gt: periodStart, lte: periodEnd }, reversed: false },
       select: {
+        id: true,
         ingredientId: true,
         locationId: true,
         quantity: true,
@@ -646,6 +657,7 @@ export async function findAllNonSalesMovementsInPeriod(
   return [
     ...productMovements.map((m) => ({
       itemType: "product" as const,
+      movementId: m.id,
       itemId: m.productId,
       locationId: m.locationId,
       quantity: m.quantity.toNumber(),
@@ -658,6 +670,7 @@ export async function findAllNonSalesMovementsInPeriod(
     })),
     ...ingredientMovements.map((m) => ({
       itemType: "ingredient" as const,
+      movementId: m.id,
       itemId: m.ingredientId,
       locationId: m.locationId,
       quantity: m.quantity.toNumber(),

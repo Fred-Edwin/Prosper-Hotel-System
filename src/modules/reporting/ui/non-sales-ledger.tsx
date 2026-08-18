@@ -22,8 +22,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ErrorState, PermissionDenied, EmptyFiltered, LoadingTable } from "@/components/patterns/states";
+import { EditableNum, type EditableNumState } from "./editable-num";
+import { summariseAmendment, farBackMonths, type ConfirmCase, type LedgerRowAccessors } from "./amend-feedback";
+import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
 import { Search, X } from "lucide-react";
-import { money } from "@/shared/money";
 
 export type NonSalesReason = "wasted" | "consumed" | "given_away";
 
@@ -35,6 +37,16 @@ export const nonSalesReasonLabel: Record<NonSalesReason, string> = {
 
 export type NonSalesLedgerRowData = {
   itemType: "product" | "ingredient";
+  /**
+   * Editable-ledger T7.4 — the movement this row *is*.
+   *
+   * Unlike every other tab, a non-sales row is a single movement rather
+   * than a rollup, so its snapshotted cost and selling value are edited
+   * on that record directly. Quantity still goes through the day-total
+   * path, because a day with two wastage entries for one item has the
+   * same "which row absorbs it" question every other tab has.
+   */
+  movementId: string;
   itemId: string;
   itemName: string;
   locationId: string;
@@ -105,16 +117,25 @@ function NonSalesLedgerForAttempt({
     };
   }, [periodStart, periodEnd]);
 
-  return <NonSalesLedgerView state={state} onRetry={onRetry} />;
+  // Replaces rows in place after an edit rather than remounting, so her
+  // scroll position and filters survive the save. Same reasoning as the
+  // other three tabs' onReplaceRows.
+  const replaceRows = (rows: NonSalesLedgerRowData[]) =>
+    setState((s) => (s.status === "ready" ? { ...s, rows } : s));
+
+  return (
+    <NonSalesLedgerView
+      state={state}
+      onRetry={onRetry}
+      onReplaceRows={replaceRows}
+      periodStart={new Date(`${periodStart}T00:00:00`).toISOString()}
+      periodEnd={new Date(`${periodEnd}T23:59:59.999`).toISOString()}
+    />
+  );
 }
 
 const FROZEN = "sticky left-0 z-20 bg-card group-hover:bg-muted/40 border-r";
 const FROZEN_HEAD = "sticky left-0 z-30 bg-muted border-r";
-
-function Num({ value, asMoney, muted }: { value: number; asMoney?: boolean; muted?: boolean }) {
-  if (value === 0 && muted) return <span className="text-muted-foreground">—</span>;
-  return <span className="tabular">{asMoney ? money(value) : value}</span>;
-}
 
 function Th({ children, align = "right" }: { children?: React.ReactNode; align?: "left" | "right" }) {
   return (
@@ -142,13 +163,40 @@ function Td({
   );
 }
 
+/**
+ * How amend-feedback reads a non-sales row (T7.5).
+ *
+ * A row here is one movement, so there is no closing position and no
+ * cascade of its own — most edits produce the plain no-cascade toast.
+ * `closingOf` reports the row's quantity, which is the figure an edit to
+ * it actually moves; profit is not shown on this tab.
+ */
+const NON_SALES_ROW_ACCESSORS: LedgerRowAccessors<NonSalesLedgerRowData> = {
+  identify: (r) => r.movementId,
+  describe: (r) => r.itemName,
+  closingOf: (r) => Math.abs(r.quantity),
+  profitOf: () => null,
+  daysOf: () => [],
+};
+
 export function NonSalesLedgerView({
   state,
   onRetry,
+  onReplaceRows,
+  periodStart = "",
+  periodEnd = "",
   initialQuery = "",
 }: {
   state: LoadState;
   onRetry: () => void;
+  /** Replaces the rows in place after an edit, without remounting. Absent
+   * in Storybook, which stories the view without a network — and its
+   * absence is also what makes the table read-only there. */
+  onReplaceRows?: (rows: NonSalesLedgerRowData[]) => void;
+  /** ISO instants for the period on screen — the amend endpoint recomputes
+   * and returns exactly this window, so the edit and the refresh agree. */
+  periodStart?: string;
+  periodEnd?: string;
   /** Storybook only, for the "filtered to zero rows" state — the real page
    * always starts with an empty search. */
   initialQuery?: string;
@@ -156,7 +204,173 @@ export function NonSalesLedgerView({
   const [query, setQuery] = useState(initialQuery);
   const [reason, setReason] = useState<NonSalesReason | "all">("all");
 
+  // Per-cell in-flight and failure state, keyed by movement and column so
+  // two edits in flight never mask each other. Errors live on the cell:
+  // she needs to know *which* figure failed.
+  const [cellState, setCellState] = useState<Record<string, { state: EditableNumState; message?: string }>>({});
+  const [toast, setToast] = useState<AmendToastState | null>(null);
+  const [confirming, setConfirming] = useState<AmendConfirmState | null>(null);
+
+  const editingEnabled = !!onReplaceRows;
+
   const allRows = useMemo(() => (state.status === "ready" ? state.rows : []), [state]);
+
+  async function submit(cellKey: string, body: Record<string, unknown>, movementId: string) {
+    setCellState((s) => ({ ...s, [cellKey]: { state: "saving" } }));
+    try {
+      const response = await fetch("/api/ledger/amend", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, ledger: "nonSales", periodStart, periodEnd }),
+      });
+      if (!response.ok) {
+        setCellState((s) => ({
+          ...s,
+          [cellKey]: { state: "error", message: "Couldn't save. The figure is unchanged." },
+        }));
+        return;
+      }
+      const payload = (await response.json()) as {
+        rows: NonSalesLedgerRowData[];
+        previousRows: NonSalesLedgerRowData[];
+      };
+      onReplaceRows?.(payload.rows);
+      setCellState((s) => {
+        const next = { ...s };
+        delete next[cellKey];
+        return next;
+      });
+
+      const summary = summariseAmendment({
+        itemId: movementId,
+        previousRows: payload.previousRows,
+        rows: payload.rows,
+        accessors: NON_SALES_ROW_ACCESSORS,
+      });
+      const previousValue = body["newValue"];
+      setToast({
+        message: summary.message,
+        undo: () => {
+          setToast(null);
+          void submit(cellKey, { ...body, newValue: body["undoValue"] ?? previousValue }, movementId);
+        },
+      });
+    } catch {
+      setCellState((s) => ({
+        ...s,
+        [cellKey]: { state: "error", message: "Couldn't save. The figure is unchanged." },
+      }));
+    }
+  }
+
+  function amend(input: {
+    cellKey: string;
+    movementId: string;
+    body: Record<string, unknown>;
+    escalation: ConfirmCase | null;
+  }) {
+    const run = () => void submit(input.cellKey, input.body, input.movementId);
+    if (input.escalation) {
+      setConfirming({ c: input.escalation, proceed: () => { setConfirming(null); run(); } });
+      return;
+    }
+    run();
+  }
+
+  /**
+   * A money figure on one movement — Kind C, edited in place.
+   *
+   * Cost basis and selling value are snapshotted at the moment the
+   * movement was recorded (ticket 15) and are never recomputed, which is
+   * exactly why they are editable here: there is a stored number, it can
+   * be wrong, and nothing else will correct it.
+   */
+  function moneyCell(row: NonSalesLedgerRowData, field: "costBasisMinor" | "sellingValueMinor") {
+    const value = row[field];
+    const cellKey = `${row.movementId}:${field}`;
+    const cell = cellState[cellKey];
+    const label = `${field === "costBasisMinor" ? "cost" : "selling value"} for ${row.itemName}`;
+
+    return (
+      <EditableNum
+        value={value}
+        asMoney
+        muted={field === "sellingValueMinor"}
+        state={cell?.state}
+        errorMessage={cell?.message}
+        label={label}
+        onCommit={
+          editingEnabled
+            ? (next) => {
+                const months = farBackMonths(new Date(row.occurredAt));
+                amend({
+                  cellKey,
+                  movementId: row.movementId,
+                  escalation: months !== null ? { kind: "farBack", months } : null,
+                  body: {
+                    kind: "scalar",
+                    recordType: row.itemType === "product" ? "StockMovement" : "IngredientMovement",
+                    recordId: row.movementId,
+                    field,
+                    newValue: next,
+                    undoValue: value ?? 0,
+                    locationId: row.locationId,
+                    ledgerContext: `${label} · ${row.locationCode}`,
+                  },
+                });
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
+  /**
+   * The quantity, Kind A via the day-total path.
+   *
+   * Not a scalar edit, even though the row is one movement: a day with
+   * two wastage entries for the same item has the same "which row absorbs
+   * it" question every other tab has, and amendDayTotal already answers
+   * it deterministically. Two write paths onto one figure is the failure
+   * BUG-10 came from.
+   */
+  function quantityCell(row: NonSalesLedgerRowData) {
+    const value = Math.abs(row.quantity);
+    const cellKey = `${row.movementId}:quantity`;
+    const cell = cellState[cellKey];
+
+    return (
+      <EditableNum
+        value={value}
+        state={cell?.state}
+        errorMessage={cell?.message}
+        label={`quantity for ${row.itemName}`}
+        onCommit={
+          editingEnabled
+            ? (next) => {
+                const occurred = new Date(row.occurredAt);
+                const months = farBackMonths(occurred);
+                amend({
+                  cellKey,
+                  movementId: row.movementId,
+                  escalation: months !== null ? { kind: "farBack", months } : null,
+                  body: {
+                    kind: "dayTotal",
+                    itemType: row.itemType,
+                    itemId: row.itemId,
+                    locationId: row.locationId,
+                    date: row.occurredAt.slice(0, 10),
+                    reason: row.reason,
+                    newValue: next,
+                    undoValue: value,
+                  },
+                });
+              }
+            : undefined
+        }
+      />
+    );
+  }
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -210,6 +424,9 @@ export function NonSalesLedgerView({
 
   return (
     <div className="rounded-lg border bg-card" data-testid="non-sales-ledger">
+      <AmendToast toast={toast} onDismiss={() => setToast(null)} />
+      <AmendConfirm confirming={confirming} onCancel={() => setConfirming(null)} />
+
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="relative min-w-48 flex-1">
           <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -273,10 +490,9 @@ export function NonSalesLedgerView({
             </thead>
             <tbody>
               {rows.map((r, i) => {
-                const qty = Math.abs(r.quantity);
                 return (
                   <tr
-                    key={`${r.itemId}-${r.occurredAt}-${r.reason}-${i}`}
+                    key={r.movementId}
                     className="group border-b hover:bg-muted/40"
                     data-testid={`non-sales-ledger-row-${r.itemId}-${i}`}
                   >
@@ -294,25 +510,19 @@ export function NonSalesLedgerView({
                         {nonSalesReasonLabel[r.reason]}
                       </Badge>
                     </Td>
+                    <Td>{quantityCell(r)}</Td>
                     <Td>
-                      <Num value={qty} />
+                      {moneyCell(r, "costBasisMinor")}
+                      {r.isEstimated && (
+                        <span
+                          className="ml-1 text-[10px] text-muted-foreground"
+                          title="No recipe — estimated at 60% of selling price, for this report only. Type a real figure to replace the estimate."
+                        >
+                          est
+                        </span>
+                      )}
                     </Td>
-                    <Td>
-                      <span className="tabular">
-                        {money(r.costBasisMinor ?? 0)}
-                        {r.isEstimated && (
-                          <span
-                            className="ml-1 text-[10px] text-muted-foreground"
-                            title="No recipe — estimated at 60% of selling price, for this report only"
-                          >
-                            est
-                          </span>
-                        )}
-                      </span>
-                    </Td>
-                    <Td>
-                      <Num value={r.sellingValueMinor ?? 0} asMoney muted />
-                    </Td>
+                    <Td>{moneyCell(r, "sellingValueMinor")}</Td>
                     <Td align="left">
                       <span className="text-muted-foreground">{r.recordedBy}</span>
                     </Td>
@@ -325,11 +535,22 @@ export function NonSalesLedgerView({
                 <Td />
                 <Td />
                 <Td />
+                {/* Read-only: the sum of individually editable rows, and
+                    changing the sum offers no way to say which row was
+                    wrong. Same rule as the other tabs' period totals. */}
                 <Td>
-                  <Num value={totals.cost} asMoney />
+                  <EditableNum
+                    value={totals.cost}
+                    asMoney
+                    notEditableReason="This is the total for the rows shown. Edit an entry's own figure."
+                  />
                 </Td>
                 <Td>
-                  <Num value={totals.price} asMoney />
+                  <EditableNum
+                    value={totals.price}
+                    asMoney
+                    notEditableReason="This is the total for the rows shown. Edit an entry's own figure."
+                  />
                 </Td>
                 <Td />
               </tr>

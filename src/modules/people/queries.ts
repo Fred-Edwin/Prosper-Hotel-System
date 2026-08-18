@@ -298,3 +298,21 @@ export async function findAmendmentsInPeriod(
     orderBy: { createdAt: "desc" },
   });
 }
+
+// Editable-ledger T7.3 — the trail by the day it applies *to*, not the day
+// it was typed. The two questions are genuinely different: Activity asks
+// "what did she do on Monday" (createdAt), the cash ledger's handover
+// marker asks "has anything moved 16 August's sales since" (effectiveDate),
+// and an edit typed in September to August's figures answers the second
+// and not the first. Amendments with no effectiveDate — a name change,
+// say — are not about a ledger day and are excluded by the range itself.
+export async function findAmendmentsEffectiveInPeriod(
+  db: Db,
+  periodStart: Date,
+  periodEnd: Date,
+): Promise<Amendment[]> {
+  return db.amendment.findMany({
+    where: { effectiveDate: { gte: periodStart, lte: periodEnd } },
+    orderBy: { createdAt: "desc" },
+  });
+}

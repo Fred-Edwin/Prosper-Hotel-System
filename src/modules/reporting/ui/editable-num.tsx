@@ -72,7 +72,10 @@ export type EditableNumProps = {
   asMoney?: boolean;
   /** Dash out a zero, matching the reading table's treatment. */
   muted?: boolean;
-  tone?: "danger";
+  // "success" is money-in on the Cash tab, which has rendered green
+  // since ticket 40 — the editable cell must not change how a figure
+  // reads at rest.
+  tone?: "danger" | "success";
   strong?: boolean;
   /** Show an explicit + on positives — corrections only. */
   signed?: boolean;
@@ -259,7 +262,7 @@ function cellClass({
   strong,
   dim,
 }: {
-  tone?: "danger";
+  tone?: "danger" | "success";
   strong?: boolean;
   dim?: boolean;
 }) {
@@ -267,6 +270,7 @@ function cellClass({
     "tabular",
     dim ? "text-muted-foreground" : "",
     tone === "danger" && !dim ? "text-danger" : "",
+    tone === "success" && !dim ? "text-success" : "",
     strong ? "font-medium" : "",
   ]
     .filter(Boolean)

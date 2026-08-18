@@ -2407,6 +2407,8 @@ export async function getNonSalesConsumptionValue(
 
 export type NonSalesLedgerLine = {
   itemType: "product" | "ingredient";
+  /** The movement's own id — T7.4 edits its money figures in place. */
+  movementId: string;
   itemId: string;
   itemName: string;
   quantity: number;
@@ -2457,6 +2459,7 @@ export async function getNonSalesLedger(
 
   const lines: NonSalesLedgerLine[] = movements.map((m) => ({
     itemType: m.itemType,
+    movementId: m.movementId,
     itemId: m.itemId,
     itemName: (m.itemType === "product" ? productNames.get(m.itemId) : ingredientNames.get(m.itemId)) ?? "Unknown item",
     quantity: m.quantity,
@@ -2893,10 +2896,72 @@ export async function amendDerivedPosition(
  * becomes an arbitrary column write, which is a much larger hole than the
  * feature needs.
  */
-const EDITABLE_SCALARS: Record<string, readonly string[]> = {
-  Product: ["priceMinor", "lastKnownCostMinor", "lowStockLevel"],
-  Ingredient: ["lastKnownCostMinor", "lowStockLevel"],
+/**
+ * What kind of value a field holds, so one function can validate both.
+ *
+ * T7 added `paymentMethod`, which is an enum. The alternative was a
+ * sibling `amendEnum` — rejected because it would be a *second* security
+ * boundary, and a field added to the wrong one of two allow-lists is
+ * exactly the mistake an allow-list exists to prevent. One function, one
+ * list, the list says what each field expects.
+ */
+type ScalarFieldType = { kind: "number" } | { kind: "enum"; values: readonly string[] };
+
+const NUMBER: ScalarFieldType = { kind: "number" };
+const PAYMENT_METHOD: ScalarFieldType = { kind: "enum", values: ["cash", "mpesa"] };
+
+const EDITABLE_SCALARS: Record<string, Record<string, ScalarFieldType>> = {
+  Product: { priceMinor: NUMBER, lastKnownCostMinor: NUMBER, lowStockLevel: NUMBER },
+  Ingredient: { lastKnownCostMinor: NUMBER, lowStockLevel: NUMBER },
+  // T7 — the Cash tab. `paymentMethod` never becomes `credit` here:
+  // credit is a sales-side concept for money coming *in*, and the schema
+  // comment on Expense.paymentMethod says so.
+  Expense: { amountMinor: NUMBER, paymentMethod: PAYMENT_METHOD },
+  DrawingRepayment: { amountMinor: NUMBER, paymentMethod: PAYMENT_METHOD },
+  Repayment: { amountMinor: NUMBER },
+  // Only the *actual* side. expectedCashMinor and expectedMpesaMinor are
+  // frozen permanently (plan D2): they record a check that happened
+  // between two people at a moment in time, and a later edit to the
+  // ledger is not evidence about what was counted that evening. Their
+  // absence here is the mechanism; a test asserts it so a future
+  // allow-list edit has to delete a failing test to break the decision.
+  Handover: { actualCashMinor: NUMBER, actualMpesaMinor: NUMBER },
+  // T7.4 — the non-sales tab. The one place a *movement* takes a scalar
+  // edit rather than a day-total edit, because these are snapshotted
+  // money figures rather than quantities. `quantity` is deliberately
+  // absent: it is Kind A and belongs to amendDayTotal, and having two
+  // write paths onto one figure is the failure BUG-10 came from.
+  StockMovement: { costBasisMinor: NUMBER, sellingValueMinor: NUMBER },
+  IngredientMovement: { costBasisMinor: NUMBER, sellingValueMinor: NUMBER },
 };
+
+/**
+ * Record type to Prisma delegate.
+ *
+ * Was an if/else over two model names until T7. A lookup rather than a
+ * branch so that adding an editable record is an allow-list entry and a
+ * line here, not another arm of a conditional that every future model
+ * lengthens. The allow-list above stays the security boundary — this map
+ * decides only *where* an already-authorised write lands.
+ */
+type ScalarDelegate = {
+  findUnique: (args: { where: { id: string } }) => Promise<unknown>;
+  update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>;
+};
+
+function delegateFor(db: PrismaClient, recordType: string): ScalarDelegate | undefined {
+  const delegates: Record<string, ScalarDelegate | undefined> = {
+    Product: db.product,
+    Ingredient: db.ingredient,
+    Expense: db.expense,
+    DrawingRepayment: db.drawingRepayment,
+    Repayment: db.repayment,
+    Handover: db.handover,
+    StockMovement: db.stockMovement,
+    IngredientMovement: db.ingredientMovement,
+  };
+  return delegates[recordType];
+}
 
 export async function amendScalar(
   db: PrismaClient,
@@ -2905,52 +2970,67 @@ export async function amendScalar(
     recordType: keyof typeof EDITABLE_SCALARS | string;
     recordId: string;
     field: string;
-    newValue: number;
+    /** A number for a money/quantity field, a string for an enum — the
+     * allow-list says which, and a mismatch is `invalid_value`. */
+    newValue: number | string;
     locationId?: string;
     ledgerContext?: string;
   },
 ): Promise<AmendResult> {
   if (requester.staff.role !== "owner") return { ok: false, reason: "forbidden" };
 
-  const allowed = EDITABLE_SCALARS[input.recordType];
-  if (!allowed || !allowed.includes(input.field)) {
-    return { ok: false, reason: "field_not_editable" };
-  }
-  if (!Number.isFinite(input.newValue)) return { ok: false, reason: "invalid_value" };
+  const fieldType = EDITABLE_SCALARS[input.recordType]?.[input.field];
+  if (!fieldType) return { ok: false, reason: "field_not_editable" };
 
-  const current =
-    input.recordType === "Product"
-      ? await db.product.findUnique({ where: { id: input.recordId } })
-      : await db.ingredient.findUnique({ where: { id: input.recordId } });
+  if (fieldType.kind === "number") {
+    if (typeof input.newValue !== "number" || !Number.isFinite(input.newValue)) {
+      return { ok: false, reason: "invalid_value" };
+    }
+  } else if (typeof input.newValue !== "string" || !fieldType.values.includes(input.newValue)) {
+    return { ok: false, reason: "invalid_value" };
+  }
+
+  const delegate = delegateFor(db, input.recordType);
+  if (!delegate) return { ok: false, reason: "field_not_editable" };
+
+  const current = (await delegate.findUnique({ where: { id: input.recordId } })) as Record<
+    string,
+    unknown
+  > | null;
   if (!current) return { ok: false, reason: "not_found" };
 
-  const previous = (current as Record<string, unknown>)[input.field];
-  const previousNumber =
+  // A reversed row counts nowhere (docs/reversed-filter-audit.md), so no
+  // ledger cell offers this edit — but the route takes a record id, and
+  // amending a figure that no longer appears in any total would write a
+  // trail entry describing a change nobody can see. Treated as
+  // not_found because from the ledger's point of view that is exactly
+  // what it is.
+  if (current.reversed === true) return { ok: false, reason: "not_found" };
+
+  const previous = current[input.field];
+  // Decimal columns arrive as Prisma Decimals, enums as plain strings.
+  const previousValue: number | string | null =
     previous && typeof previous === "object" && "toNumber" in previous
       ? (previous as { toNumber: () => number }).toNumber()
       : previous === null || previous === undefined
         ? null
-        : Number(previous);
-  if (previousNumber === input.newValue) return { ok: true };
+        : fieldType.kind === "enum"
+          ? String(previous)
+          : Number(previous);
+  if (previousValue === input.newValue) return { ok: true };
 
   await db.$transaction(async (tx) => {
-    if (input.recordType === "Product") {
-      await tx.product.update({
-        where: { id: input.recordId },
-        data: { [input.field]: input.newValue },
-      });
-    } else {
-      await tx.ingredient.update({
-        where: { id: input.recordId },
-        data: { [input.field]: input.newValue },
-      });
-    }
+    const txDelegate = delegateFor(tx as unknown as PrismaClient, input.recordType)!;
+    await txDelegate.update({
+      where: { id: input.recordId },
+      data: { [input.field]: input.newValue },
+    });
 
     await recordAmendment(tx, {
       recordType: input.recordType,
       recordId: input.recordId,
       field: input.field,
-      previousValue: previousNumber === null ? "" : String(previousNumber),
+      previousValue: previousValue === null ? "" : String(previousValue),
       newValue: String(input.newValue),
       ledgerContext: input.ledgerContext ?? null,
       locationId: input.locationId ?? null,

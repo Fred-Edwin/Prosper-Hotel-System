@@ -5,6 +5,7 @@ export {
   recordAmendment,
   listAmendmentsForRecord,
   listAmendmentsInPeriod,
+  listAmendmentsEffectiveInPeriod,
   diffToAmendments,
   createCustomer,
   createStaffMember,

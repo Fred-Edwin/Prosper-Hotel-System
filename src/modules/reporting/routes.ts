@@ -417,6 +417,7 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
 
   const input = body as {
     kind?: "dayTotal" | "derivedPosition" | "scalar";
+    ledger?: "product" | "store" | "cash" | "nonSales";
     periodStart?: string;
     periodEnd?: string;
     itemType?: "product" | "ingredient";
@@ -426,10 +427,11 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
     reason?: string;
     position?: "opening" | "closing";
     revenueTreatment?: "stock" | "stockAndMoney";
-    newValue?: number;
+    newValue?: number | string;
     recordType?: string;
     recordId?: string;
     field?: string;
+    ledgerContext?: string;
   };
 
   if (!input.periodStart || !input.periodEnd) {
@@ -440,29 +442,61 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
   if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
     return Response.json({ error: "invalid period" }, { status: 400 });
   }
-  if (typeof input.newValue !== "number" || !Number.isFinite(input.newValue)) {
+  // A number for a money or quantity figure, a string for an enum
+  // (paymentMethod). amendScalar's allow-list decides which each field
+  // takes and rejects the mismatch — this only refuses what is neither.
+  const isNumber = typeof input.newValue === "number" && Number.isFinite(input.newValue);
+  const isText = typeof input.newValue === "string" && input.newValue.length > 0;
+  if (!isNumber && !isText) {
+    return Response.json({ error: "newValue must be a number or a value" }, { status: 400 });
+  }
+  if (input.kind !== "scalar" && !isNumber) {
     return Response.json({ error: "newValue must be a number" }, { status: 400 });
   }
 
-  // Which ledger to refresh. An ingredient edit belongs to the Store tab,
-  // a product edit to the Product tab — reading the wrong one hands the
-  // client another table's rows and it re-renders with data that has
-  // nothing to do with the cell she just edited.
-  //
-  // A scalar edit carries no itemType (it identifies a record, not a
-  // ledger item), so it falls back to the Product ledger, which is where
-  // Product price/cost scalars are read. T7 revisits this when Cash and
-  // non-sales scalars arrive — those tabs refresh from their own reads.
-  const ledgerFor = (session_: typeof session) =>
-    input.itemType === "ingredient"
-      ? getStoreLedger(db, session_, { periodStart, periodEnd })
-      : getProductLedger(db, session_, { periodStart, periodEnd });
+  /**
+   * Which ledger to refresh, and the client says so.
+   *
+   * Until T7 this was inferred from `itemType` — an ingredient edit meant
+   * the Store tab, anything else the Product tab. That worked while
+   * exactly two tabs were editable and stopped working the moment a
+   * scalar edit could belong to Cash or non-sales as easily as to
+   * Product: the inference would have handed the Cash tab a table of
+   * products. The tab that made the edit knows which table it is showing,
+   * so it states it.
+   *
+   * `itemType` still defaults it, so a T4/T6-shaped body without a
+   * `ledger` field keeps working.
+   */
+  const ledgerKind = input.ledger ?? (input.itemType === "ingredient" ? "store" : "product");
+
+  // Every tab returns `{ rows }` so T4's client layer needs no per-tab
+  // handling — the Cash ledger's days *are* its rows.
+  type LedgerSnapshot = { ok: true; rows: unknown[] } | { ok: false; reason: string };
+  const ledgerFor = async (session_: typeof session): Promise<LedgerSnapshot> => {
+    switch (ledgerKind) {
+      case "store":
+        return getStoreLedger(db, session_, { periodStart, periodEnd });
+      case "cash": {
+        const result = await getCashLedger(db, session_, { periodStart, periodEnd });
+        return result.ok ? { ok: true, rows: result.days } : result;
+      }
+      case "nonSales":
+        return getNonSalesLedgerReport(db, session_, { periodStart, periodEnd });
+      default:
+        return getProductLedger(db, session_, { periodStart, periodEnd });
+    }
+  };
 
   // Read before, so the response can say what actually moved.
   const before = await ledgerFor(session);
   if (!before.ok) {
     return Response.json({ error: before.reason }, { status: writeStatus(before.reason) });
   }
+
+  // Narrowed once: the guards above already refused a non-number for
+  // everything but a scalar edit.
+  const numericValue = input.newValue as number;
 
   let result: AmendResult;
   if (input.kind === "dayTotal") {
@@ -477,7 +511,7 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
       locationId: input.locationId,
       date,
       reason: input.reason as StockMovementReason,
-      newTotal: input.newValue,
+      newTotal: numericValue,
       revenueTreatment: input.revenueTreatment,
     });
   } else if (input.kind === "derivedPosition") {
@@ -492,7 +526,7 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
       locationId: input.locationId,
       date,
       position: input.position,
-      newValue: input.newValue,
+      newValue: numericValue,
     });
   } else if (input.kind === "scalar") {
     if (!input.recordType || !input.recordId || !input.field) {
@@ -502,8 +536,9 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
       recordType: input.recordType,
       recordId: input.recordId,
       field: input.field,
-      newValue: input.newValue,
+      newValue: input.newValue as number | string,
       locationId: input.locationId,
+      ledgerContext: input.ledgerContext,
     });
   } else {
     return Response.json({ error: "unknown kind" }, { status: 400 });
