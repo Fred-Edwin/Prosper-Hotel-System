@@ -1,4 +1,6 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+
+type Db = PrismaClient | Prisma.TransactionClient;
 import type {
   Expense as PrismaExpense,
   DrawingRepayment as PrismaDrawingRepayment,
@@ -266,7 +268,7 @@ export async function listDrawingRepayments(db: PrismaClient): Promise<DrawingRe
 // rows across an arbitrary period, business-wide like every other
 // drawings read. Unreversed only, same convention as sumExpensesMinorByMethod.
 export async function listDrawingRepaymentsInPeriod(
-  db: PrismaClient,
+  db: Db,
   periodStart: Date,
   periodEnd: Date,
 ): Promise<DrawingRepayment[]> {
@@ -341,7 +343,7 @@ export async function findTodaysHandoversAtLocations(
 // for its own caller's use. No void/reversal concept, so every row counts,
 // same as sumHandoversMinor.
 export async function listHandoversInPeriod(
-  db: PrismaClient,
+  db: Db,
   periodStart: Date,
   periodEnd: Date,
 ): Promise<Handover[]> {
@@ -357,7 +359,7 @@ export async function listHandoversInPeriod(
 // period, business-wide, unreversed only — same convention as
 // sumExpensesMinorByMethod/sumRunningCostsMinorInPeriod.
 export async function listExpensesInPeriod(
-  db: PrismaClient,
+  db: Db,
   periodStart: Date,
   periodEnd: Date,
 ): Promise<Expense[]> {

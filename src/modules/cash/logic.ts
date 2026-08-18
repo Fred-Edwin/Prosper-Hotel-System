@@ -1,4 +1,8 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+
+// See reporting/logic.ts: the Cash ledger read also runs inside T12's
+// rolled-back preview transaction.
+type Db = PrismaClient | Prisma.TransactionClient;
 import {
   canAccessLocation,
   getPayForStaff,
@@ -568,7 +572,7 @@ export type GetCashLedgerTransactionsResult =
 // people's findStaffMembersByIds), same pattern as getProductLedger
 // resolving product names through catalogue.
 export async function getCashLedgerTransactions(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   periodStart: Date,
   periodEnd: Date,

@@ -2,7 +2,13 @@
 // (transfer cost split), §6 (cost of goods sold, both locations), §7
 // (profit). Reads through stock/sales/cash/catalogue/people's
 // interfaces only, per docs/architecture.md's "reporting owns no data."
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+
+// The ledger reads run both on the ordinary db handle and, from T12's
+// cascade preview, inside a $transaction that is rolled back — Prisma's
+// transaction client is a distinct (near-identical) type. Same reason
+// stock/logic.ts carries this alias.
+type Db = PrismaClient | Prisma.TransactionClient;
 import {
   type AuthenticatedStaff,
   findLocationByCode,
@@ -38,7 +44,7 @@ function requireOwner(requester: AuthenticatedStaff): boolean {
   return requester.staff.role === "owner";
 }
 
-async function locations(db: PrismaClient) {
+async function locations(db: Db) {
   const [restaurant, canteen] = await Promise.all([
     findLocationByCode(db, "restaurant"),
     findLocationByCode(db, "canteen"),
@@ -865,7 +871,7 @@ function foldReasonLines(
 // breakdown) for a single location. `dayMovements` is pre-fetched once per
 // day for the whole location by the caller, not per product.
 async function buildProductLedgerRow(
-  db: PrismaClient,
+  db: Db,
   location: { id: string; code: string },
   product: Awaited<ReturnType<typeof findProductsByIds>>[number],
   days: { start: Date; end: Date; label: string }[],
@@ -971,7 +977,7 @@ async function buildProductLedgerRow(
 }
 
 export async function getProductLedger(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: {
     periodStart: Date;
@@ -1209,7 +1215,7 @@ export type StoreLedgerResult =
 // weighted average is linear and kept no history of its own.
 
 export async function getStoreLedger(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: {
     periodStart: Date;
@@ -1423,7 +1429,7 @@ export type NonSalesLedgerResult =
   | { ok: false; reason: "forbidden" | "not_found" };
 
 export async function getNonSalesLedgerReport(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: {
     periodStart: Date;
@@ -1579,7 +1585,7 @@ const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
 // Business-wide, not location-scoped, same as getRunningCashBalance —
 // cash isn't a location concept (proposal.md §6).
 export async function getCashLedger(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: { periodStart: Date; periodEnd: Date; category?: CashTransactionCategory; search?: string },
 ): Promise<CashLedgerResult> {
@@ -2554,4 +2560,122 @@ export async function getDashboardStoreMovements(
   }));
 
   return { ok: true, rows };
+}
+
+/**
+ * Editable-ledger T12 — what this edit would do, without doing it.
+ *
+ * The confirm dialog names one cell and two figures. But an edit to a
+ * day's opening moves closing on every following day, cost of sales and
+ * profit with it — so she can be shown one figure and be agreeing to
+ * twenty. Learning about the other nineteen from the toast afterwards
+ * puts the good information on the wrong side of the decision.
+ *
+ * **The figures are real, and that is the whole design.** The obvious
+ * cheaper option — predict the cascade in the browser — would have the
+ * client re-implement how stock is drawn down and how cost of sales is
+ * valued, which is both the largest calculation in the app and the one
+ * most likely to drift from the server's copy. A confirm quoting a
+ * number that turns out slightly different is worse than one quoting no
+ * number: it spends her trust rather than earning it.
+ *
+ * So the preview *is* the amend. It runs the caller's real write inside a
+ * transaction, reads the resulting ledger through the same functions the
+ * committing path uses, then throws to roll the whole thing back. Nothing
+ * is a second implementation of anything, which means the preview cannot
+ * disagree with the commit that follows.
+ *
+ * Two things this relies on, both verified against Prisma 7 rather than
+ * assumed:
+ *
+ *  - a transaction client still exposes `$transaction`, and a nested call
+ *    on one is a passthrough — so the amend functions, which open their
+ *    own transaction, join ours instead of opening a second;
+ *  - throwing out of the callback rolls back everything written inside
+ *    it, including writes made by that nested call.
+ *
+ * The `{ rows, previousRows }` shape is deliberately identical to what
+ * the committing path returns, so `summariseAmendment` describes a
+ * preview and a completed edit with the same code. A second summariser
+ * would be a second chance to word the same cascade differently.
+ */
+export type PreviewAmendmentResult =
+  | { ok: true; rows: unknown[]; previousRows: unknown[] }
+  | { ok: false; reason: string };
+
+/** Thrown to roll the preview back. Carries the result so the rollback
+ *  path and the success path are the same path. */
+class PreviewRollback extends Error {
+  constructor(readonly payload: PreviewAmendmentResult) {
+    super("preview rollback");
+  }
+}
+
+export async function previewAmendment(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: {
+    ledger: "product" | "store" | "cash" | "nonSales";
+    periodStart: Date;
+    periodEnd: Date;
+    /** The real write, run against the preview's transaction client. */
+    run: (tx: Db) => Promise<{ ok: true } | { ok: false; reason: string }>;
+  },
+): Promise<PreviewAmendmentResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  const read = async (tx: Db): Promise<{ ok: true; rows: unknown[] } | { ok: false; reason: string }> => {
+    switch (input.ledger) {
+      case "store":
+        return getStoreLedger(tx, requester, {
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+        });
+      case "cash": {
+        const result = await getCashLedger(tx, requester, {
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+        });
+        return result.ok ? { ok: true, rows: result.days } : result;
+      }
+      case "nonSales":
+        return getNonSalesLedgerReport(tx, requester, {
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+        });
+      default:
+        return getProductLedger(tx, requester, {
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+        });
+    }
+  };
+
+  try {
+    await db.$transaction(async (tx) => {
+      // Read *inside* the transaction, so before and after are two reads
+      // of one consistent snapshot rather than two moments that a
+      // concurrent write could separate.
+      const before = await read(tx);
+      if (!before.ok) throw new PreviewRollback({ ok: false, reason: before.reason });
+
+      // A refusal is surfaced as a refusal, not as an empty cascade: a
+      // dialog that shows "nothing else changes" for an edit the server
+      // is going to reject would be inviting her to confirm a failure.
+      const written = await input.run(tx);
+      if (!written.ok) throw new PreviewRollback({ ok: false, reason: written.reason });
+
+      const after = await read(tx);
+      if (!after.ok) throw new PreviewRollback({ ok: false, reason: after.reason });
+
+      throw new PreviewRollback({ ok: true, rows: after.rows, previousRows: before.rows });
+    });
+  } catch (error) {
+    if (error instanceof PreviewRollback) return error.payload;
+    throw error;
+  }
+
+  // Unreachable: the callback always throws. Present so the function has
+  // a total return type rather than relying on that being obvious.
+  return { ok: false, reason: "preview_failed" };
 }

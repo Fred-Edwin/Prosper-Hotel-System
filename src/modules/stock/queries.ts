@@ -129,7 +129,7 @@ export async function sumMovementsByProductAtLocation(
 // — quantity on hand at a point in time, not the running total, for the
 // ledger's opening/closing figures.
 export async function sumMovementsByProductAtLocationAsOf(
-  db: PrismaClient,
+  db: Db,
   locationId: string,
   asOf: Date,
 ): Promise<{ productId: string; quantityOnHand: number }[]> {
@@ -298,7 +298,7 @@ export async function sumMovementsByIngredientAtLocation(
 // query per product) — grouped by product and reason so the caller sums
 // whichever reasons the formula needs per item.
 export async function sumMovementsByProductReasonAtLocationInPeriod(
-  db: PrismaClient,
+  db: Db,
   locationId: string,
   reasons: StockMovementReason[],
   periodStart: Date,
@@ -326,7 +326,7 @@ export async function sumMovementsByProductReasonAtLocationInPeriod(
 // *as of a point in time* (opening/closing), not the running total —
 // distinct from sumMovementsByIngredientAtLocation, which sums forever.
 export async function sumIngredientMovementsAtLocationAsOf(
-  db: PrismaClient,
+  db: Db,
   locationId: string,
   asOf: Date,
 ): Promise<{ ingredientId: string; quantityOnHand: number }[]> {
@@ -393,7 +393,7 @@ export async function sumIngredientsIssuedByIngredientAtLocationInPeriod(
 // (which only returns a location-wide total) — the Store ledger needs each
 // ingredient's own purchased qty/value for its row, not one summed figure.
 export async function sumIngredientsPurchasedByIngredientAtLocationInPeriod(
-  db: PrismaClient,
+  db: Db,
   locationId: string,
   periodStart: Date,
   periodEnd: Date,
@@ -434,7 +434,7 @@ export async function sumIngredientsPurchasedByIngredientAtLocationInPeriod(
 // Splitting on sign keeps the legs distinct; every single-direction reason
 // is unaffected, since all its rows share one sign.
 export async function sumIngredientMovementsByReasonAtLocationInPeriod(
-  db: PrismaClient,
+  db: Db,
   locationId: string,
   reasons: StockMovementReason[],
   periodStart: Date,
@@ -530,7 +530,7 @@ export type NonSalesMovementLine = {
 };
 
 export async function findNonSalesMovementsAtLocationInPeriod(
-  db: PrismaClient,
+  db: Db,
   locationId: string,
   periodStart: Date,
   periodEnd: Date,

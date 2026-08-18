@@ -16,7 +16,9 @@ export {
   getActivity,
   getDashboardStockMovements,
   getDashboardStoreMovements,
+  previewAmendment,
 } from "./logic";
+export type { PreviewAmendmentResult } from "./logic";
 export type {
   TransferCostLine,
   TransferCostResult,

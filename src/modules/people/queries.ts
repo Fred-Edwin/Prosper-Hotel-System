@@ -17,14 +17,14 @@ function toStaffMember<T extends PrismaStaffMember>(row: T): T & { dailyRateMino
 }
 
 export async function findLocationByCode(
-  db: PrismaClient,
+  db: Db,
   code: Location["code"],
 ): Promise<Location | null> {
   return db.location.findUnique({ where: { code } });
 }
 
 export async function findLocationById(
-  db: PrismaClient,
+  db: Db,
   id: string,
 ): Promise<Location | null> {
   return db.location.findUnique({ where: { id } });
@@ -32,7 +32,7 @@ export async function findLocationById(
 
 // docs/architecture.md: LocationCode only ever has two values — no
 // pagination or filtering needed for a picker built from this.
-export async function listLocations(db: PrismaClient): Promise<Location[]> {
+export async function listLocations(db: Db): Promise<Location[]> {
   return db.location.findMany({ orderBy: { name: "asc" } });
 }
 
@@ -44,7 +44,7 @@ export async function findStaffMemberByName(
   return row && toStaffMember(row);
 }
 
-export async function findStaffMembersByIds(db: PrismaClient, ids: string[]): Promise<StaffMember[]> {
+export async function findStaffMembersByIds(db: Db, ids: string[]): Promise<StaffMember[]> {
   const rows = await db.staffMember.findMany({ where: { id: { in: ids } } });
   return rows.map(toStaffMember);
 }

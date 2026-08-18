@@ -22,12 +22,25 @@
  * value rather than deleting anything, so the trail records both moves.
  */
 
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { confirmMessage, type PendingEdit } from "./amend-feedback";
 
 export type AmendToastState = { message: string; undo: () => void };
 
-export type AmendConfirmState = { edit: PendingEdit; proceed: () => void };
+export type AmendConfirmState = {
+  edit: PendingEdit;
+  proceed: () => void;
+  /**
+   * T12 — asks the server what else this edit would move.
+   *
+   * Resolves to a sentence when the cascade reaches beyond the edited
+   * cell, and to null when it does not. Optional so a caller that has no
+   * preview to offer (a story, or a tab where the edit cannot cascade)
+   * simply renders the short dialog.
+   */
+  previewCascade?: () => Promise<string | null>;
+};
 
 /**
  * The confirm step, shared by every tab for the same reason the toast is:
@@ -55,7 +68,63 @@ export function AmendConfirm({
   onCancel: () => void;
 }) {
   if (!confirming) return null;
+  return <AmendConfirmDialog confirming={confirming} onCancel={onCancel} />;
+}
+
+/**
+ * Split from `AmendConfirm` so the preview fetch lives in a component
+ * that mounts when the dialog opens and unmounts when it closes — which
+ * is what makes "fetch once, for this edit" the natural behaviour rather
+ * than something a dependency array has to be talked into.
+ */
+function AmendConfirmDialog({
+  confirming,
+  onCancel,
+}: {
+  confirming: AmendConfirmState;
+  onCancel: () => void;
+}) {
   const message = confirmMessage(confirming.edit);
+
+  /**
+   * T12 — the cascade, fetched when the dialog opens.
+   *
+   * **The dialog is never blocked on this.** It appears immediately with
+   * the cell and both figures, which is the information she needs most
+   * and which is already known locally; the cascade arrives a moment
+   * later. Waiting for the server before showing anything would make
+   * every edit feel slow to serve the minority of edits that cascade.
+   *
+   * "absent" is a real state and not the same as "none": before the
+   * answer arrives the app does not yet know whether anything else moves,
+   * and saying "nothing else changes" while still asking would be a claim
+   * it cannot support.
+   */
+  const fetchCascade = confirming.previewCascade;
+
+  // A caller with no preview to offer is not "still loading" — it is
+  // already known that nothing will be said. Derived rather than pushed
+  // through an effect, so there is no render that briefly claims to be
+  // checking something it will never check.
+  const [fetched, setFetched] = useState<
+    { state: "loading" } | { state: "done"; message: string | null } | { state: "failed" }
+  >({ state: "loading" });
+  const cascade = fetchCascade ? fetched : ({ state: "done", message: null } as const);
+
+  useEffect(() => {
+    if (!fetchCascade) return;
+    let live = true;
+    fetchCascade()
+      .then((m) => live && setFetched({ state: "done", message: m }))
+      // A failed preview is not a failed edit. She can still confirm —
+      // the dialog just stops claiming to know what else moves, and says
+      // so rather than silently showing the short form.
+      .catch(() => live && setFetched({ state: "failed" }));
+    return () => {
+      live = false;
+    };
+  }, [fetchCascade]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div
@@ -84,6 +153,36 @@ export function AmendConfirm({
             </span>
           </p>
         </div>
+
+        {/* T12 — "this also changes", and *only* when something does.
+            A section that appears on every edit to report nothing is
+            noise that trains her to skip it, and then it is missed on
+            the edit that moves twenty figures. */}
+        {cascade.state === "loading" && (
+          <p
+            className="mt-3 text-[13px] text-muted-foreground"
+            data-testid="amend-confirm-cascade-loading"
+          >
+            Checking what else this changes…
+          </p>
+        )}
+        {cascade.state === "done" && cascade.message && (
+          <div
+            className="mt-3 rounded-md border border-dashed px-3 py-2"
+            data-testid="amend-confirm-cascade"
+          >
+            <p className="text-[12px] font-medium">This also changes</p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">{cascade.message}</p>
+          </div>
+        )}
+        {cascade.state === "failed" && (
+          <p
+            className="mt-3 text-[13px] text-muted-foreground"
+            data-testid="amend-confirm-cascade-failed"
+          >
+            Couldn&apos;t check what else this changes. The edit will still work.
+          </p>
+        )}
 
         {message.body && (
           <p className="mt-3 text-[13px] text-muted-foreground">{message.body}</p>

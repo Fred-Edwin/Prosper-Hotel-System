@@ -10,6 +10,7 @@ import {
   getNonSalesLedgerReport,
   getCashLedger,
   getLedgerAmendments,
+  previewAmendment,
   getActivity,
   getDashboardStockMovements,
   getDashboardStoreMovements,
@@ -468,6 +469,18 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
     ledgerContext?: string;
     /** The ledger day a scalar edit applies to — see amendScalar. */
     effectiveDate?: string;
+    /**
+     * Work out what this edit would do, then roll it back.
+     *
+     * The confirm dialog needs the *real* consequence, not a prediction:
+     * she is agreeing to the cascade as well as the cell, and a figure
+     * she cannot check is not a disclosure. The alternative — computing
+     * it in the browser — would have the client guess at how stock is
+     * drawn down and cost of sales valued, and a confirm showing a
+     * number that turns out slightly different is worse than one showing
+     * no number at all.
+     */
+    preview?: boolean;
   };
 
   if (!input.periodStart || !input.periodEnd) {
@@ -524,12 +537,6 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
     }
   };
 
-  // Read before, so the response can say what actually moved.
-  const before = await ledgerFor(session);
-  if (!before.ok) {
-    return Response.json({ error: before.reason }, { status: writeStatus(before.reason) });
-  }
-
   // Narrowed once: the guards above already refused a non-number for
   // everything but a scalar edit.
   const numericValue = input.newValue as number;
@@ -541,53 +548,101 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
   const scalarEffectiveDate =
     parsedEffective && !Number.isNaN(parsedEffective.getTime()) ? parsedEffective : undefined;
 
-  let result: AmendResult;
+  /**
+   * The write, as a closure over a db handle.
+   *
+   * T12 made this a function rather than three inline branches so the
+   * preview and the commit run the *same* write against different
+   * handles — the preview's rolled-back transaction, or the real db.
+   * Two copies of this dispatch would be two chances for the figures she
+   * agreed to and the figures she got to come from different code.
+   */
+  type AmendRunner = (handle: Parameters<typeof amendDayTotal>[0]) => Promise<AmendResult>;
+  let runAmend: AmendRunner;
+
   if (input.kind === "dayTotal") {
     if (!input.itemId || !input.locationId || !input.date || !input.reason) {
       return Response.json({ error: "itemId, locationId, date and reason are required" }, { status: 400 });
     }
     const date = new Date(input.date);
     if (Number.isNaN(date.getTime())) return Response.json({ error: "invalid date" }, { status: 400 });
-    result = await amendDayTotal(db, session, {
-      itemType: input.itemType ?? "product",
-      itemId: input.itemId,
-      locationId: input.locationId,
-      date,
-      reason: input.reason as StockMovementReason,
-      newTotal: numericValue,
-      revenueTreatment: input.revenueTreatment,
-    });
+    const itemId = input.itemId;
+    const locationId = input.locationId;
+    const reason = input.reason as StockMovementReason;
+    runAmend = (handle) =>
+      amendDayTotal(handle, session, {
+        itemType: input.itemType ?? "product",
+        itemId,
+        locationId,
+        date,
+        reason,
+        newTotal: numericValue,
+        revenueTreatment: input.revenueTreatment,
+      });
   } else if (input.kind === "derivedPosition") {
     if (!input.itemId || !input.locationId || !input.date || !input.position) {
       return Response.json({ error: "itemId, locationId, date and position are required" }, { status: 400 });
     }
     const date = new Date(input.date);
     if (Number.isNaN(date.getTime())) return Response.json({ error: "invalid date" }, { status: 400 });
-    result = await amendDerivedPosition(db, session, {
-      itemType: input.itemType ?? "product",
-      itemId: input.itemId,
-      locationId: input.locationId,
-      date,
-      position: input.position,
-      newValue: numericValue,
-    });
+    const itemId = input.itemId;
+    const locationId = input.locationId;
+    const position = input.position;
+    runAmend = (handle) =>
+      amendDerivedPosition(handle, session, {
+        itemType: input.itemType ?? "product",
+        itemId,
+        locationId,
+        date,
+        position,
+        newValue: numericValue,
+      });
   } else if (input.kind === "scalar") {
     if (!input.recordType || !input.recordId || !input.field) {
       return Response.json({ error: "recordType, recordId and field are required" }, { status: 400 });
     }
-    result = await amendScalar(db, session, {
-      recordType: input.recordType,
-      recordId: input.recordId,
-      field: input.field,
-      newValue: input.newValue as number | string,
-      locationId: input.locationId,
-      ledgerContext: input.ledgerContext,
-      effectiveDate: scalarEffectiveDate,
-    });
+    const recordType = input.recordType;
+    const recordId = input.recordId;
+    const field = input.field;
+    runAmend = (handle) =>
+      amendScalar(handle, session, {
+        recordType,
+        recordId,
+        field,
+        newValue: input.newValue as number | string,
+        locationId: input.locationId,
+        ledgerContext: input.ledgerContext,
+        effectiveDate: scalarEffectiveDate,
+      });
   } else {
     return Response.json({ error: "unknown kind" }, { status: 400 });
   }
 
+  /**
+   * T12 — the same edit, run and rolled back, so the confirm dialog can
+   * show the real cascade before she agrees rather than the toast
+   * reporting it afterwards.
+   */
+  if (input.preview) {
+    const preview = await previewAmendment(db, session, {
+      ledger: ledgerKind,
+      periodStart,
+      periodEnd,
+      run: runAmend,
+    });
+    if (!preview.ok) {
+      return Response.json({ error: preview.reason }, { status: writeStatus(preview.reason) });
+    }
+    return Response.json({ rows: preview.rows, previousRows: preview.previousRows });
+  }
+
+  // Read before, so the response can say what actually moved.
+  const before = await ledgerFor(session);
+  if (!before.ok) {
+    return Response.json({ error: before.reason }, { status: writeStatus(before.reason) });
+  }
+
+  const result = await runAmend(db);
   if (!result.ok) {
     return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
   }

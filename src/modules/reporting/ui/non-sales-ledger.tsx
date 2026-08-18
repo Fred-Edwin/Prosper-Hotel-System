@@ -23,7 +23,13 @@ import {
 } from "@/components/ui/select";
 import { ErrorState, PermissionDenied, EmptyFiltered, LoadingTable } from "@/components/patterns/states";
 import { EditableNum, type EditableNumState } from "./editable-num";
-import { summariseAmendment, farBackMonths, type ConfirmCase, type LedgerRowAccessors } from "./amend-feedback";
+import {
+  summariseAmendment,
+  fetchCascadePreview,
+  farBackMonths,
+  type ConfirmCase,
+  type LedgerRowAccessors,
+} from "./amend-feedback";
 import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
 import { AmendedCell, cellKey as amendCellKey, type AmendedCells } from "./amend-history";
 import { Search, X } from "lucide-react";
@@ -318,6 +324,19 @@ export function NonSalesLedgerView({
         setConfirming(null);
         run();
       },
+      // T12 — the real cascade, from the server, fetched as the dialog
+      // opens. The dialog does not wait for it: the cell and both
+      // figures are already on screen, and this fills in what *else*
+      // moves a moment later.
+      previewCascade: () =>
+        fetchCascadePreview({
+          body: input.body,
+          ledger: "nonSales",
+          periodStart,
+          periodEnd,
+          itemId: input.movementId,
+          accessors: NON_SALES_ROW_ACCESSORS,
+        }),
     });
   }
 

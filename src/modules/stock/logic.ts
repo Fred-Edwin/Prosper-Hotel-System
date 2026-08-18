@@ -2103,7 +2103,7 @@ export type PreviousDeliveryCostResult =
 // latest-price-wins rule this is read straight off that delivery, rather
 // than reconstructed by un-averaging the current figure.
 export async function getPreviousDeliveryCostAtLocation(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   before: Date,
@@ -2122,7 +2122,7 @@ export type IngredientQuantityAtLocationResult =
 // — quantity only, per ingredient, at a point in time, for the Store
 // ledger's opening/closing columns.
 export async function getIngredientQuantityAtLocationAsOf(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   asOf: Date,
@@ -2199,7 +2199,7 @@ export type ProductQuantityAtLocationResult =
 // with no cost basis at all; the Product ledger still needs a row for it,
 // with cost/profit shown as unavailable rather than the row disappearing).
 export async function getProductQuantityAtLocationAsOf(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   asOf: Date,
@@ -2276,7 +2276,7 @@ export type IngredientPurchasesByIngredientResult =
 // for the Store ledger's row — distinct from getIngredientsBoughtMinor's
 // single location-wide total.
 export async function getIngredientsPurchasedByIngredient(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   periodStart: Date,
@@ -2302,7 +2302,7 @@ export type IngredientMovementsByReasonResult =
 // ledger needs every reason (issued/transferred/wasted) for every
 // ingredient in one period at once.
 export async function getIngredientMovementsByReasonInPeriod(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   reasons: StockMovementReason[],
@@ -2358,7 +2358,7 @@ export type ProductMovementsByReasonResult =
 // the Product ledger needs every reason for every product in one period at
 // once, not one reason at a time.
 export async function getProductMovementsByReasonInPeriod(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   reasons: StockMovementReason[],
@@ -2432,7 +2432,7 @@ export type NonSalesLedgerResult =
 // recorded-by) since the ledger reads them together; the underlying query
 // stays name-agnostic.
 export async function getNonSalesLedger(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   periodStart: Date,
@@ -2580,7 +2580,7 @@ export type AmendResult =
 type AmendItemType = "product" | "ingredient";
 
 async function itemNameFor(
-  db: PrismaClient,
+  db: Db,
   itemType: AmendItemType,
   itemId: string,
 ): Promise<string | null> {
@@ -2615,7 +2615,7 @@ async function itemNameFor(
  * delivery — receipts are grouped by receiptId and read as a group.
  */
 export async function amendDayTotal(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: {
     itemType: AmendItemType;
@@ -2821,7 +2821,7 @@ export async function amendDayTotal(
  * part of this design, not a nicety.
  */
 export async function amendDerivedPosition(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: {
     itemType: AmendItemType;
@@ -2957,7 +2957,7 @@ type ScalarDelegate = {
   update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>;
 };
 
-function delegateFor(db: PrismaClient, recordType: string): ScalarDelegate | undefined {
+function delegateFor(db: Db, recordType: string): ScalarDelegate | undefined {
   const delegates: Record<string, ScalarDelegate | undefined> = {
     Product: db.product,
     Ingredient: db.ingredient,
@@ -2972,7 +2972,7 @@ function delegateFor(db: PrismaClient, recordType: string): ScalarDelegate | und
 }
 
 export async function amendScalar(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   input: {
     recordType: keyof typeof EDITABLE_SCALARS | string;
@@ -3076,7 +3076,7 @@ export type SoldCostBasisResult =
  * is what stops a price edit today from moving a closed month's profit.
  */
 export async function getSoldCostBasisInPeriod(
-  db: PrismaClient,
+  db: Db,
   requester: AuthenticatedStaff,
   locationId: string,
   periodStart: Date,

@@ -235,3 +235,94 @@ export function farBackMonths(editedDate: Date, now: Date = new Date()): number 
   if (days <= 31) return null;
   return Math.max(1, Math.round(days / 30));
 }
+
+
+/**
+ * Editable-ledger T12 — what else this edit moves, for the confirm dialog.
+ *
+ * The dialog already names the cell and both figures. This is the second
+ * half of the disclosure: an edit to a day's opening moves closing on
+ * every following day, and cost of sales and profit with it, so agreeing
+ * to one figure can mean agreeing to twenty.
+ *
+ * **Only present when there is something to say.** A "this also changes"
+ * section that appears on every edit saying "nothing else" is noise that
+ * teaches her to stop reading it — and then it is not there when it
+ * matters. A short dialog on the ordinary edit is exactly what makes the
+ * section mean something when it does appear.
+ *
+ * It reuses `summariseAmendment` rather than wording the cascade a second
+ * time. The figures come from the server's rolled-back preview, so the
+ * sentence in the confirm and the sentence in the toast afterwards are
+ * produced by one function from the same kind of data — if they ever
+ * disagreed, that would be the app contradicting itself about what it
+ * just did.
+ */
+export function cascadePreview<Row>(input: {
+  itemId: string;
+  previousRows: Row[];
+  rows: Row[];
+  accessors: LedgerRowAccessors<Row>;
+}): string | null {
+  const summary = summariseAmendment(input);
+  if (!summary.cascaded) return null;
+
+  // "Updated." is the toast's voice — past tense, the edit has happened.
+  // The dialog is asking, so it must not claim the change already
+  // landed.
+  return summary.message.replace(/^Updated\.\s*/, "");
+}
+
+/**
+ * T12 — ask the server what this edit would do, without doing it.
+ *
+ * The same POST the commit uses, with `preview: true`. One endpoint, one
+ * dispatch, one set of write functions: the preview cannot describe a
+ * different edit from the one that follows, because it *is* that edit,
+ * run and rolled back.
+ *
+ * Returns null when nothing beyond the edited cell moves — which is what
+ * keeps the dialog's "this also changes" section meaningful, since it
+ * then only appears when there is something to warn about.
+ */
+export async function fetchCascadePreview<Row>(input: {
+  body: Record<string, unknown>;
+  /**
+   * Which table to preview against — stated, never inferred.
+   *
+   * The route defaults this from `itemType`, which resolves to the
+   * Product ledger for anything that is not an ingredient. The Cash and
+   * non-sales tabs add `ledger` at their own fetch rather than carrying
+   * it on the edit body, so relying on the body here would have quietly
+   * previewed a Cash edit against a table of products.
+   */
+  ledger: "product" | "store" | "cash" | "nonSales";
+  periodStart: string;
+  periodEnd: string;
+  itemId: string;
+  accessors: LedgerRowAccessors<Row>;
+}): Promise<string | null> {
+  const response = await fetch("/api/ledger/amend", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...input.body,
+      ledger: input.ledger,
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      preview: true,
+    }),
+  });
+  // Thrown rather than swallowed, so the dialog can say it could not
+  // check instead of showing the short form and implying nothing else
+  // moves.
+  if (!response.ok) throw new Error("preview failed");
+
+  const payload = (await response.json()) as { rows: Row[]; previousRows: Row[] };
+  return cascadePreview({
+    itemId: input.itemId,
+    previousRows: payload.previousRows,
+    rows: payload.rows,
+    accessors: input.accessors,
+  });
+}

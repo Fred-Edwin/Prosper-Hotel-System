@@ -35,7 +35,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { testDb } from "@/shared/test-db";
-import { getProductLedger } from "@/modules/reporting";
+import { getProductLedger, previewAmendment } from "@/modules/reporting";
 import { amendDayTotal, amendDerivedPosition, amendScalar } from "../logic";
 
 let restaurantId: string;
@@ -1287,5 +1287,175 @@ describe("amendDayTotal — sold, and the money", () => {
 
     const amendments = await testDb.amendment.findMany({});
     expect(amendments[0]?.ledgerContext).toContain("stock only");
+  });
+});
+
+/**
+ * Editable-ledger T12 — the cascade preview.
+ *
+ * The confirm dialog shows one figure changing, but an edit can move
+ * twenty others. Learning about the rest from a toast *after* the write
+ * puts the good information on the wrong side of the decision.
+ *
+ * The figures must be real, so the preview is the actual amend running
+ * inside a transaction that is then rolled back — not a second
+ * implementation of the cascade in the browser, which would have the
+ * client guess at how stock is drawn down and cost of sales valued. Two
+ * implementations of one calculation is the failure mode; a preview
+ * showing a number that turns out slightly different is worse than one
+ * showing no number.
+ *
+ * So the two properties that matter are the two below: the preview
+ * returns exactly what committing would have returned, and it leaves
+ * nothing behind.
+ */
+describe("previewAmendment — T12", () => {
+  test("returns the rows a real commit would, and writes nothing", async () => {
+    await movement(10, "received", at("2026-08-14", "09:00:00.000"));
+    await movement(-4, "sold", at("2026-08-15", "12:00:00.000"));
+
+    const periodStart = D("2026-08-14");
+    const periodEnd = D("2026-08-18");
+
+    const movementsBefore = await testDb.stockMovement.count();
+    const amendmentsBefore = await testDb.amendment.count();
+
+    const preview = await previewAmendment(testDb, owner(), {
+      ledger: "product",
+      periodStart,
+      periodEnd,
+      run: (tx) =>
+        amendDayTotal(tx, owner(), {
+          itemType: "product",
+          itemId: productId,
+          locationId: restaurantId,
+          date: D("2026-08-14"),
+          reason: "received",
+          newTotal: 25,
+        }),
+    });
+    if (!preview.ok) throw new Error(`preview failed: ${preview.reason}`);
+
+    // Nothing was written — not the movement, not the trail entry.
+    expect(await testDb.stockMovement.count()).toBe(movementsBefore);
+    expect(await testDb.amendment.count()).toBe(amendmentsBefore);
+
+    const previewedRow = (preview.rows as { productId: string; closingQty: number }[]).find(
+      (r) => r.productId === productId,
+    );
+
+    // Now actually commit the same edit, and the ledger must agree with
+    // what the preview promised. This is the property the dialog rests
+    // on: she agreed to these figures, so these must be the figures.
+    const committed = await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-14"),
+      reason: "received",
+      newTotal: 25,
+    });
+    expect(committed.ok).toBe(true);
+
+    const real = await ledgerRow(periodStart, periodEnd);
+    expect(previewedRow?.closingQty).toBe(real?.closingQty);
+    expect(previewedRow?.closingQty).toBe(21);
+  });
+
+  test("previousRows are the figures as they stand now", async () => {
+    await movement(10, "received", at("2026-08-14", "09:00:00.000"));
+
+    const periodStart = D("2026-08-14");
+    const periodEnd = D("2026-08-18");
+    const current = await ledgerRow(periodStart, periodEnd);
+
+    const preview = await previewAmendment(testDb, owner(), {
+      ledger: "product",
+      periodStart,
+      periodEnd,
+      run: (tx) =>
+        amendDayTotal(tx, owner(), {
+          itemType: "product",
+          itemId: productId,
+          locationId: restaurantId,
+          date: D("2026-08-14"),
+          reason: "received",
+          newTotal: 30,
+        }),
+    });
+    if (!preview.ok) throw new Error(`preview failed: ${preview.reason}`);
+
+    const was = (preview.rows as { productId: string }[]) && (preview.previousRows as {
+      productId: string;
+      closingQty: number;
+    }[]).find((r) => r.productId === productId);
+    expect(was?.closingQty).toBe(current?.closingQty);
+    expect(was?.closingQty).toBe(10);
+  });
+
+  test("a refused amend is reported as a refusal, and still writes nothing", async () => {
+    await movement(10, "received", at("2026-08-14", "09:00:00.000"));
+    const amendmentsBefore = await testDb.amendment.count();
+
+    // A cashier may not amend. The preview must surface that as the
+    // refusal it is rather than as an empty cascade, or the dialog would
+    // invite her to confirm an edit that is going to be rejected.
+    const preview = await previewAmendment(testDb, cashier(), {
+      ledger: "product",
+      periodStart: D("2026-08-14"),
+      periodEnd: D("2026-08-18"),
+      run: (tx) =>
+        amendDayTotal(tx, cashier(), {
+          itemType: "product",
+          itemId: productId,
+          locationId: restaurantId,
+          date: D("2026-08-14"),
+          reason: "received",
+          newTotal: 25,
+        }),
+    });
+
+    expect(preview.ok).toBe(false);
+    if (!preview.ok) expect(preview.reason).toBe("forbidden");
+    expect(await testDb.amendment.count()).toBe(amendmentsBefore);
+  });
+
+  test("the cascade beyond the edited day is visible in the preview", async () => {
+    // The whole reason T12 exists: one edit on the 14th moves closing on
+    // every following day, and she should see that before agreeing, not
+    // after.
+    await movement(10, "received", at("2026-08-14", "09:00:00.000"));
+    await movement(-2, "sold", at("2026-08-16", "12:00:00.000"));
+
+    const preview = await previewAmendment(testDb, owner(), {
+      ledger: "product",
+      periodStart: D("2026-08-14"),
+      periodEnd: D("2026-08-18"),
+      run: (tx) =>
+        amendDerivedPosition(tx, owner(), {
+          itemType: "product",
+          itemId: productId,
+          locationId: restaurantId,
+          date: D("2026-08-14"),
+          position: "opening",
+          newValue: 5,
+        }),
+    });
+    if (!preview.ok) throw new Error(`preview failed: ${preview.reason}`);
+
+    const rows = preview.rows as { productId: string; days: { date: string; closing: number }[] }[];
+    const previous = preview.previousRows as {
+      productId: string;
+      days: { date: string; closing: number }[];
+    }[];
+    const after = rows.find((r) => r.productId === productId);
+    const before = previous.find((r) => r.productId === productId);
+
+    const moved = after!.days.filter((d) => {
+      const was = before!.days.find((b) => b.date === d.date);
+      return was && was.closing !== d.closing;
+    });
+    // Every day in the period shifts by the opening correction.
+    expect(moved.length).toBeGreaterThan(1);
   });
 });

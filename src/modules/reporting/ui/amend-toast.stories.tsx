@@ -115,3 +115,96 @@ export const Handover: Story = {
     },
   },
 };
+
+/**
+ * T12 — the cascade, while the server is still working it out.
+ *
+ * The dialog is deliberately *not* blocked on the preview: the cell and
+ * both figures are known locally and appear immediately, so the edit
+ * never feels slow. Only the "what else moves" line waits.
+ */
+export const CascadeLoading: Story = {
+  name: "Cascade — still checking",
+  args: {
+    confirming: {
+      edit: {
+        label: "Opening · Beef stew · 2026-08-14",
+        from: "10",
+        to: "5",
+        escalation: null,
+      },
+      proceed: () => {},
+      // Never resolves, so the loading state is what the story shows.
+      previewCascade: () => new Promise<string | null>(() => {}),
+    },
+  },
+};
+
+/**
+ * The section that justifies the whole ticket. She is agreeing to one
+ * figure; this is the other twenty, quoted from the server's rolled-back
+ * preview rather than guessed at in the browser.
+ */
+export const CascadeFound: Story = {
+  name: "Cascade — this also changes",
+  args: {
+    confirming: {
+      edit: {
+        label: "Opening · Beef stew · 2026-08-14",
+        from: "10",
+        to: "5",
+        escalation: { kind: "derivedPosition" },
+      },
+      proceed: () => {},
+      previewCascade: async () =>
+        "Beef stew closing fell by 5 across 5 days and profit changed by KSh 900",
+    },
+  },
+};
+
+/**
+ * Nothing beyond the edited cell moved, so there is no section at all —
+ * not a section saying "nothing else changes".
+ *
+ * This is the case that makes the others mean something: a warning that
+ * appears on every edit is one she learns to skip, and then it is missed
+ * on the edit that moves twenty figures.
+ */
+export const CascadeNone: Story = {
+  name: "Cascade — nothing else moves, so nothing is said",
+  args: {
+    confirming: {
+      edit: {
+        label: "Operating cost · 2026-08-15",
+        from: "KSh 2,500",
+        to: "KSh 2,700",
+        escalation: null,
+      },
+      proceed: () => {},
+      previewCascade: async () => null,
+    },
+  },
+};
+
+/**
+ * A failed preview is not a failed edit. She can still confirm — the
+ * dialog only stops claiming to know what else moves, and says so rather
+ * than showing the short form and implying nothing does.
+ */
+export const CascadeFailed: Story = {
+  name: "Cascade — couldn't check",
+  args: {
+    confirming: {
+      edit: {
+        label: "Sold · Chapati · 2026-08-17",
+        from: "30",
+        to: "28",
+        escalation: null,
+      },
+      proceed: () => {},
+      previewCascade: async () => {
+        throw new Error("preview failed");
+      },
+    },
+  },
+};
