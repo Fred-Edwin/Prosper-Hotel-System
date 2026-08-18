@@ -63,6 +63,7 @@ export async function createProduct(
     name: string;
     kind: ProductKind;
     priceMinor?: number | null;
+    lastKnownCostMinor?: number | null;
     categoryId?: string | null;
     locationId: string;
   },
@@ -84,6 +85,7 @@ export async function createProduct(
     name: input.name,
     kind: input.kind,
     priceMinor: input.priceMinor ?? null,
+    lastKnownCostMinor: input.lastKnownCostMinor ?? null,
     categoryId: input.categoryId ?? null,
     locationId: input.locationId,
   });
@@ -98,6 +100,15 @@ export async function updateProduct(
     name: string;
     kind: ProductKind;
     priceMinor?: number | null;
+    // 2026-08-18: editable from the catalogue so the owner can set a
+    // buying price for bought-and-resold goods, and an explicit zero for
+    // anything made from ingredients (already costed as those ingredients
+    // moved through the store). Undefined means "leave as is" — distinct
+    // from null ("clear it") and from 0 ("deliberately nil"). A later
+    // delivery still overwrites this via recordProductCost, per
+    // formulas.md §3's latest-price-wins rule; this is the starting figure,
+    // not a lock.
+    lastKnownCostMinor?: number | null;
     categoryId?: string | null;
     lowStockLevel?: number | null;
     locationId: string;
@@ -125,6 +136,8 @@ export async function updateProduct(
     name: input.name,
     kind: input.kind,
     priceMinor: input.priceMinor ?? null,
+    lastKnownCostMinor:
+      input.lastKnownCostMinor === undefined ? current.lastKnownCostMinor : input.lastKnownCostMinor,
     categoryId: input.categoryId ?? null,
     lowStockLevel: input.lowStockLevel ?? null,
     locationId: input.locationId,

@@ -66,6 +66,7 @@ export function ProductForm({
     name: string;
     kind: ProductKind;
     priceMinor: number | null;
+    lastKnownCostMinor: number | null;
     categoryId: string | null;
     lowStockLevel: number | null;
     active: boolean;
@@ -76,6 +77,9 @@ export function ProductForm({
   const [kind, setKind] = useState<ProductKind>(product?.kind ?? "goods");
   const [price, setPrice] = useState(
     product?.priceMinor != null ? String(product.priceMinor) : "",
+  );
+  const [buyingPrice, setBuyingPrice] = useState(
+    product?.lastKnownCostMinor != null ? String(product.lastKnownCostMinor) : "",
   );
   const [categoryId, setCategoryId] = useState<string | null>(product?.categoryId ?? null);
   const [locationId, setLocationId] = useState(product?.locationId ?? locations[0]?.id ?? "");
@@ -111,6 +115,7 @@ export function ProductForm({
             name,
             kind,
             priceMinor: price.trim() === "" ? null : Number(price),
+            lastKnownCostMinor: buyingPrice.trim() === "" ? null : Number(buyingPrice),
             categoryId,
             lowStockLevel: lowStockLevel.trim() === "" ? null : Number(lowStockLevel),
             active,
@@ -185,6 +190,23 @@ export function ProductForm({
               onChange={(e) => setPrice(e.target.value)}
               inputMode="decimal"
               className="tabular h-9"
+            />
+          </Field>
+          {/* 2026-08-18: blank, zero and a real figure are three different
+              answers here, so the hint spells all three out rather than
+              leaving zero to be guessed at. A later delivery overwrites
+              this figure (formulas.md §3, latest price wins), which is why
+              the hint calls it a starting figure. */}
+          <Field
+            label="Buying price (KSh)"
+            hint="What it costs you. Enter 0 for anything made from ingredients — its cost is already counted as those ingredients are used. Leave blank if you don't know it yet. A delivery updates this figure."
+          >
+            <Input
+              value={buyingPrice}
+              onChange={(e) => setBuyingPrice(e.target.value)}
+              inputMode="decimal"
+              className="tabular h-9"
+              data-testid="product-buying-price"
             />
           </Field>
         </FormSection>

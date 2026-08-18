@@ -36,13 +36,27 @@ export function IngredientsTab({
   error?: string;
 }) {
   const [query, setQuery] = useState("");
+  // 2026-08-18: same "find what needs a cost" filter as ProductsTab.
+  // Ingredients have no selling price — they are bought and consumed,
+  // never sold — so this tab shows buying price only, and the column is
+  // named "Buying price" to match Products rather than "Cost per unit".
+  const [buyingPrice, setBuyingPrice] = useState("all");
   const [editing, setEditing] = useState<Ingredient | null>(null);
   const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return ingredients.filter((i) => !q || i.name.toLowerCase().includes(q));
-  }, [ingredients, query]);
+    return ingredients.filter(
+      (i) =>
+        (!q || i.name.toLowerCase().includes(q)) &&
+        (buyingPrice === "all" ||
+          (buyingPrice === "missing"
+            ? i.lastKnownCostMinor === null
+            : buyingPrice === "zero"
+              ? i.lastKnownCostMinor === 0
+              : i.lastKnownCostMinor !== null && i.lastKnownCostMinor > 0)),
+    );
+  }, [ingredients, query, buyingPrice]);
 
   const columns: Column<Ingredient>[] = [
     {
@@ -58,8 +72,15 @@ export function IngredientsTab({
     { key: "unit", header: "Unit", align: "left", cell: (i) => i.unitOfMeasure },
     {
       key: "cost",
-      header: "Cost per unit",
-      cell: (i) => <Num value={i.lastKnownCostMinor} money />,
+      header: "Buying price",
+      cell: (i) =>
+        i.lastKnownCostMinor === null ? (
+          <Badge variant="secondary" className="font-normal">
+            Not set
+          </Badge>
+        ) : (
+          <Num value={i.lastKnownCostMinor} money />
+        ),
     },
     {
       key: "status",
@@ -89,6 +110,19 @@ export function IngredientsTab({
           query={query}
           onQuery={setQuery}
           placeholder="Search ingredients"
+          filters={[
+            {
+              key: "buyingPrice",
+              value: buyingPrice,
+              onChange: setBuyingPrice,
+              allLabel: "Any buying price",
+              options: [
+                { value: "missing", label: "No buying price" },
+                { value: "zero", label: "Buying price zero" },
+                { value: "set", label: "Buying price set" },
+              ],
+            },
+          ]}
           count={filtered.length}
           total={ingredients.length}
           noun="ingredients"
@@ -117,7 +151,13 @@ export function IngredientsTab({
               }
             />
           ) : (
-            <EmptyFiltered onClear={() => setQuery("")} noun="ingredients" />
+            <EmptyFiltered
+              onClear={() => {
+                setQuery("");
+                setBuyingPrice("all");
+              }}
+              noun="ingredients"
+            />
           )
         }
       />

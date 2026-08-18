@@ -138,6 +138,91 @@ describe("products", () => {
     expect(reread?.priceMinor?.toNumber()).toBe(253.33);
   });
 
+  // 2026-08-18: the buying price is how a bought-and-resold product (a
+  // soda) gets a cost at all, and an explicit 0 is how the owner marks a
+  // product made from ingredients as already-costed upstream. Zero, null
+  // and "not supplied" are three different answers and must stay distinct
+  // — a zero that decays to null would silently become a 60%-of-selling-
+  // price estimate in cost of goods sold.
+  test("owner can set a product's buying price, including a deliberate zero", async () => {
+    const created = await createProduct(testDb, owner, {
+      name: "Soda 500ml",
+      kind: "goods",
+      locationId: "location-1",
+    });
+    if (!created.ok) throw new Error("expected create to succeed");
+    expect(created.value.lastKnownCostMinor).toBeNull();
+
+    const set = await updateProduct(testDb, owner, created.value.id, {
+      name: "Soda 500ml",
+      kind: "goods",
+      lastKnownCostMinor: 4500,
+      locationId: "location-1",
+    });
+    expect(set.ok).toBe(true);
+    if (!set.ok) return;
+    expect(set.value.lastKnownCostMinor).toBe(4500);
+
+    // A deliberate zero is stored as zero, never coerced to null.
+    const zeroed = await updateProduct(testDb, owner, created.value.id, {
+      name: "Soda 500ml",
+      kind: "goods",
+      lastKnownCostMinor: 0,
+      locationId: "location-1",
+    });
+    expect(zeroed.ok).toBe(true);
+    if (!zeroed.ok) return;
+    expect(zeroed.value.lastKnownCostMinor).toBe(0);
+
+    const reread = await testDb.product.findUnique({ where: { id: created.value.id } });
+    expect(reread?.lastKnownCostMinor?.toNumber()).toBe(0);
+  });
+
+  // Callers that predate the field (and the tests above) omit it entirely.
+  // Omission must mean "leave as is", or every edit made from a screen that
+  // doesn't send the field would silently wipe a recorded cost.
+  test("omitting the buying price on update leaves the existing one untouched", async () => {
+    const created = await createProduct(testDb, owner, {
+      name: "Soda 500ml",
+      kind: "goods",
+      lastKnownCostMinor: 4500,
+      locationId: "location-1",
+    });
+    if (!created.ok) throw new Error("expected create to succeed");
+    expect(created.value.lastKnownCostMinor).toBe(4500);
+
+    const renamed = await updateProduct(testDb, owner, created.value.id, {
+      name: "Soda (500ml)",
+      kind: "goods",
+      locationId: "location-1",
+    });
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.value.lastKnownCostMinor).toBe(4500);
+  });
+
+  // An explicit null is the owner clearing the figure — distinct from
+  // omitting it, and from zero.
+  test("an explicit null clears the buying price", async () => {
+    const created = await createProduct(testDb, owner, {
+      name: "Soda 500ml",
+      kind: "goods",
+      lastKnownCostMinor: 4500,
+      locationId: "location-1",
+    });
+    if (!created.ok) throw new Error("expected create to succeed");
+
+    const cleared = await updateProduct(testDb, owner, created.value.id, {
+      name: "Soda 500ml",
+      kind: "goods",
+      lastKnownCostMinor: null,
+      locationId: "location-1",
+    });
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    expect(cleared.value.lastKnownCostMinor).toBeNull();
+  });
+
   test("owner can set and unset a product's low-stock level", async () => {
     const created = await createProduct(testDb, owner, { name: "Chips", kind: "cooked_food", locationId: "location-1" });
     if (!created.ok) throw new Error("expected create to succeed");

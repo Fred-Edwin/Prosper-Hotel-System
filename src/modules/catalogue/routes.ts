@@ -65,6 +65,7 @@ export async function createProductRoute(request: Request): Promise<Response> {
     name: body.name,
     kind: body.kind,
     priceMinor: body.priceMinor ?? null,
+    lastKnownCostMinor: body.lastKnownCostMinor ?? null,
     categoryId: body.categoryId ?? null,
     locationId: body.locationId,
   });
@@ -85,6 +86,10 @@ export async function updateProductRoute(
     name: body.name,
     kind: body.kind,
     priceMinor: body.priceMinor ?? null,
+    // Absent key means "leave as is"; an explicit null clears it and an
+    // explicit 0 is a deliberate nil — see updateProduct's comment.
+    lastKnownCostMinor:
+      "lastKnownCostMinor" in body ? body.lastKnownCostMinor : undefined,
     categoryId: body.categoryId ?? null,
     lowStockLevel: body.lowStockLevel ?? null,
     locationId: body.locationId,

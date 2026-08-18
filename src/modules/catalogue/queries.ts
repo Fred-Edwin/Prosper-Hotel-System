@@ -95,6 +95,7 @@ export async function createProductRecord(
     name: string;
     kind: ProductKind;
     priceMinor: number | null;
+    lastKnownCostMinor: number | null;
     categoryId: string | null;
     locationId: string;
   },
@@ -110,6 +111,7 @@ export async function updateProductRecord(
     name: string;
     kind: ProductKind;
     priceMinor: number | null;
+    lastKnownCostMinor: number | null;
     categoryId: string | null;
     lowStockLevel: number | null;
     locationId: string;

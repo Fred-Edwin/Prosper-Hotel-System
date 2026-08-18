@@ -41,6 +41,7 @@ export function ProductsTab({
     name: string;
     kind: ProductKind;
     priceMinor: number | null;
+    lastKnownCostMinor: number | null;
     categoryId: string | null;
     locationId: string;
   }) => void;
@@ -50,6 +51,7 @@ export function ProductsTab({
       name: string;
       kind: ProductKind;
       priceMinor: number | null;
+      lastKnownCostMinor: number | null;
       categoryId: string | null;
       locationId: string;
     },
@@ -61,6 +63,9 @@ export function ProductsTab({
   const [query, setQuery] = useState("");
   const [locationId, setLocationId] = useState("all");
   const [categoryId, setCategoryId] = useState("all");
+  // 2026-08-18: lets the owner jump straight to the products that need a
+  // buying price, rather than skimming the whole list for "Not set".
+  const [buyingPrice, setBuyingPrice] = useState("all");
   const [editing, setEditing] = useState<Product | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -71,9 +76,15 @@ export function ProductsTab({
         (!q || p.name.toLowerCase().includes(q)) &&
         (locationId === "all" || p.locationId === locationId) &&
         (categoryId === "all" ||
-          (categoryId === "uncategorised" ? p.categoryId === null : p.categoryId === categoryId)),
+          (categoryId === "uncategorised" ? p.categoryId === null : p.categoryId === categoryId)) &&
+        (buyingPrice === "all" ||
+          (buyingPrice === "missing"
+            ? p.lastKnownCostMinor === null
+            : buyingPrice === "zero"
+              ? p.lastKnownCostMinor === 0
+              : p.lastKnownCostMinor !== null && p.lastKnownCostMinor > 0)),
     );
-  }, [products, query, locationId, categoryId]);
+  }, [products, query, locationId, categoryId, buyingPrice]);
 
   const columns: Column<Product>[] = [
     {
@@ -87,7 +98,31 @@ export function ProductsTab({
       ),
     },
     { key: "kind", header: "Kind", align: "left", cell: (p) => KIND_LABEL[p.kind] },
-    { key: "price", header: "Price", cell: (p) => <Num value={p.priceMinor} money /> },
+    {
+      // 2026-08-18: buying price surfaced alongside selling price so the
+      // owner can see, in one list, which products have no buying price at
+      // all and which she has deliberately set to zero. The two are *not*
+      // the same thing and must not look the same: zero means "made from
+      // ingredients, already costed as those ingredients moved through the
+      // store", while blank means "nobody has filled this in yet" — and a
+      // blank one currently falls through to a 60%-of-selling-price
+      // estimate in cost of goods sold. `Num` renders null as "—" and a
+      // real zero as "0.00", so the distinction is already visible; the
+      // "Not set" badge makes the blank case impossible to skim past,
+      // since "—" alone reads as "nothing to see here" rather than
+      // "action needed".
+      key: "buyingPrice",
+      header: "Buying price",
+      cell: (p) =>
+        p.lastKnownCostMinor === null ? (
+          <Badge variant="secondary" className="font-normal">
+            Not set
+          </Badge>
+        ) : (
+          <Num value={p.lastKnownCostMinor} money />
+        ),
+    },
+    { key: "price", header: "Selling price", cell: (p) => <Num value={p.priceMinor} money /> },
     {
       key: "status",
       header: "Status",
@@ -134,6 +169,17 @@ export function ProductsTab({
                 { value: "uncategorised", label: "Uncategorised" },
               ],
             },
+            {
+              key: "buyingPrice",
+              value: buyingPrice,
+              onChange: setBuyingPrice,
+              allLabel: "Any buying price",
+              options: [
+                { value: "missing", label: "No buying price" },
+                { value: "zero", label: "Buying price zero" },
+                { value: "set", label: "Buying price set" },
+              ],
+            },
           ]}
           count={filtered.length}
           total={products.length}
@@ -168,6 +214,7 @@ export function ProductsTab({
                 setQuery("");
                 setLocationId("all");
                 setCategoryId("all");
+                setBuyingPrice("all");
               }}
               noun="products"
             />

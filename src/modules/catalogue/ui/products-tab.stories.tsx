@@ -16,7 +16,10 @@ const locations: Location[] = [
 
 const products: Product[] = [
   { id: "p1", name: "Mukimo", kind: "cooked_food", priceMinor: 150, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1", locationId: "loc-1" },
-  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: "c1", locationId: "loc-1" },
+  // Buying price 0 — made from ingredients, already costed as those moved
+  // through the store. Must render as "0.00", never as the "Not set" badge
+  // that a null gets: the two mean different things (2026-08-18).
+  { id: "p2", name: "Chips", kind: "cooked_food", priceMinor: 100, lastKnownCostMinor: 0, lowStockLevel: null, active: true, categoryId: "c1", locationId: "loc-1" },
   { id: "p3", name: "Soda 500ml", kind: "goods", priceMinor: 80, lastKnownCostMinor: 50, lowStockLevel: null, active: true, categoryId: "c2", locationId: "loc-1" },
   { id: "p4", name: "Exercise book", kind: "goods", priceMinor: 60, lastKnownCostMinor: 40, lowStockLevel: null, active: true, categoryId: "c3", locationId: "loc-2" },
   { id: "p5", name: "Photocopy (per page)", kind: "service", priceMinor: 5, lastKnownCostMinor: null, lowStockLevel: null, active: true, categoryId: null, locationId: "loc-2" },
