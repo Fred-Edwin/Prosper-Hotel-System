@@ -69,8 +69,8 @@ function RunningBalanceStrip({
 }) {
   if (state.status === "loading") {
     return (
-      <div className="mb-4 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2">
-        {[0, 1].map((i) => (
+      <div className="mb-4 grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2 lg:grid-cols-3">
+        {[0, 1, 2].map((i) => (
           <div key={i} className="bg-card p-4">
             <Skeleton className="h-3 w-24" />
             <Skeleton className="mt-2 h-6 w-28" />
@@ -96,13 +96,25 @@ function RunningBalanceStrip({
   return (
     <div className="mb-4">
       <SummaryStrip
-        columns={2}
+        columns={3}
         items={[
           { label: "Expected cash", value: money(state.cashMinor), sub: "handed over, minus paid out" },
           {
             label: "Expected M-Pesa",
             value: money(state.mpesaMinor),
             sub: "handed over, minus paid out",
+          },
+          {
+            // Client request (2026-08-18): cash, M-Pesa, then the two
+            // added together. getRunningCashBalance deliberately keeps the
+            // two apart (formulas.md §9, cash/logic.ts) because they are
+            // not interchangeable — physical cash can be counted in a
+            // drawer, M-Pesa float cannot. The total answers "how much
+            // money does the business hold", so the sub-label says
+            // "combined" to stop it being read as till cash.
+            label: "Expected total",
+            value: money(state.cashMinor + state.mpesaMinor),
+            sub: "cash and M-Pesa combined",
           },
         ]}
       />
