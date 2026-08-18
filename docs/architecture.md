@@ -251,16 +251,55 @@ blocked, because blocking it makes the system unusable.
 
 ### Changing a closed day
 
-The owner does not edit closed figures. She records a **new entry that carries an effective
-date in the past**, with a reason and attribution. The closed day keeps its original numbers.
+**Superseded by ADR 0008.** The owner **edits closed figures directly, in place, from the
+ledger.** One click on a cell, type the new value; the correction cascades forward
+automatically because quantity is still derived from movements (ADR 0001 holds).
 
-**Every entry carries two dates: effective and entered.** Normally identical. For a
-correction they differ, and that gap is the information — it distinguishes "what Tuesday
-looked like on Tuesday" from "what Tuesday looks like now". Both are answerable.
+The previous rule here — that she records a new entry carrying a past effective date, and
+the closed day keeps its original numbers — is reversed, not merely relaxed. It was
+rejected for three reasons, recorded in full in ADR 0008: the one implementation of it
+stamped an `effectiveAt` that no report read, so a correction for last Tuesday landed in
+today's profit; the motion is an accountant's, and she is not one; and the audit argument
+("a trail over figures that move silently is worthless") is answered by *building the
+trail*, not by making figures immovable — an uncorrectable figure gets worked around
+outside the system, where there is no trail at all.
 
-Editing the figure directly was rejected because the handover was already checked against
-it, because the client's bar is "the past readable exactly as it happened", and because an
-audit trail over figures that move silently is worthless.
+What replaces it:
+
+- **Every edit is recorded** — what changed, from what, to what, by whom, when — captured
+  silently. She is never asked to type a reason (D3). The trail surfaces in Activity and on
+  the cell itself, which carries a marker opening that figure's history.
+- **Every edit confirms first**, naming the cell and both figures, and showing the real
+  cascade the edit would cause — computed by the server running the amend and rolling it
+  back, never predicted in the browser.
+- **Handovers are frozen** (D2). `expectedCashMinor` / `expectedMpesaMinor` are never
+  recomputed by anything. Where a later edit moves that day's sales, the handover row says
+  so in words showing both figures. This is the one place in the system where two figures
+  are meant to disagree, so it is always explained where it appears.
+- **Far-back edits warn, never block** (D6). Beyond 31 days the confirm names the span. She
+  remains the authority; there is no threshold at which an edit is refused.
+
+**The cost, accepted knowingly:** "what Tuesday looked like on Tuesday" is no longer
+answerable from the figures alone. It is answerable from the amendment trail, which stores
+both values, but reconstructing a whole day as it originally stood means replaying
+amendments rather than reading a column.
+
+### Ledger day boundaries, stated once
+
+Two conventions in the code decide where an amendment lands, and they differ deliberately:
+
+- a ledger **day** D is the half-open interval `(D 00:00, D+1 00:00]` — `occurredAt: { gt,
+  lte }`;
+- **opening** at D is `occurredAt <= D 00:00` — the `...AsOf` reads, `lte`.
+
+So a correction setting *opening* on D is stamped at exactly **`D 00:00:00.000`**: `lte`
+includes it in D's opening while `gt` excludes it from D's own movement columns. A
+correction setting *closing* on D is stamped at **`D+1 00:00:00.000`**, which is D's own
+`lte` end and therefore inside D.
+
+There is **no gap between D−1's close and D's open** — the day windows are contiguous, so
+correcting D's opening moves D−1's closing with it. That is correct, and it is what the
+reconciliation property in `stock/tests/amend-ledger.integration.test.ts` pins down.
 
 ### Stock levels
 

@@ -87,3 +87,32 @@ than asserting a net of zero that both designs would satisfy.
 amendment row created by the owner's in-place editing is real stock movement
 and is counted in every sum (plan §4); it is flagged only so the UI labels it a
 correction rather than dressing it as a delivery.
+
+---
+
+## Re-checked 2026-08-18 (editable-ledger T10)
+
+**No change. The enumeration above is still complete.**
+
+T6 (Store ledger) and T7 (Cash and non-sales ledgers) made three more tabs editable
+without adding a single new "how much is there" read. Verified by diffing
+`stock/queries.ts`, `cash/queries.ts` and `people/queries.ts` across the T6/T7/T9/T12
+commits: no new exported query functions appear, only signature widenings from
+`PrismaClient` to `Db` so the ledger reads can run inside T12's rolled-back preview
+transaction. A parameter type change cannot affect which rows a `where` clause
+matches.
+
+T12's cascade preview reads through the *same* four `get*Ledger` functions the
+committing path uses, so it inherits their filters rather than introducing a parallel
+set of reads. That was a design goal in its own right and it pays off here: a second
+read path would have been a second enumeration to keep current.
+
+Two write-side facts worth recording alongside the read audit:
+
+- **`amendScalar` refuses a reversed record as `not_found`** (T7). No ledger cell
+  offers the edit, since a reversed row appears in no total — but the route takes a
+  record id, so it was reachable, and it would have written a trail entry describing a
+  change to a figure nobody can see.
+- **`amendDayTotal` and `amendDerivedPosition` filter `reversed: false`** when reading
+  the movements they amend. An amendment computed against rows that count nowhere would
+  set the day's total to a figure the ledger never shows.

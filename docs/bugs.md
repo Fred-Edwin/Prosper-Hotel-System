@@ -41,6 +41,15 @@ place. There is no history table or previous-value column, and nothing
 in `getActivity` (`src/modules/reporting/logic.ts`) can surface that a
 name/phone was ever changed, let alone what it changed from.
 
+**Update 2026-08-18 (editable-ledger T10).** The missing half now exists:
+the editable-ledger work added the `Amendment` model and
+`recordAmendment` (`people/logic.ts`), which record exactly what this bug
+asks for — what changed, from what, to what, by whom, when — and
+`getActivity` already surfaces amendment rows. **The bug is still open**:
+`updateStaffMemberRecord` and `updateCustomerRecord` were never wired to
+call it, so name/phone edits remain untracked. What was a modelling
+problem is now a small wiring job against an existing seam.
+
 ### Repro steps
 1. Edit a staff member's or customer's name or phone number.
 2. Check the Activity record (reporting) for that person.

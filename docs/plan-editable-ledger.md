@@ -164,24 +164,24 @@ the day's movements. Neither is stored, so neither can be written directly.
   `D 00:00:00.000`**, for `N − currentOpening`. Every day from D forward shifts by
   the same delta, which is exactly the waterfall required.
 
-  > **Corrected 2026-08-17 during T3.** This bullet originally said the
-  > adjustment "sits in the gap between D−1's close and D's open" and that days
-  > before D "keep their own openings and closings unchanged". **There is no such
-  > gap, and that pair of requirements is unsatisfiable.** Day windows are
-  > contiguous — reporting's `daysInPeriod` makes D−1 the half-open interval
-  > `(D−1 00:00, D 00:00]`, while opening at D is `occurredAt <= D 00:00` — so
-  > any instant that raises D's opening is necessarily inside D−1's window.
-  > Stamping it "the last instant before D" (23:59:59.999) changes nothing; it is
-  > still inside D−1.
-  >
-  > What actually happens, and what T3 implements: **D−1's closing moves with D's
-  > opening.** It must — D−1's closing and D's opening are the same quantity seen
-  > from two sides. Leaving them different would have the ledger say stock was 1
-  > at the end of the 15th and 5 at the start of the 16th with nothing in
-  > between, which is the unexplained jump the reconciliation invariant exists to
-  > forbid. Days strictly before D−1 are untouched, which is the part of the
-  > original intent that survives. The correction appears in D−1's `corrected`
-  > column, so the change is explained on screen rather than unaccounted for.
+  **D−1's closing moves with D's opening, and there is no gap between them.** Day
+  windows are contiguous — `daysInPeriod` makes D−1 the half-open interval
+  `(D−1 00:00, D 00:00]`, while opening at D is `occurredAt <= D 00:00` — so any
+  instant that raises D's opening is necessarily inside D−1's window. Stamping it
+  "the last instant before D" (23:59:59.999) changes nothing; it is still inside
+  D−1.
+
+  It must move: D−1's closing and D's opening are the same quantity seen from two
+  sides. Leaving them different would have the ledger say stock was 1 at the end
+  of the 15th and 5 at the start of the 16th with nothing in between, which is
+  the unexplained jump the reconciliation invariant exists to forbid. Days
+  strictly before D−1 are untouched. The correction appears in D−1's `corrected`
+  column, so the change is explained on screen rather than unaccounted for.
+
+  *(An earlier draft of this bullet asked for the adjustment to "sit in the gap
+  between D−1's close and D's open" while days before D kept their figures
+  unchanged. That pair of requirements is unsatisfiable; T3 established the rule
+  above.)*
 - **Closing = N on date D** → a `corrected` movement dated at the last instant of
   D, for `N − currentClosing`. D's opening and D's own movements are unchanged;
   D+1's opening becomes N and cascades on.
@@ -241,7 +241,7 @@ so there are no silent gaps for the UI to discover later.
 | **Store** purchased qty | yes | A | edit the receipt's movement in place |
 | **Store** purchased value | yes | C | `unitCostMinor` on that day's receipt rows |
 | **Store** issued / transferred in / out / spoilage | yes | A | edit the movement in place |
-| **Store** unit cost, previous unit cost | **no** | — | `previousUnitCostMinor` is reconstructed algebraically (`reporting/logic.ts:1013`); current is the running average from §3. Edit a delivery's cost instead. |
+| **Store** unit cost, previous unit cost | **no** | — | `previousUnitCostMinor` is read off the **last delivery before the period** (`getPreviousDeliveryCostAtLocation`), not reconstructed algebraically; current cost is latest-price with FIFO layers, not a running average. Both still read-only — edit a delivery's cost instead. *(Corrected by T10: the costing change replaced the running average, so the original reason given here no longer held even though the verdict did.)* |
 | **Non-sales** quantity, cost basis, selling value | yes | A / C | edit the movement and its values in place |
 | **Cash** transaction amount | yes | C | the underlying `Expense` / `Repayment` / `DrawingRepayment` |
 | **Cash** transaction method (cash/M-Pesa) | yes | C | same records |
@@ -372,14 +372,117 @@ next person reintroduces the thing we just removed.
 
 | Doc | Change |
 |---|---|
-| `docs/architecture.md` | Replace "Changing a closed day" wholesale. Amend the "Data lifecycle" list — reversal is no longer the *only* mechanism. Amend "Stock levels" to state plainly that the frozen daily close was never built and is not planned. |
+| `docs/architecture.md` ✅ done | Replace "Changing a closed day" wholesale. Amend the "Data lifecycle" list — reversal is no longer the *only* mechanism. Amend "Stock levels" to state plainly that the frozen daily close was never built and is not planned. |
 | `docs/adr/0001-...md` | Add an amendment: decision stands, quantity stays derived; the "frozen daily closing balance" consequence is withdrawn as never implemented, and the live-sum property is what makes editing viable. |
-| **new** `docs/adr/0008-owner-edits-in-place.md` | The reversal itself: what the effective-date doctrine was, why it's being dropped, why handovers are the one exception, and §3.1a's rule — edit the thing she's looking at; add a row only where there is nothing to edit or it's ambiguous which; label any row we add as a correction. Record that the always-balancing-row design was considered and rejected for misrepresenting the event. Written so the reasoning survives, not just the outcome. |
+| **new** `docs/adr/0008-in-place-ledger-editing.md` ✅ written | The reversal itself: what the effective-date doctrine was, why it's being dropped, why handovers are the one exception, and §3.1a's rule — edit the thing she's looking at; add a row only where there is nothing to edit or it's ambiguous which; label any row we add as a correction. Record that the always-balancing-row design was considered and rejected for misrepresenting the event. Written so the reasoning survives, not just the outcome. |
 | `docs/formulas.md` | §1 note that corrections cascade forward. §10 note the frozen-expected rule and the "sales edited since" marker. |
-| `docs/bugs.md` | BUG-01 resolved by ticket 2. |
+| `docs/bugs.md` | **Corrected by T10 — BUG-01 is _not_ resolved.** T2 built the `Amendment` model and `recordAmendment`, which is the infrastructure BUG-01 needs, but `updateStaffMemberRecord` / `updateCustomerRecord` in `people/queries.ts` still overwrite `name`/`phone` in place without recording anything. The bug stays open; it is now a small wiring job rather than a modelling one. |
 | `CONTEXT.md` | New term: **Amendment**. Owner-only. **Ask before writing — CLAUDE.md forbids unprompted edits to this file.** |
 | `docs/screens.md` | Ledger tabs gain edit affordances; new amendment-history view. |
 | `docs/conventions.md` | The Kind A / B / C rule from §3.1, so future figures get classified rather than improvised. |
+
+---
+
+## 5a. Decisions settled during the build
+
+Recorded by T10. None of these were in the plan when it was written, and every one
+of them would otherwise survive only in a commit message.
+
+### The editing interaction
+
+- **Single click focuses a cell; typing a digit opens the editor.** Not
+  double-click.
+- **The affordance is hover/focus-only — nothing at rest.** An always-visible
+  underline on editable cells *was* built, reviewed and rejected on 2026-08-17: it
+  marked fourteen columns, which is everything, and a marker on everything marks
+  nothing.
+- **The amendment-history marker is the deliberate exception** and *is* visible at
+  rest (T9). The two answer different questions. "You could change this" only
+  matters while she is reaching for a cell, so hover is the right moment. "This was
+  changed" is something she needs to **scan** for — the point is finding edited
+  figures without knowing in advance which they are, and a hover-only marker would
+  mean hovering every cell to discover them. The rejection above still holds for
+  its own case: fourteen editable columns meant marking everything, where twelve
+  amendments across an eighteen-day period touch five cells.
+- **Phone is read-only** throughout.
+
+### What confirms, and what it says
+
+- **Every edit confirms before it is written** (owner decision, 2026-08-18),
+  superseding T4's three-escalation rule *and* T6.4's "no confirm on purchase
+  edits". The escalations became extra warning text on a dialog that appears
+  regardless. T6.4's reasoning is superseded rather than contradicted: the dialog
+  is no longer a question about which reading she meant, it is a check that she
+  typed the number she intended.
+- **The one exception is §3.3's `sold` choice**, which already opens a dialog
+  naming both figures and asking her to pick a revenue treatment. Confirming again
+  would be two modals for one edit — friction without a second check.
+- **The confirm previews the real cascade** (T12), from the server, and shows the
+  "this also changes" section **only** when something beyond the edited cell moves.
+- **No edit on any tab is accepted silently**, with one deliberate exception: an
+  unchanged value writes nothing and says nothing, so she can press Enter through
+  cells while reading without generating noise.
+
+| What happened | What she sees |
+|---|---|
+| Value unchanged | Nothing — no write occurred |
+| Edit, no cascade | Toast confirming the change, with Undo |
+| Edit that cascaded | Toast quoting the real downstream figures |
+| Purchase edit | Toast naming the derived figure that moved |
+| Cascade beyond 31 days | Extra warning on the confirm, naming the span (D6) |
+
+### What is deliberately *not* editable
+
+- **Period-total quantities.** A figure spanning many days offers no honest date to
+  stamp an amendment against. The tooltip says which: "Edit a day's figure — expand
+  the row."
+- **Payment method on the Cash tab** (T7). The write layer supports it and the
+  allow-list carries it, but an editable choice inside a table cell exists nowhere
+  in the app, and a two-value toggle is not worth inventing a UI pattern for: the
+  method moves **no figure the ledger shows**, only which balance column the amount
+  lands in.
+- **Cash opening/closing balances**, because **no stored figure exists behind
+  them** — they are derived from the day's transactions, so there is nothing to
+  amend. Contrast the **Store** tab, where opening and closing *are* editable
+  because stock has a `corrected` movement reason to carry the correction. Cash has
+  no honest equivalent: a balance correction with nothing to attribute it to would
+  be a number appearing from nowhere.
+
+  > The owner asked about this. If she raises it again it is a **real design
+  > question, not a no** — the answer would be to give cash an explicit
+  > adjustment transaction type, which is a feature, not a tweak.
+
+### Write-layer rules established by the build
+
+- **`amendScalar` refuses a reversed record as `not_found`.** A reversed row counts
+  nowhere, so no ledger cell offers the edit — but the route takes a record id, so
+  it was reachable, and it would have written a trail entry describing a change to
+  a figure that appears in no total.
+- **The purchase-edit rule** (T6.4): editing quantity holds unit cost and moves
+  value; editing value holds quantity and moves unit cost. **Unit cost is the
+  figure that moves, because it is the one nobody typed.** Quantity and value are
+  what a delivery note actually states.
+
+### Three defects T9 had to fix before a history marker could land
+
+All three were real defects rather than missing plumbing, and each would have
+silently produced a wrong or unfindable trail:
+
+1. **`amendScalar` never set `effectiveDate`.** Every scalar edit therefore claimed
+   to apply to the day it was typed, so an expense from the 11th corrected on the
+   18th read as an edit to the 18th — and T7.3's "sales edited since" marker, which
+   queries `effectiveDate`, could never have fired for one at all. The caller knows
+   the ledger day and now states it. Amendments genuinely about no day, like a
+   selling price, still store null rather than guessing.
+2. **`amendDayTotal` recorded the movement row that absorbed the edit, not the
+   item.** That contradicted the comment directly above it: the trail is day-level
+   because the day's total is the fact she stated. Two edits to one day's total
+   could land on different rows and read as unrelated, and no history could find
+   either, because the ledger renders an item and a day and never a movement id.
+3. **The cell key needs the ledger day for a day-total edit and not for a scalar.**
+   A day-total's `recordId` names an item, which has a different cell on every day;
+   a scalar's names one row, which is the whole identity. With the day in both, one
+   figure's history split in two the moment anything about the day differed.
 
 ---
 
@@ -422,17 +525,15 @@ that enumeration as a checklist and asserts, per aggregate by name, that a rever
 movement is invisible to it. Prevents: the Finding 4 / BUG-12 failure mode — the
 same filter applied in four places and missed in the fifth.
 
-> **Corrected 2026-08-17 during T1.** This paragraph originally claimed the surface
-> was "**18 call sites** — 16 in `stock/queries.ts`, 2 in `stock/logic.ts` (both
-> `reversedTransferId` lookups, which need no filter)". The real surface is **21
-> sites needing a filter**: 18 read sites in `stock/queries.ts`, plus **three the
-> plan missed entirely** — the availability checks at `sales/logic.ts:153`,
-> `stock/logic.ts:580` and `stock/logic.ts:616`. Those three are the most dangerous
-> in the list: they gate `insufficient_stock`, so a missed filter there makes a
-> *write* wrong rather than a report, authorising the sale or transfer of stock a
-> reversal says is not there. Four further sites are deliberately unfiltered (the
-> `reversedTransferId` lookups, which must see reversal rows to refuse a double
-> reversal). The committed enumeration is `docs/reversed-filter-audit.md`.
+**The surface is 21 sites needing a filter** (established by T1; an earlier draft
+here said 18): 18 read sites in `stock/queries.ts`, plus three the plan originally
+missed — the availability checks at `sales/logic.ts:153`, `stock/logic.ts:580` and
+`stock/logic.ts:616`. Those three are the most dangerous in the list: they gate
+`insufficient_stock`, so a missed filter there makes a *write* wrong rather than a
+report, authorising the sale or transfer of stock a reversal says is not there.
+Four further sites are deliberately unfiltered (the `reversedTransferId` lookups,
+which must see reversal rows to refuse a double reversal). The committed
+enumeration is `docs/reversed-filter-audit.md`.
 
 **C5 — Cross-figure consistency tests at the seams.** After editing a `sold` cell:
 stock, revenue and cost of goods sold must all agree. After editing an expense: the

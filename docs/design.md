@@ -318,9 +318,25 @@ restate what last month cost, which is exactly the "figures that move silently"
 keep the version they were costed with. This is why a recipe has a version
 history rather than an edit form.
 
-**The same rule applies to any figure a closed period depends on.** A correction
-carries an effective date in the past and its own entered date, and the gap
-between them is the information.
+**Ledger figures are the exception, and it is a deliberate one (ADR 0008).** An
+earlier version of this rule generalised the recipe treatment to "any figure a
+closed period depends on" — a correction carrying an effective date in the past,
+with the gap between the two dates as the information. That is **no longer how
+ledger corrections work.** The owner edits a figure in place and the change
+cascades forward.
+
+What keeps the two consistent is *who the figure belongs to*. A recipe version is
+a shared assumption that many past figures were costed against, so restating it
+silently rewrites months of profit that nobody asked to revisit. A ledger figure
+is a single observation about a single day — and when it is wrong, the honest
+thing is for it to become right. It does not move *silently*: every edit confirms
+first, showing both figures and the real cascade it will cause, and every edit
+lands in an amendment trail that the cell itself surfaces.
+
+So the principle survives intact — **nothing moves without saying so** — while the
+mechanism it once implied has been replaced by a better one. See ADR 0008 for the
+full reasoning, including what was lost (a closed day is no longer reconstructible
+from the figures alone, only from the trail).
 
 ---
 

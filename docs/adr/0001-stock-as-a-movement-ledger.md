@@ -53,3 +53,42 @@ not balance; the discrepancy is recorded rather than blocking the next day's tra
 **Hard to reverse.** Every report, every screen and every correction in the system reads
 through this shape. Changing to a stored quantity later would mean rewriting all of them and
 discarding the history that makes corrections truthful.
+
+---
+
+## Amendment — 2026-08-18 (editable-ledger T10)
+
+**The decision stands. Stock is still the sum of its movements, and there is still no
+stored stock quantity.** ADR 0008 makes ledger figures editable in place, and this
+decision is what made that affordable rather than what it overturns: because a quantity
+is derived, correcting a past day requires writing one `corrected` movement and nothing
+else. Every following day, along with cost of goods sold and profit, moves on the next
+read. A stored quantity would have made the same feature a fan-out write across every
+affected day, and would have reintroduced exactly the drift this ADR exists to prevent.
+
+Two things above need correcting against what was actually built.
+
+**The frozen daily closing balance was never implemented, and is not planned.** The
+Consequences section describes each location freezing a daily closing balance per item at
+close, and treats "closing a day" as a real event someone must trigger. Neither exists in
+the code. Stock is summed live from movements on every read, and days are derived
+windows rather than records that get closed. The performance concern that motivated the
+freeze has not materialised at this data volume; the Excel-shaped ledger (opening, in,
+out, closing) that the freeze was also meant to provide is produced by the reporting
+layer directly from movements.
+
+The withdrawal is load-bearing for ADR 0008 rather than incidental: had the frozen close
+existed, an amendment to a past day would have had to invalidate and rebuild every frozen
+balance after it, which is the version of this feature that would have been genuinely
+hard.
+
+**"A day closes even when it does not balance" survives in substance,** since a
+discrepancy is still recorded rather than blocking trading — but it is a property of how
+counts and handovers are recorded, not of a close event.
+
+**What "correction" means here has changed.** Where this ADR lists corrections among the
+movement reasons, that is still accurate — `corrected` is a reason like any other. But the
+*route* by which one is created is now an in-place ledger edit (ADR 0008), not a
+backdated compensating entry carrying a past effective date. The movement written is the
+same shape; what changed is the motion the owner performs and the fact that every such
+edit now carries an `Amendment` trail entry recording both values.

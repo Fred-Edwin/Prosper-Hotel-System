@@ -491,3 +491,47 @@ issues must produce a cost of goods sold of exactly zero. That one
 assertion catches this entire class of bug, and is now a test.
 
 **Added:** 2026-08-17
+
+## A Prisma transaction client accepts a *nested* `$transaction`, and it is a passthrough
+
+Needed by the editable ledger's cascade preview (T12), which runs a real amend inside
+a transaction and then throws to roll it back. The amend functions open their own
+`db.$transaction`, so the question was whether passing them the outer transaction
+client would deadlock, open a second independent transaction, or work.
+
+**It works, and the inner call joins the outer transaction.** Verified empirically
+against the test database rather than inferred from the docs — worth doing, because
+the alternatives fail in ways that would not be obvious: a second independent
+transaction would have *committed* the write the preview is supposed to discard.
+
+The mechanical reason is that Prisma's transaction-client type is
+`Omit<PrismaClient, ITXClientDenyList>`, and that denylist is exactly
+`["$connect", "$disconnect", "$on", "$use", "$extends"]` — check
+`node_modules/@prisma/client/runtime/client.d.ts`. **`$transaction` is not on it.**
+
+Two consequences worth knowing before relying on this:
+
+- **Throwing out of the outer callback rolls back everything**, including writes made
+  by the nested call. That is the mechanism the preview uses: it throws a sentinel
+  error carrying the result, catches it outside, and returns the payload.
+- **The `db` parameter type is what actually blocks this**, not the runtime. A
+  function typed `db: PrismaClient` will not accept a transaction client, because the
+  denylisted members are genuinely absent. The convention in this repo is
+  `type Db = PrismaClient | Prisma.TransactionClient`, already present in
+  `stock/logic.ts`, `catalogue/queries.ts` and others. Widening a read path to `Db` is
+  safe as long as nothing on that path calls a denylisted method — grep for `db.$` to
+  check; on the ledger read path the only `$`-method used is `$transaction` itself.
+
+## Widening a read path to `Db` cascades further than the function you meant to change
+
+A consequence of the above, and the reason T12's diff touched four modules for what
+looked like a one-function change. `reporting` owns no data, so a ledger read reaches
+through `stock`, `cash`, `people` and `catalogue` to get to the tables. Widening
+`getProductLedger` alone does nothing — every function it calls with that same handle
+has to accept the wider type too, down to the leaf `queries.ts` helpers.
+
+Work outward from the compiler errors rather than trying to enumerate the path first:
+`pnpm exec tsc --noEmit` names exactly the next call site each time, and the set
+converges in a few passes. It is mechanical, and it is safe in the sense that a type
+that is *too narrow* is the only thing that can break — the runtime behaviour of a
+model delegate is identical on both handles.

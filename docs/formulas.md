@@ -19,6 +19,20 @@ consumed. That gap is the whole difference between the two.
 
 **What it answers:** what should be on the shelf right now.
 
+> **Corrections cascade forward** (ADR 0008). Every figure below is a live sum of
+> movements, never a stored number, so amending a past day's figure moves that day
+> and **every day after it** automatically — closing, cost of goods sold and profit
+> with it. Nothing needs recomputing or re-freezing, which is exactly why in-place
+> editing was affordable. A `corrected` movement is what carries the adjustment, and
+> it appears in its own column so the change is explained on screen rather than
+> arriving unaccounted for.
+>
+> Boundary rule: a ledger day D is `(D 00:00, D+1 00:00]`, while opening at D is
+> `<= D 00:00`. So a correction to D's **opening** is stamped at exactly
+> `D 00:00:00.000` and a correction to D's **closing** at `D+1 00:00:00.000`. Day
+> windows are contiguous, so **D−1's closing moves with D's opening** — they are the
+> same quantity seen from two sides.
+
 ```
 closing = opening
         + received + produced + transferred in
@@ -472,6 +486,20 @@ difference = handed over − expected
 **At the restaurant**, expected is that person's recorded sales for the day, cash and M-Pesa
 separately. Because it was built sale by sale during the day, it does not depend on the person
 handing over.
+
+> **Expected is frozen, permanently** (ADR 0008, D2). Once a handover is recorded, its
+> `expectedCashMinor` / `expectedMpesaMinor` are **never recomputed by anything** — not by a
+> later sales edit, not by a correction, not by a recount. They record a check that happened
+> between two people, and the owner is not the authority on what was in a cashier's hand last
+> Tuesday. Her *actual* figures stay editable, since a typo about a real event is still a typo.
+>
+> **The "sales edited since" marker.** Where a later amendment has moved a day's sales, the
+> handover row **says so in words, showing both figures** — it does not correct the expected
+> side. This is the one place in the system where two figures are *meant* to disagree, so it
+> is always explained where it appears; unexplained it reads exactly like a bug. Detected by
+> querying amendments whose `effectiveDate` falls on the handover's day and that actually move
+> sales — wastage moves stock and cost but never the money a customer handed over, so flagging
+> it would report a mismatch that isn't one.
 
 ```
 Cash sales recorded          KSh 8,400

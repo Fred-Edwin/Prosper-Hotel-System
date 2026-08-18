@@ -60,6 +60,43 @@ checks. `logic.ts` composes those queries and enforces rules (permissions,
 validation, cross-field checks). Never call `db` from `ui/` or
 `routes.ts` directly — always through a module's `logic.ts`.
 
+## Editable ledger figures: classify, don't improvise
+
+Every editable figure in the ledger is one of three kinds, and a new one **declares
+its kind** rather than growing its own handler. This is what keeps one write path per
+kind instead of one per column (ADR 0008).
+
+| Kind | What the figure is | What an edit writes |
+|---|---|---|
+| **A** | A day's total for one reason (received, sold, wasted, issued…) | `amendDayTotal` — edits the backing row in place where exactly one backs the day, otherwise adds one balancing row |
+| **B** | A derived position (opening, closing) | `amendDerivedPosition` — one signed `corrected` movement at the day boundary |
+| **C** | A scalar on a single record (an expense amount, a selling price) | `amendScalar` — the field, in a transaction with the trail entry |
+
+Rules that fall out of this, all of them learned the expensive way:
+
+- **`amendScalar`'s allow-list is the security boundary.** It carries a *type* per
+  field, and the record-type-to-delegate lookup is a lookup, not an if/else chain, so
+  adding an editable record is a list entry rather than another branch. A second
+  allow-list (an `amendEnum` sibling, say) would be a second boundary, and a field
+  added to the wrong one of two is exactly the mistake an allow-list exists to prevent.
+- **Never put two write paths onto one figure.** Quantities go through `amendDayTotal`
+  even where a single movement backs them, because "which row absorbs it" is a question
+  every tab has. Two paths onto one figure is where BUG-10 came from.
+- **The trail records the fact she stated, not the row that carried it.** A day-total
+  edit records the *item* and the ledger day; recording whichever movement absorbed the
+  change makes two edits to one day read as unrelated, and no history can find either,
+  because the ledger renders an item and a day and never a movement id.
+- **A scalar edit states its `effectiveDate`** — the ledger day the cell sits on. The
+  record carries its own `occurredAt`, so without this the trail reads as though every
+  edit applied to the day it was typed. Amendments genuinely about no day (a selling
+  price) store null rather than guessing.
+- **Reversed records are not editable**, and the write layer refuses them as
+  `not_found`. A reversed row counts nowhere, so amending it would write a trail entry
+  describing a change to a figure that appears in no total.
+- **Read-only is a decision that gets a reason**, shown in the cell's tooltip. Period
+  totals are read-only because a figure spanning many days has no honest date to stamp
+  an amendment against; cash balances because no stored figure exists behind them.
+
 ## Location scoping
 
 Every location-scoped read or write calls `canAccessLocation()` from

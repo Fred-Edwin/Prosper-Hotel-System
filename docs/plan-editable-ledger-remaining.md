@@ -336,13 +336,17 @@ handover, not as a recomputed number.
 movement — already the finest grain, no expansion needed. Per §3.2 quantity,
 cost basis and selling value are all editable.
 
-**Settled in conversation, not yet in the companion plan:** a non-sales edit
-happens in place when exactly one of wasted/consumed/given-away is non-zero,
-and defers to the expanded breakdown when they mix. T4 already carries the
-three reasons separately on `ProductLedgerDay` for exactly this
-(`wasted`/`consumed`/`givenAway`, with a comment citing §3.1's "ambiguous
-which thing she meant"). Reuse that; do not re-derive the rule. Fold into
-T10.
+**Corrected by T10 — this rule belongs to a different tab.** An earlier draft
+of this section told a reader to *build* the "in place when exactly one of
+wasted/consumed/given-away is non-zero, defer to the breakdown when they mix"
+rule here. That rule is the **Product tab's `nonSales` column**, and **T5 already
+built it** — `ProductLedgerDay` carries `wasted`/`consumed`/`givenAway`
+separately for exactly that purpose, with a comment citing §3.1's "ambiguous
+which thing she meant".
+
+The non-sales tab is a different shape: `getNonSalesLedgerReport` returns **one
+row per movement**, which is already the finest grain, so there is nothing to
+disambiguate and no breakdown to defer to. Nothing to build here.
 
 Quantity is Kind A via `amendDayTotal`. `costBasisMinor` and
 `sellingValueMinor` are Kind C on the movement — which means
@@ -405,7 +409,37 @@ through `people/index.ts` only, per reporting-owns-no-data.
 
 ---
 
-## T10 — Doc amendments and ADR 0008
+## T10 — Doc amendments and ADR 0008 ✅ done (2026-08-18)
+
+**What landed:** `docs/adr/0008-in-place-ledger-editing.md` (written from D1–D6, and
+superseding `architecture.md`'s "Changing a closed day" plus the relevant part of ADR
+0001); `architecture.md`'s section rewritten, with the day-boundary semantics promoted
+out of the test header into a section of their own; ADR 0001 amended (decision stands,
+the never-built frozen daily close withdrawn); `formulas.md` §1 (corrections cascade
+forward) and §10 (frozen expected, the "sales edited since" marker); `conventions.md`
+(the Kind A/B/C rule and the write-layer rules that fall out of it); `screens.md` (the
+amendment components added, `RecordCorrectionDialog` flagged for T11); `gotchas.md`
+(the nested-`$transaction` finding and the `Db`-widening cascade);
+`reversed-filter-audit.md` re-checked; the companion plan's two "Corrected" blocks
+folded into the text they overturn, and §3.2's stale F4 reason fixed.
+
+**Two things the ticket assumed that turned out to be wrong**, both corrected in place
+rather than carried forward:
+
+- **BUG-01 is *not* resolved by ticket 2**, contrary to §5's claim. T2 built the
+  `Amendment` model and `recordAmendment` — the infrastructure the bug needs — but
+  `updateStaffMemberRecord` / `updateCustomerRecord` still overwrite `name`/`phone`
+  without recording anything. The bug stays open, now a small wiring job rather than a
+  modelling one. `docs/bugs.md` says so.
+- **`CONTEXT.md`'s new **Amendment** term is deliberately still unwritten.** CLAUDE.md
+  forbids unprompted edits to that file, and §5 flags it as ask-first. Left for the
+  owner.
+
+*(Original ticket text below, kept for the reasoning.)*
+
+---
+
+## T10 — original ticket
 
 Everything in the companion plan's §5, plus the following, which accumulated
 after that section was written and would otherwise be lost:
