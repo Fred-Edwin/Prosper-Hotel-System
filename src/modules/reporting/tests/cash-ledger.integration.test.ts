@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { hashPin } from "@/modules/people";
 import type { AuthenticatedStaff } from "@/modules/people";
 import { recordExpense, recordDrawingRepayment } from "@/modules/cash";
-import { getCashLedger } from "../logic";
+import { getCashLedger, getLedgerAmendments, cellKeyFor } from "../logic";
 import { testDb } from "@/shared/test-db";
 
 let restaurantId: string;
@@ -506,5 +506,134 @@ describe("getCashLedger — the editable-ledger fields (T7)", () => {
     expect(result.days[0].salesEditedSince).toBeNull();
 
     await testDb.amendment.deleteMany({});
+  });
+});
+
+/**
+ * Editable-ledger T9.1 — which cells carry an edit.
+ *
+ * The value of these is the *key*: the marker only appears if the key the
+ * server builds from an amendment matches the key the tab builds from the
+ * cell it is rendering. Nothing else checks that the two agree.
+ */
+describe("getLedgerAmendments", () => {
+  test("groups a cell's edits together, newest first", async () => {
+    const expense = await seedExpense("running", 2500, "cash", new Date("2026-08-05T11:00:00Z"));
+
+    for (const [previous, next, at] of [
+      ["2500", "2700", "2026-08-06T09:00:00Z"],
+      ["2700", "2900", "2026-08-06T10:00:00Z"],
+    ] as const) {
+      await testDb.amendment.create({
+        data: {
+          recordType: "Expense",
+          recordId: expense.id,
+          field: "amountMinor",
+          previousValue: previous,
+          newValue: next,
+          effectiveDate: new Date("2026-08-05T00:00:00Z"),
+          createdAt: new Date(at),
+          locationId: restaurantId,
+          staffMemberId: ownerId,
+        },
+      });
+    }
+
+    const result = await getLedgerAmendments(testDb, owner(), {
+      periodStart: new Date("2026-08-05T00:00:00Z"),
+      periodEnd: new Date("2026-08-05T23:59:59Z"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const key = cellKeyFor({
+      recordType: "Expense",
+      recordId: expense.id,
+      field: "amountMinor",
+      effectiveDate: new Date("2026-08-05T00:00:00Z"),
+      locationId: restaurantId,
+    });
+    const history = result.cells[key];
+    expect(history).toHaveLength(2);
+    // Newest first — "what did this say before" is a question about the
+    // most recent change.
+    expect(history[0].newValue).toBe("2900");
+    expect(history[1].newValue).toBe("2700");
+    expect(history[0].who).toBe("Test Owner");
+
+    await testDb.amendment.deleteMany({});
+  });
+
+  test("a scalar's key ignores the ledger day, so one figure is one cell", async () => {
+    // Edits made before amendScalar carried an effectiveDate have none.
+    // They are the same cell as later edits to the same figure, and
+    // splitting them would show one figure as two histories.
+    const expense = await seedExpense("running", 2500, "cash", new Date("2026-08-05T11:00:00Z"));
+
+    await testDb.amendment.create({
+      data: {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "amountMinor",
+        previousValue: "2500",
+        newValue: "2700",
+        effectiveDate: null,
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+      },
+    });
+    await testDb.amendment.create({
+      data: {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "amountMinor",
+        previousValue: "2700",
+        newValue: "2900",
+        effectiveDate: new Date("2026-08-05T00:00:00Z"),
+        locationId: restaurantId,
+        staffMemberId: ownerId,
+      },
+    });
+
+    const result = await getLedgerAmendments(testDb, owner(), {
+      periodStart: new Date("2026-08-05T00:00:00Z"),
+      periodEnd: new Date("2026-08-05T23:59:59Z"),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const keys = Object.keys(result.cells).filter((k) => k.includes(expense.id));
+    expect(keys).toHaveLength(1);
+    expect(result.cells[keys[0]]).toHaveLength(2);
+
+    await testDb.amendment.deleteMany({});
+  });
+
+  test("a day-total edit's key carries the day, so each day is its own cell", async () => {
+    // The opposite rule, and it must be: the same item has a different
+    // cell on every day of the period.
+    const key5 = cellKeyFor({
+      recordType: "StockMovement",
+      recordId: "product-1",
+      field: "sold",
+      effectiveDate: new Date("2026-08-05T00:00:00Z"),
+      locationId: restaurantId,
+    });
+    const key6 = cellKeyFor({
+      recordType: "StockMovement",
+      recordId: "product-1",
+      field: "sold",
+      effectiveDate: new Date("2026-08-06T00:00:00Z"),
+      locationId: restaurantId,
+    });
+    expect(key5).not.toBe(key6);
+  });
+
+  test("is owner-only", async () => {
+    const result = await getLedgerAmendments(testDb, attendant(), {
+      periodStart: new Date("2026-08-05T00:00:00Z"),
+      periodEnd: new Date("2026-08-05T23:59:59Z"),
+    });
+    expect(result).toEqual({ ok: false, reason: "forbidden" });
   });
 });

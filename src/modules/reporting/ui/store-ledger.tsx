@@ -34,6 +34,7 @@ import {
   type LedgerRowAccessors,
 } from "./amend-feedback";
 import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
+import { AmendedCell, cellKey as amendCellKey, type AmendedCells } from "./amend-history";
 import { ChevronRight, Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -153,10 +154,31 @@ function StoreLedgerForAttempt({
   const replaceRows = (rows: StoreLedgerRowData[]) =>
     setState((s) => (s.status === "ready" ? { ...s, rows } : s));
 
+  // T9.1 — which cells carry an edit. Its own read, refreshed after a
+  // save so the marker lands on the figure she just changed.
+  const [amended, setAmended] = useState<AmendedCells>({});
+  const loadAmendments = useRef<() => void>(() => {});
+  useEffect(() => {
+    const start = new Date(`${periodStart}T00:00:00`).toISOString();
+    const end = new Date(`${periodEnd}T23:59:59.999`).toISOString();
+    const load = () => {
+      fetch(`/api/ledger/amendments?${new URLSearchParams({ periodStart: start, periodEnd: end })}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b) => {
+          if (b?.cells && !cancelledRef.current) setAmended(b.cells);
+        })
+        .catch(() => {});
+    };
+    loadAmendments.current = load;
+    load();
+  }, [periodStart, periodEnd]);
+
   return (
     <StoreLedgerView
       state={state}
       onRetry={onRetry}
+      amended={amended}
+      onAmendmentsChanged={() => loadAmendments.current()}
       onReplaceRows={replaceRows}
       periodStart={new Date(`${periodStart}T00:00:00`).toISOString()}
       periodEnd={new Date(`${periodEnd}T23:59:59.999`).toISOString()}
@@ -259,6 +281,8 @@ export function StoreLedgerView({
   state,
   onRetry,
   onReplaceRows,
+  amended = {},
+  onAmendmentsChanged,
   periodStart = "",
   periodEnd = "",
   initialExpandedRowKey = null,
@@ -266,6 +290,10 @@ export function StoreLedgerView({
 }: {
   state: LoadState;
   onRetry: () => void;
+  /** T9.1 — cells carrying an edit, keyed as getLedgerAmendments keys them. */
+  amended?: AmendedCells;
+  /** Re-reads the trail after a save. */
+  onAmendmentsChanged?: () => void;
   /** Replaces the rows in place after an edit, without remounting. Absent
    * in Storybook, which stories the view without a network — and its
    * absence is also what makes the table read-only there. */
@@ -321,6 +349,7 @@ export function StoreLedgerView({
         previousRows: StoreLedgerRowData[];
       };
       onReplaceRows?.(payload.rows);
+      onAmendmentsChanged?.();
       setCellState((s) => {
         const next = { ...s };
         delete next[cellKey];
@@ -421,8 +450,21 @@ export function StoreLedgerView({
     const isPosition = column === "openingQty" || column === "closingQty";
     const columnLabel = STORE_COLUMN_LABEL[column] ?? column;
     const label = `${columnLabel} for ${row.ingredientName} on ${day.date}`;
+    // A Kind B position writes a `corrected` movement, so its history
+    // lives under that reason rather than the column's own name.
+    const history =
+      amended[
+        amendCellKey({
+          recordType: "IngredientMovement",
+          recordId: row.ingredientId,
+          field: isPosition ? "corrected" : storeReasonFor(column),
+          day: day.date,
+          locationId: row.locationId,
+        })
+      ];
 
     return (
+      <AmendedCell amendments={history} label={`${columnLabel} · ${row.ingredientName} · ${day.date}`}>
       <EditableNum
         value={value}
         muted={!isPosition}
@@ -492,6 +534,7 @@ export function StoreLedgerView({
             : undefined
         }
       />
+      </AmendedCell>
     );
   }
 

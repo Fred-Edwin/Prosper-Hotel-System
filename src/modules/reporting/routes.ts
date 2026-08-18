@@ -9,6 +9,7 @@ import {
   getStoreLedger,
   getNonSalesLedgerReport,
   getCashLedger,
+  getLedgerAmendments,
   getActivity,
   getDashboardStockMovements,
   getDashboardStoreMovements,
@@ -387,6 +388,39 @@ export async function dashboardStoreMovementsRoute(request: Request): Promise<Re
 }
 
 /**
+ * Editable-ledger T9.1 — which cells in this period carry an edit.
+ *
+ * Its own endpoint rather than a field on each ledger read: the ledgers
+ * reload on every edit, this only changes when a new amendment lands, and
+ * four reads each re-deriving the trail would be four chances to derive
+ * it differently.
+ */
+export async function ledgerAmendmentsRoute(request: Request): Promise<Response> {
+  const session = await getSession();
+  if (!session) return Response.json({ error: "unauthenticated" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const periodStartParam = url.searchParams.get("periodStart");
+  const periodEndParam = url.searchParams.get("periodEnd");
+  if (!periodStartParam || !periodEndParam) {
+    return Response.json({ error: "periodStart and periodEnd are required" }, { status: 400 });
+  }
+
+  const periodStart = new Date(periodStartParam);
+  const periodEnd = new Date(periodEndParam);
+  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+    return Response.json({ error: "invalid period" }, { status: 400 });
+  }
+
+  const result = await getLedgerAmendments(db, session, { periodStart, periodEnd });
+  if (!result.ok) {
+    return Response.json({ error: result.reason }, { status: writeStatus(result.reason) });
+  }
+
+  return Response.json({ cells: result.cells });
+}
+
+/**
  * Editable-ledger T4 — one ledger cell edit, and the recomputed rows.
  *
  * Returns the refreshed ledger in the **same response** as the write,
@@ -432,6 +466,8 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
     recordId?: string;
     field?: string;
     ledgerContext?: string;
+    /** The ledger day a scalar edit applies to — see amendScalar. */
+    effectiveDate?: string;
   };
 
   if (!input.periodStart || !input.periodEnd) {
@@ -498,6 +534,13 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
   // everything but a scalar edit.
   const numericValue = input.newValue as number;
 
+  // A scalar edit's ledger day, where the tab knows one. Ignored rather
+  // than rejected when unparseable: a missing effectiveDate degrades the
+  // trail, it does not make the edit wrong.
+  const parsedEffective = input.effectiveDate ? new Date(input.effectiveDate) : null;
+  const scalarEffectiveDate =
+    parsedEffective && !Number.isNaN(parsedEffective.getTime()) ? parsedEffective : undefined;
+
   let result: AmendResult;
   if (input.kind === "dayTotal") {
     if (!input.itemId || !input.locationId || !input.date || !input.reason) {
@@ -539,6 +582,7 @@ export async function amendLedgerRoute(request: Request): Promise<Response> {
       newValue: input.newValue as number | string,
       locationId: input.locationId,
       ledgerContext: input.ledgerContext,
+      effectiveDate: scalarEffectiveDate,
     });
   } else {
     return Response.json({ error: "unknown kind" }, { status: 400 });

@@ -25,6 +25,7 @@ import { ErrorState, PermissionDenied, EmptyFiltered, LoadingTable } from "@/com
 import { EditableNum, type EditableNumState } from "./editable-num";
 import { summariseAmendment, farBackMonths, type ConfirmCase, type LedgerRowAccessors } from "./amend-feedback";
 import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
+import { AmendedCell, cellKey as amendCellKey, type AmendedCells } from "./amend-history";
 import { Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -124,10 +125,30 @@ function NonSalesLedgerForAttempt({
   const replaceRows = (rows: NonSalesLedgerRowData[]) =>
     setState((s) => (s.status === "ready" ? { ...s, rows } : s));
 
+  // T9.1 — which cells carry an edit.
+  const [amended, setAmended] = useState<AmendedCells>({});
+  const loadAmendments = useRef<() => void>(() => {});
+  useEffect(() => {
+    const start = new Date(`${periodStart}T00:00:00`).toISOString();
+    const end = new Date(`${periodEnd}T23:59:59.999`).toISOString();
+    const load = () => {
+      fetch(`/api/ledger/amendments?${new URLSearchParams({ periodStart: start, periodEnd: end })}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b) => {
+          if (b?.cells && !cancelledRef.current) setAmended(b.cells);
+        })
+        .catch(() => {});
+    };
+    loadAmendments.current = load;
+    load();
+  }, [periodStart, periodEnd]);
+
   return (
     <NonSalesLedgerView
       state={state}
       onRetry={onRetry}
+      amended={amended}
+      onAmendmentsChanged={() => loadAmendments.current()}
       onReplaceRows={replaceRows}
       periodStart={new Date(`${periodStart}T00:00:00`).toISOString()}
       periodEnd={new Date(`${periodEnd}T23:59:59.999`).toISOString()}
@@ -184,12 +205,18 @@ export function NonSalesLedgerView({
   state,
   onRetry,
   onReplaceRows,
+  amended = {},
+  onAmendmentsChanged,
   periodStart = "",
   periodEnd = "",
   initialQuery = "",
 }: {
   state: LoadState;
   onRetry: () => void;
+  /** T9.1 — cells carrying an edit. */
+  amended?: AmendedCells;
+  /** Re-reads the trail after a save. */
+  onAmendmentsChanged?: () => void;
   /** Replaces the rows in place after an edit, without remounting. Absent
    * in Storybook, which stories the view without a network — and its
    * absence is also what makes the table read-only there. */
@@ -236,6 +263,7 @@ export function NonSalesLedgerView({
         previousRows: NonSalesLedgerRowData[];
       };
       onReplaceRows?.(payload.rows);
+      onAmendmentsChanged?.();
       setCellState((s) => {
         const next = { ...s };
         delete next[cellKey];
@@ -306,8 +334,22 @@ export function NonSalesLedgerView({
     const cellKey = `${row.movementId}:${field}`;
     const cell = cellState[cellKey];
     const label = `${field === "costBasisMinor" ? "cost" : "selling value"} for ${row.itemName}`;
+    const history =
+      amended[
+        amendCellKey({
+          recordType: row.itemType === "product" ? "StockMovement" : "IngredientMovement",
+          recordId: row.movementId,
+          field,
+          day: row.occurredAt.slice(0, 10),
+          locationId: row.locationId,
+        })
+      ];
 
     return (
+      <AmendedCell
+        amendments={history}
+        label={`${field === "costBasisMinor" ? "At cost" : "At selling price"} · ${row.itemName}`}
+      >
       <EditableNum
         value={value}
         asMoney
@@ -335,12 +377,14 @@ export function NonSalesLedgerView({
                     undoValue: value ?? 0,
                     locationId: row.locationId,
                     ledgerContext: `${label} · ${row.locationCode}`,
+                    effectiveDate: `${row.occurredAt.slice(0, 10)}T00:00:00.000Z`,
                   },
                 });
               }
             : undefined
         }
       />
+      </AmendedCell>
     );
   }
 
@@ -357,8 +401,22 @@ export function NonSalesLedgerView({
     const value = Math.abs(row.quantity);
     const cellKey = `${row.movementId}:quantity`;
     const cell = cellState[cellKey];
+    const history =
+      amended[
+        amendCellKey({
+          recordType: row.itemType === "product" ? "StockMovement" : "IngredientMovement",
+          recordId: row.itemId,
+          field: row.reason,
+          day: row.occurredAt.slice(0, 10),
+          locationId: row.locationId,
+        })
+      ];
 
     return (
+      <AmendedCell
+        amendments={history}
+        label={`${nonSalesReasonLabel[row.reason]} · ${row.itemName} · ${row.occurredAt.slice(0, 10)}`}
+      >
       <EditableNum
         value={value}
         state={cell?.state}
@@ -391,6 +449,7 @@ export function NonSalesLedgerView({
             : undefined
         }
       />
+      </AmendedCell>
     );
   }
 

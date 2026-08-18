@@ -1770,6 +1770,114 @@ export async function getCashLedger(
   return { ok: true, days: result };
 }
 
+/**
+ * Editable-ledger T9.1 — which ledger cells carry an edit, and its history.
+ *
+ * A separate read from the ledgers themselves, deliberately. "What is
+ * this figure" and "has this figure been changed" are different
+ * questions: the first reloads on every edit, the second only when a new
+ * amendment lands, and folding the trail into four ledger reads would
+ * have each of them re-deriving it.
+ *
+ * The key is what identifies a *cell*, and the Amendment row already
+ * carries it: `recordType` + `recordId` + `field` + the ledger day.
+ * A Kind A day-total edit stores the ledger reason in `field`
+ * ("received") and the item in `recordId`, which is exactly a Product or
+ * Store day cell's identity. A Kind C scalar stores the real record and
+ * column. So no new storage is needed — T2 built for this.
+ */
+export type CellAmendment = {
+  /** Groups amendments onto one cell. See cellKeyFor. */
+  cellKey: string;
+  previousValue: string;
+  newValue: string;
+  who: string;
+  /** When she typed it. */
+  enteredAt: string;
+  /** The ledger day it applies to, where it has one. */
+  effectiveOn: string | null;
+  ledgerContext: string | null;
+};
+
+export type LedgerAmendmentsResult =
+  | { ok: true; cells: Record<string, CellAmendment[]> }
+  | { ok: false; reason: "forbidden" };
+
+/**
+ * The cell an amendment belongs to.
+ *
+ * Deliberately built from the amendment's own stored fields rather than
+ * from anything the ledger computes, so a cell and its history agree by
+ * construction rather than by two places matching conventions.
+ */
+export function cellKeyFor(a: {
+  recordType: string;
+  recordId: string;
+  field: string;
+  effectiveDate: Date | null;
+  locationId: string | null;
+}): string {
+  // The day is part of the key only for a **day-total** edit, where
+  // recordId names an item rather than a row and the same item has a
+  // different cell on every day of the period.
+  //
+  // A scalar edit already names one row, so its record and column are the
+  // whole identity — including the day would split one cell's history in
+  // two the moment anything about the day changed, and it did: edits made
+  // before `effectiveDate` was threaded through amendScalar carry none,
+  // and would otherwise show as a separate cell from later edits to the
+  // same figure.
+  const isDayTotal = a.recordType === "StockMovement" || a.recordType === "IngredientMovement";
+  const scoped = isDayTotal && a.effectiveDate ? isoDate(a.effectiveDate) : "";
+  return [a.recordType, a.recordId, a.field, scoped, a.locationId ?? ""].join("|");
+}
+
+export async function getLedgerAmendments(
+  db: PrismaClient,
+  requester: AuthenticatedStaff,
+  input: { periodStart: Date; periodEnd: Date },
+): Promise<LedgerAmendmentsResult> {
+  if (!requireOwner(requester)) return { ok: false, reason: "forbidden" };
+
+  // Effective-date, not created-at: she is asking which figures *on this
+  // period* carry an edit, and a September edit to an August figure is an
+  // answer to that. Amendments with no ledger day (a selling price, say)
+  // are not about a day and fall outside the range by construction — they
+  // are picked up separately below.
+  const [byDay, all] = await Promise.all([
+    listAmendmentsEffectiveInPeriod(db, input.periodStart, input.periodEnd),
+    listAmendmentsInPeriod(db, new Date(0), new Date()),
+  ]);
+
+  const dayless = all.filter((a) => a.effectiveDate === null);
+  const relevant = [...byDay, ...dayless];
+
+  const staff = await findStaffMembersByIds(db, [...new Set(relevant.map((a) => a.staffMemberId))]);
+  const nameById = new Map(staff.map((s) => [s.id, s.name]));
+
+  const cells: Record<string, CellAmendment[]> = {};
+  for (const a of relevant) {
+    const key = cellKeyFor(a);
+    (cells[key] ??= []).push({
+      cellKey: key,
+      previousValue: a.previousValue,
+      newValue: a.newValue,
+      who: nameById.get(a.staffMemberId) ?? "Unknown",
+      enteredAt: a.createdAt.toISOString(),
+      effectiveOn: a.effectiveDate ? isoDate(a.effectiveDate) : null,
+      ledgerContext: a.ledgerContext,
+    });
+  }
+
+  // Newest first within a cell — "what did this say before" is nearly
+  // always a question about the most recent change.
+  for (const list of Object.values(cells)) {
+    list.sort((x, y) => y.enteredAt.localeCompare(x.enteredAt));
+  }
+
+  return { ok: true, cells };
+}
+
 // Ticket 45 — the Activity trail's row kinds. Matches the design
 // reference's ActivityKind minus recipe/person (out of this ticket's
 // scope) plus the split this ticket's Scope calls for explicitly:

@@ -2777,9 +2777,17 @@ export async function amendDayTotal(
     // The trail is day-level, because the day's total is the fact she
     // stated. "movement abc123.quantity changed" would be a true statement
     // about a row and a useless one about her business.
+    //
+    // recordId is the **item**, not the row that absorbed the edit. It
+    // used to be the row (`target?.id`), which quietly contradicted the
+    // paragraph above: a day-level fact recorded against whichever
+    // movement happened to be chosen to carry it. Two edits to the same
+    // day's total could land on different rows and read as unrelated,
+    // and T9's per-cell history could not find either, because the
+    // ledger renders an item and a day — never a movement id.
     await recordAmendment(tx, {
       recordType: input.itemType === "product" ? "StockMovement" : "IngredientMovement",
-      recordId: target?.id ?? input.itemId,
+      recordId: input.itemId,
       field: input.reason,
       previousValue: String(currentTotal),
       newValue: String(input.newTotal),
@@ -2975,6 +2983,19 @@ export async function amendScalar(
     newValue: number | string;
     locationId?: string;
     ledgerContext?: string;
+    /**
+     * The ledger day this edit applies to, where the cell sits on one.
+     *
+     * Kind A and B derive it from the day they are given. A scalar has no
+     * day of its own — the record carries its own occurredAt — so the
+     * caller states it, and the Cash tab does: an expense edited on the
+     * 18th that belongs to the 11th is a fact about the 11th.
+     *
+     * Without this the trail reads as though every scalar edit applied to
+     * the day it was typed, and T7.3's "sales edited since" marker —
+     * which queries on effectiveDate — could never fire for one.
+     */
+    effectiveDate?: Date;
   },
 ): Promise<AmendResult> {
   if (requester.staff.role !== "owner") return { ok: false, reason: "forbidden" };
@@ -3033,6 +3054,7 @@ export async function amendScalar(
       previousValue: previousValue === null ? "" : String(previousValue),
       newValue: String(input.newValue),
       ledgerContext: input.ledgerContext ?? null,
+      effectiveDate: input.effectiveDate ?? null,
       locationId: input.locationId ?? null,
       staffMemberId: requester.staff.id,
     });

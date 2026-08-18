@@ -194,6 +194,30 @@ describe("amendDayTotal — Kind A", () => {
     expect(await testDb.stockMovement.count()).toBe(1);
   });
 
+  test("the trail names the item, not whichever row absorbed the edit", async () => {
+    // Two movements back the same day, so a row has to be chosen to carry
+    // the change — but which one is an implementation detail of
+    // amendDayTotal, not a fact about her business. Recording the chosen
+    // row would make two edits to one day's total read as unrelated, and
+    // T9's per-cell history could find neither: the ledger renders an
+    // item and a day, never a movement id.
+    await movement(3, "received", at("2026-08-16", "09:00:00.000"));
+    await movement(2, "received", at("2026-08-16", "14:00:00.000"));
+
+    await amendDayTotal(testDb, owner(), {
+      itemType: "product",
+      itemId: productId,
+      locationId: restaurantId,
+      date: D("2026-08-16"),
+      reason: "received",
+      newTotal: 8,
+    });
+
+    const amendments = await testDb.amendment.findMany({});
+    expect(amendments).toHaveLength(1);
+    expect(amendments[0]?.recordId).toBe(productId);
+  });
+
   test("the trail records the day-level fact, not the row that absorbed it", async () => {
     await movement(3, "received", at("2026-08-16", "09:00:00.000"));
 
@@ -899,6 +923,44 @@ describe("amendScalar — T7's cash and movement records", () => {
         newValue: 1,
       }),
     ).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  test("records the ledger day the edit applies to, not the day she typed it", async () => {
+    // An expense from the 11th, corrected on the 18th. Without this the
+    // trail reads as though the edit applied to the 18th, and T7.3's
+    // "sales edited since" marker — which queries effectiveDate — could
+    // never fire for a scalar edit at all.
+    const expense = await cashExpense({ amountMinor: 1200, paymentMethod: "cash" });
+
+    expect(
+      await amendScalar(testDb, owner(), {
+        recordType: "Expense",
+        recordId: expense.id,
+        field: "amountMinor",
+        newValue: 1500,
+        effectiveDate: D("2026-08-11"),
+      }),
+    ).toEqual({ ok: true });
+
+    const amendment = await testDb.amendment.findFirst({});
+    expect(amendment?.effectiveDate?.toISOString()).toBe("2026-08-11T00:00:00.000Z");
+    // createdAt is when she typed it and stays distinct — the pair is the
+    // whole point (see the Amendment model comment).
+    expect(amendment?.createdAt).not.toEqual(amendment?.effectiveDate);
+  });
+
+  test("an edit with no ledger day leaves effectiveDate null rather than guessing", async () => {
+    // A product's selling price is not about any one day, so stamping it
+    // with today would assert something untrue.
+    await amendScalar(testDb, owner(), {
+      recordType: "Product",
+      recordId: productId,
+      field: "priceMinor",
+      newValue: 375,
+    });
+    const amendment = await testDb.amendment.findFirst({});
+    expect(amendment?.effectiveDate).toBeNull();
+    await testDb.product.update({ where: { id: productId }, data: { priceMinor: 300 } });
   });
 
   test("a reversed record is not editable — it counts nowhere", async () => {

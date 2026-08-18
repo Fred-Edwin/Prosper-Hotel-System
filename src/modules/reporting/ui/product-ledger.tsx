@@ -32,6 +32,7 @@ import {
   type LedgerRowAccessors,
 } from "./amend-feedback";
 import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
+import { AmendedCell, cellKey as amendCellKey, type AmendedCells } from "./amend-history";
 import { ChevronRight, Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -194,10 +195,28 @@ function ProductLedgerForAttempt({
   const startIso = new Date(`${periodStart}T00:00:00`).toISOString();
   const endIso = new Date(`${periodEnd}T23:59:59.999`).toISOString();
 
+  // T9.1 — which cells carry an edit.
+  const [amended, setAmended] = useState<AmendedCells>({});
+  const loadAmendments = useRef<() => void>(() => {});
+  useEffect(() => {
+    const load = () => {
+      fetch(`/api/ledger/amendments?${new URLSearchParams({ periodStart: startIso, periodEnd: endIso })}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b) => {
+          if (b?.cells && !cancelledRef.current) setAmended(b.cells);
+        })
+        .catch(() => {});
+    };
+    loadAmendments.current = load;
+    load();
+  }, [startIso, endIso]);
+
   return (
     <ProductLedgerView
       state={state}
       onRetry={onRetry}
+      amended={amended}
+      onAmendmentsChanged={() => loadAmendments.current()}
       onReplaceRows={replaceRows}
       onRefresh={refresh}
       periodStart={startIso}
@@ -266,14 +285,6 @@ function Td({ children, border, align = "right" }: { children?: React.ReactNode;
   );
 }
 
-/**
- * Ledger column -> movement reason. `transferredIn`/`transferredOut` are
- * the two signed directions of one reason, and `nonSales` folds three
- * (wasted/consumed/given_away); editing that total needs a reason to write
- * against, and `wasted` is the one the owner means when she says a figure
- * on that column is wrong — the other two are recorded deliberately at the
- * time, with a person attached.
- */
 // The column in her words — see the Store tab's equivalent. The confirm
 // dialog names the cell she is about to change, and "nonSales" is not a
 // name she uses.
@@ -298,6 +309,14 @@ function nonSalesBreakdown(day: ProductLedgerDayData): string {
   return parts.join(", ");
 }
 
+/**
+ * Ledger column -> movement reason. `transferredIn`/`transferredOut` are
+ * the two signed directions of one reason, and `nonSales` folds three
+ * (wasted/consumed/given_away); editing that total needs a reason to write
+ * against, and `wasted` is the one the owner means when she says a figure
+ * on that column is wrong — the other two are recorded deliberately at the
+ * time, with a person attached.
+ */
 function movementReasonFor(column: string): string {
   switch (column) {
     case "produced":
@@ -337,6 +356,8 @@ function Chevron({ open }: { open: boolean }) {
 export function ProductLedgerView({
   state,
   onRetry,
+  amended = {},
+  onAmendmentsChanged,
   onReplaceRows,
   onRefresh,
   periodStart = "",
@@ -346,6 +367,10 @@ export function ProductLedgerView({
 }: {
   state: LoadState;
   onRetry: () => void;
+  /** T9.1 — cells carrying an edit. */
+  amended?: AmendedCells;
+  /** Re-reads the trail after a save. */
+  onAmendmentsChanged?: () => void;
   /** Replaces the rows in place after an edit, without remounting — see
    * ProductLedgerForAttempt's note on why remounting is wrong here. Absent
    * in Storybook, which stories the view without a network. */
@@ -409,6 +434,7 @@ export function ProductLedgerView({
         previousRows: ProductLedgerRowData[];
       };
       onReplaceRows?.(payload.rows);
+      onAmendmentsChanged?.();
       setCellState((s) => {
         const next = { ...s };
         delete next[cellKey];
@@ -482,6 +508,18 @@ export function ProductLedgerView({
     }
 
     const isPosition = column === "opening" || column === "closing";
+    // A Kind B position writes a `corrected` movement, so its history
+    // lives under that reason rather than the column's own name.
+    const history =
+      amended[
+        amendCellKey({
+          recordType: "StockMovement",
+          recordId: row.productId,
+          field: isPosition ? "corrected" : movementReasonFor(column),
+          day: day.date,
+          locationId: row.locationId,
+        })
+      ];
     const columnLabel = PRODUCT_COLUMN_LABEL[column] ?? column;
     const label = `${columnLabel} for ${row.productName} on ${day.date}`;
 
@@ -523,6 +561,7 @@ export function ProductLedgerView({
 
       const reason = present[0]?.[0] ?? "wasted";
       return (
+        <AmendedCell amendments={history} label={`${columnLabel} · ${row.productName} · ${day.date}`}>
         <EditableNum
           value={value}
           muted
@@ -557,10 +596,12 @@ export function ProductLedgerView({
               : undefined
           }
         />
+        </AmendedCell>
       );
     }
 
     return (
+      <AmendedCell amendments={history} label={`${columnLabel} · ${row.productName} · ${day.date}`}>
       <EditableNum
         value={value}
         muted={column !== "sold" && !isPosition}
@@ -649,6 +690,7 @@ export function ProductLedgerView({
             : undefined
         }
       />
+      </AmendedCell>
     );
   }
 
@@ -699,7 +741,20 @@ export function ProductLedgerView({
     const cellKey = `${row.productId}:${row.locationId}:${field}`;
     const cell = cellState[cellKey];
 
+    const history =
+      amended[
+        amendCellKey({
+          recordType: "Product",
+          recordId: row.productId,
+          field: field === "sellingPriceMinor" ? "priceMinor" : "lastKnownCostMinor",
+        })
+      ];
+
     return (
+      <AmendedCell
+        amendments={history}
+        label={`${field === "sellingPriceMinor" ? "Selling price" : "Unit cost"} · ${row.productName}`}
+      >
       <EditableNum
         value={value}
         asMoney
@@ -729,6 +784,7 @@ export function ProductLedgerView({
             : undefined
         }
       />
+      </AmendedCell>
     );
   }
 

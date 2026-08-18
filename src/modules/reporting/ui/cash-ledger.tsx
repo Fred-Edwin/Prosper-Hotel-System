@@ -31,6 +31,7 @@ import {
   type LedgerRowAccessors,
 } from "./amend-feedback";
 import { AmendToast, AmendConfirm, type AmendToastState, type AmendConfirmState } from "./amend-toast";
+import { AmendedCell, cellKey as amendCellKey, type AmendedCells } from "./amend-history";
 import { ChevronRight, Search, X } from "lucide-react";
 import { money } from "@/shared/money";
 
@@ -144,10 +145,32 @@ function CashLedgerForAttempt({
   const replaceDays = (days: CashLedgerDayData[]) =>
     setState((s) => (s.status === "ready" ? { ...s, days } : s));
 
+  // T9.1 — which cells carry an edit. Its own read, refreshed after a
+  // save: the figure and its history change together, and a marker that
+  // appeared only on reload would miss the edit she just made.
+  const [amended, setAmended] = useState<AmendedCells>({});
+  const loadAmendments = useRef<() => void>(() => {});
+  useEffect(() => {
+    const start = new Date(`${periodStart}T00:00:00`).toISOString();
+    const end = new Date(`${periodEnd}T23:59:59.999`).toISOString();
+    const load = () => {
+      fetch(`/api/ledger/amendments?${new URLSearchParams({ periodStart: start, periodEnd: end })}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b) => {
+          if (b?.cells && !cancelledRef.current) setAmended(b.cells);
+        })
+        .catch(() => {});
+    };
+    loadAmendments.current = load;
+    load();
+  }, [periodStart, periodEnd]);
+
   return (
     <CashLedgerView
       state={state}
       onRetry={onRetry}
+      amended={amended}
+      onAmendmentsChanged={() => loadAmendments.current()}
       onReplaceRows={replaceDays}
       periodStart={new Date(`${periodStart}T00:00:00`).toISOString()}
       periodEnd={new Date(`${periodEnd}T23:59:59.999`).toISOString()}
@@ -257,6 +280,8 @@ export function CashLedgerView({
   state,
   onRetry,
   onReplaceRows,
+  amended = {},
+  onAmendmentsChanged,
   periodStart = "",
   periodEnd = "",
   initialExpandedRowKey = null,
@@ -264,6 +289,11 @@ export function CashLedgerView({
 }: {
   state: LoadState;
   onRetry: () => void;
+  /** T9.1 — cells carrying an edit, keyed as getLedgerAmendments keys them. */
+  amended?: AmendedCells;
+  /** Re-reads the trail after a save, so the marker appears on the figure
+   * she just changed rather than on the next page load. */
+  onAmendmentsChanged?: () => void;
   /** Replaces the days in place after an edit, without remounting. Absent
    * in Storybook, which stories the view without a network — and its
    * absence is also what makes the table read-only there. */
@@ -319,6 +349,7 @@ export function CashLedgerView({
         previousRows: CashLedgerDayData[];
       };
       onReplaceRows?.(payload.rows);
+      onAmendmentsChanged?.();
       setCellState((s) => {
         const next = { ...s };
         delete next[cellKey];
@@ -431,8 +462,10 @@ export function CashLedgerView({
 
     const cellKey = `${t.id}:amount`;
     const cell = cellState[cellKey];
+    const history = amended[amendCellKey({ recordType: t.recordType, recordId: t.recordId, field: t.amountField })];
 
     return (
+      <AmendedCell amendments={history} label={`${t.description} · ${day.date}`}>
       <EditableNum
         value={t.amountMinor}
         asMoney
@@ -469,12 +502,14 @@ export function CashLedgerView({
                     newValue: next,
                     undoValue: t.amountMinor,
                     ledgerContext: `${t.description} · ${day.date}`,
+                    effectiveDate: `${day.date}T00:00:00.000Z`,
                   },
                 });
               }
             : undefined
         }
       />
+      </AmendedCell>
     );
   }
 
