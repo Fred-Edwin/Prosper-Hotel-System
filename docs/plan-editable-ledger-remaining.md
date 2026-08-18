@@ -426,11 +426,10 @@ folded into the text they overturn, and §3.2's stale F4 reason fixed.
 **Two things the ticket assumed that turned out to be wrong**, both corrected in place
 rather than carried forward:
 
-- **BUG-01 is *not* resolved by ticket 2**, contrary to §5's claim. T2 built the
-  `Amendment` model and `recordAmendment` — the infrastructure the bug needs — but
-  `updateStaffMemberRecord` / `updateCustomerRecord` still overwrite `name`/`phone`
-  without recording anything. The bug stays open, now a small wiring job rather than a
-  modelling one. `docs/bugs.md` says so.
+- **`docs/bugs.md` still said BUG-01 was open**, though ticket 2 had closed it. The
+  fix lives in `people/logic.ts`'s update wrappers rather than the `queries.ts`
+  functions the bug report names, which is why a grep of the named functions misses
+  it — `queries.ts` correctly stays bare Prisma calls. Status corrected.
 - **`CONTEXT.md`'s new **Amendment** term is deliberately still unwritten.** CLAUDE.md
   forbids unprompted edits to that file, and §5 flags it as ask-first. Left for the
   owner.

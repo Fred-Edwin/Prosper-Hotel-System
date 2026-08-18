@@ -10,7 +10,7 @@ Format, one entry per bug:
 ## BUG-<NN>: <short title>
 **Severity:** critical | high | normal | low
 **Discovered:** <how — client report, production error, manual testing>
-**Status:** open | in-progress | fixed
+**Status:** resolved | in-progress | fixed
 
 ### Description
 What's broken.
@@ -41,14 +41,13 @@ place. There is no history table or previous-value column, and nothing
 in `getActivity` (`src/modules/reporting/logic.ts`) can surface that a
 name/phone was ever changed, let alone what it changed from.
 
-**Update 2026-08-18 (editable-ledger T10).** The missing half now exists:
-the editable-ledger work added the `Amendment` model and
-`recordAmendment` (`people/logic.ts`), which record exactly what this bug
-asks for — what changed, from what, to what, by whom, when — and
-`getActivity` already surfaces amendment rows. **The bug is still open**:
-`updateStaffMemberRecord` and `updateCustomerRecord` were never wired to
-call it, so name/phone edits remain untracked. What was a modelling
-problem is now a small wiring job against an existing seam.
+**Resolved 2026-08-17 by editable-ledger T2.** `updateStaffMember` and
+`updateCustomer` (`people/logic.ts`) now diff the incoming fields against
+the stored record and write one `Amendment` row per changed field, inside
+the same `$transaction` as the update — so an edit that cannot be
+attributed does not happen. `getActivity` surfaces those rows with the
+previous and new value. Covered by
+`people/tests/amendment-trail.integration.test.ts`.
 
 ### Repro steps
 1. Edit a staff member's or customer's name or phone number.

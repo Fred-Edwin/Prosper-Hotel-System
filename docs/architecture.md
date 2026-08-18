@@ -243,10 +243,9 @@ fixable in seconds, mid-service. These are not in tension — the distinction is
   the common case and it must be fast.
 - **After the day is closed** — owner only.
 - **Non-financial typos** — a misspelled name, a wrong phone number — are edited in place,
-  keeping the previous value. Not worth a reversal. (The keeping-the-previous-value half is
-  **not yet built** for staff/customer records — see BUG-01 in `docs/bugs.md`. The
-  `Amendment` model it needs now exists; the two update paths were simply never wired to
-  it.)
+  keeping the previous value. Not worth a reversal. The previous value is kept in the
+  `Amendment` trail — one row per changed field, written in the same transaction as the
+  update (editable-ledger T2, closing BUG-01).
 - **A wrong figure on a closed day is edited in place** (ADR 0008), and the edit is recorded
   in the `Amendment` trail — what changed, from what, to what, by whom, when. Reversal is
   therefore **no longer the only mechanism**: reversal is for an event that should not have
