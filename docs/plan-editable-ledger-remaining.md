@@ -568,12 +568,24 @@ schema and must not be hand-edited. Verify with `pnpm test` and
 
 Independent of the tickets above, and not covered by any of them:
 
-- **The two migrations** (`20260817150627` reversal fields, `20260817151824`
-  the Amendment table) have only run against empty test and dev databases.
-  They are additive with defaults, but verify against production-shaped data
-  before the branch reaches `main`. T11 adds a third, and that one is
-  **destructive** — it drops columns — so it needs the same check with more
-  care.
+- **The three migrations** (`20260817150627` reversal fields, `20260817151824`
+  the Amendment table, `20260818041613` the destructive column drop).
+  **Verified 2026-08-18 against data, not just an empty schema:**
+
+  1. All 44 migrations replay cleanly onto an empty database from scratch.
+  2. More to the point, a clone of the dev database **with its rows** was used
+     as a production stand-in — it carried the two additive migrations already
+     applied and T11's destructive one pending, which is exactly the state
+     production is in. Applying T11 to it succeeded, and every row survived:
+     7 sales, 12 sale lines, 8 payment lines, 26 stock movements, 16
+     amendments, with only the three intended columns gone. Sales read back
+     correctly afterwards with their lines and void state.
+
+  What is **not** covered: this is dev-shaped data, not a restore of a
+  production `pg_dump`. Production has more rows and a longer history, though
+  nothing about `DROP COLUMN` is row-count sensitive. Restoring a real backup
+  into a scratch database and repeating step 2 would close the gap — it
+  touches real infrastructure, so it needs the owner's go-ahead per CLAUDE.md.
 - **Do not push without asking.** Pushing `main` deploys straight to
   production.
 - **Both correction mechanisms are live until T11.** The branch is not
